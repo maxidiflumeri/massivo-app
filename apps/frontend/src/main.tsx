@@ -4,15 +4,24 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 import { ThemeProvider } from './theme/ThemeProvider';
 
+import { ClerkProvider } from '@clerk/clerk-react';
+
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Root element not found');
 
+const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+if (!clerkPubKey) {
+  throw new Error('Falta VITE_CLERK_PUBLISHABLE_KEY en .env');
+}
+
 createRoot(rootEl).render(
   <StrictMode>
-    <ThemeProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </ThemeProvider>
+    <ClerkProvider publishableKey={clerkPubKey} appearance={{ elements: { rootBox: { display: 'flex', justifyContent: 'center', width: '100%' } } }}>
+      <ThemeProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </ThemeProvider>
+    </ClerkProvider>
   </StrictMode>,
 );
