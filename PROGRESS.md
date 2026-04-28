@@ -38,6 +38,43 @@ No avances sin confirmarme el plan del paso siguiente.
 - **Último commit:** `0d8d5fe` — `chore: setup inicial del monorepo Massivo App (Fase 0)`
 - **Repo remoto:** `https://github.com/maxidiflumeri/massivo-app`
 
+---
+
+## Código fuente de referencia: AMSA Sender
+
+Massivo App reutiliza lógica de negocio de **AMSA Sender** (sistema interno de Ana Maya SA, queda congelado y NO se modifica). Cuando una fase requiera portar funcionalidad existente (worker WAPI, tracking de email, integración Meta, IA Gemini, Unlayer, etc.), el código fuente original se encuentra **localmente** en:
+
+```
+C:\Users\MDIFLUME\Documents\Proyectos\Propios\amsa-sender
+```
+
+### Cómo usarlo
+
+- **Solo lectura.** Nunca modificar archivos en esa carpeta. AMSA Sender es un producto separado en producción.
+- **Portar selectivamente.** Copiar/adaptar la lógica al nuevo monorepo refactorizándola a multi-tenant (con `organizationId` + `teamId`). Nunca hacer un fork en bloque.
+- **Stack diferente en algunos puntos.** AMSA usa MySQL; Massivo usa Postgres. Algunos modelos Prisma cambian de nombre (sin acentos para portabilidad). Ver `MIGRATION_PLAN.md` sección 2.4.
+
+### Mapa rápido AMSA → Massivo (referencia)
+
+| AMSA Sender (origen) | Massivo App (destino) | Cuándo se porta |
+|----------------------|-----------------------|-----------------|
+| `backend/src/modules/wapi/` | `apps/backend/src/modules/wapi/` (multi-tenant) | Fase 4 |
+| `backend/src/modules/email/` | `apps/backend/src/modules/email/` (multi-tenant) | Fase 3 |
+| `backend/src/workers/wapi-worker.service.ts` | `apps/backend/src/workers/` (con tenant context) | Fase 4 |
+| `backend/src/workers/email-worker.service.ts` | `apps/backend/src/workers/` (con tenant context) | Fase 3 |
+| `backend/src/modules/ai/gemini.service.ts` | `apps/backend/src/modules/ai/` | Fase 6 |
+| `frontend/` (componentes Unlayer, inbox, dashboards) | `apps/frontend/src/features/` | Fases 3-6 |
+| `prisma/schema.prisma` (modelos de dominio) | `packages/prisma/schema.prisma` (con `organizationId`/`teamId`) | Fase 1-2 |
+
+### Lo que NO se porta
+
+- **WhatsApp Web.js / Baileys**: excluido del MVP (no escala bien en SaaS).
+- **Módulos `usuarios/`, `roles/`, `auth/` de AMSA**: reemplazados por Clerk + CASL.
+- **`configuracion/` global por usuario**: reemplazado por configs por tenant/team.
+- **MySQL específico**: migrar a Postgres (ajustar tipos, índices, JSON → JSONB).
+
+---
+
 ## Resumen de lo hecho (Fase 0)
 
 Monorepo pnpm + Turborepo, con:
