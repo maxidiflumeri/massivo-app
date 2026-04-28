@@ -8,6 +8,7 @@ import { AppModule } from './app.module';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
+    rawBody: true,
   });
 
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));

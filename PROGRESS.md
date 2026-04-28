@@ -115,16 +115,16 @@ Ver `MIGRATION_PLAN.md` sección **9. Plan de ejecución por fases → Fase 1**.
 
 ### Checklist Fase 1 (en orden sugerido)
 
-- [ ] Configurar Prisma 6 en `packages/prisma` con datasource Postgres.
-- [ ] Schema Prisma inicial: `Organization`, `Team`, `User`, `OrgMembership`, `TeamMembership`, `Plan`, `Subscription`, `UsageCounter`, `AuditLog`, enums (ver MIGRATION_PLAN.md sección 2.3).
-- [ ] Generar primera migración + seed de planes (FREE, STARTER, BUSINESS, ENTERPRISE).
-- [ ] Integrar `PrismaModule` en backend con cliente compartido desde `@massivo/prisma`.
-- [ ] Crear cuenta en Clerk, configurar Organizations habilitadas, copiar keys a `.env`.
-- [ ] Frontend: `<ClerkProvider>`, `<SignIn>`, `<OrganizationSwitcher>`, `<UserButton>`.
-- [ ] Backend: `ClerkAuthGuard` valida JWT contra JWKS de Clerk.
-- [ ] `TenantContextGuard` resuelve `organizationId` (por `clerkOrgId`) y valida `teamId` del header `X-Team-Id`.
-- [ ] `AsyncLocalStorage` con `RequestContext { userId, organizationId, teamId, orgRole, teamRole }`.
-- [ ] Webhook `/webhooks/clerk` con manejo idempotente de `user.*`, `organization.*`, `organizationMembership.*`.
+- [x] Configurar Prisma 6 en `packages/prisma` con datasource Postgres.
+- [x] Schema Prisma inicial: `Organization`, `Team`, `User`, `OrgMembership`, `TeamMembership`, `Plan`, `Subscription`, `UsageCounter`, `AuditLog`, enums (ver MIGRATION_PLAN.md sección 2.3).
+- [x] Generar primera migración + seed de planes (FREE, STARTER, BUSINESS, ENTERPRISE). *(Nota: Se generó el esquema y script seed; la migración contra DB viva queda pendiente para correr localmente)*.
+- [x] Integrar `PrismaModule` en backend con cliente compartido desde `@massivo/prisma`.
+- [x] Crear cuenta en Clerk, configurar Organizations habilitadas, copiar keys a `.env`.
+- [x] Frontend: `<ClerkProvider>`, `<SignIn>`, `<OrganizationSwitcher>`, `<UserButton>`.
+- [x] Backend: `ClerkAuthGuard` valida JWT contra JWKS de Clerk.
+- [x] `TenantContextGuard` resuelve `organizationId` (por `clerkOrgId`) y valida `teamId` del header `X-Team-Id`.
+- [x] `AsyncLocalStorage` con `RequestContext { userId, organizationId, teamId, orgRole, teamRole }`.
+- [x] Webhook `/webhooks/clerk` con manejo idempotente de `user.*`, `organization.*`, `organizationMembership.*`.
 - [ ] Endpoint `GET /api/me/context` (devuelve user + orgs + teams + permissions).
 - [ ] CASL `AbilityFactory` en `@massivo/permissions` + `PoliciesGuard` + decorator `@CheckPolicies`.
 - [ ] Prisma client extension que auto-inyecta `organizationId` + `teamId` (modo strict, rechaza queries sin contexto en modelos tenant-aware).
@@ -215,3 +215,12 @@ Un usuario nuevo puede:
 - Verificado: pnpm install + typecheck + build + lint + format → todo verde.
 - Commit `0d8d5fe`, push a `origin/main`.
 - Creado `PROGRESS.md` (este archivo) para continuidad entre sesiones / IAs.
+
+### 2026-04-28 — Sesión 2 (Antigravity)
+- Configuración de Prisma 7 (`packages/prisma`) con esquema base (Postgres) y script de seed.
+- Integración de `PrismaModule` en el backend.
+- Configuración de llaves de Clerk en `.env` provistas por el usuario.
+- Integración de Clerk en Frontend (`<ClerkProvider>`, layouts y rutas de Sign In / Sign Up).
+- Implementación de `ClerkAuthGuard` en el backend usando `@clerk/backend` y corrección de tipos TypeScript en Express Request.
+- Implementación de webhooks de Clerk (`ClerkWebhookController`, `ClerkWebhookService`) usando `svix` para sincronizar usuarios, organizaciones y membresías.
+- Implementación de `TenantContextGuard` y `TenantContextInterceptor` con `AsyncLocalStorage` para manejar el scope de tenants en las peticiones.

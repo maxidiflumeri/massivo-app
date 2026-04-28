@@ -21,8 +21,13 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
-### En curso
-- Fase 1 — Tenancy core + Auth (Clerk). Ver `PROGRESS.md`.
+### Added
+- Configuración de base de datos Postgres con Prisma 7 y script de seed inicial (`packages/prisma`).
+- Integración de Clerk para autenticación en el Frontend (`@clerk/react`).
+- Vistas de Sign In, Sign Up y AppLayout protegidas con validación de sesión.
+- `ClerkAuthGuard` en el backend para interceptar y validar JWTs contra JWKS.
+- `ClerkWebhookController` en el backend para escuchar eventos de Clerk y sincronizar usuarios y organizaciones.
+- `TenantContextGuard` y `TenantContextInterceptor` para manejar el scope de tenants de manera aislada (`AsyncLocalStorage`).
 
 ---
 
