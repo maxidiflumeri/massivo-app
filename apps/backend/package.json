@@ -16,6 +16,9 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@clerk/backend": "^3.4.1",
+    "@massivo/prisma": "workspace:*",
+    "@massivo/shared-types": "workspace:*",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.1",
@@ -26,6 +29,7 @@
     "nest-winston": "^1.10.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "svix": "^1.92.2",
     "winston": "^3.17.0"
   },
   "devDependencies": {

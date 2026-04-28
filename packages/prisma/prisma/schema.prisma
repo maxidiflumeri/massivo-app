@@ -1,0 +1,182 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrgStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELED
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  BILLING
+  MEMBER
+}
+
+enum TeamRole {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum BillingProvider {
+  STRIPE
+  MERCADOPAGO
+}
+
+enum SubStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+enum UsageMetric {
+  EMAILS_SENT
+  WAPI_MESSAGES_SENT
+  CONTACTS
+  AI_TOKENS
+}
+
+model Organization {
+  id               String       @id @default(cuid())
+  clerkOrgId       String       @unique
+  name             String
+  slug             String       @unique
+  planId           String
+  plan             Plan         @relation(fields: [planId], references: [id])
+  stripeCustomerId String?      @unique
+  status           OrgStatus    @default(ACTIVE)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  teams            Team[]
+  memberships      OrgMembership[]
+  subscriptions    Subscription[]
+  usageCounters    UsageCounter[]
+  auditLogs        AuditLog[]
+
+  @@index([status])
+}
+
+model Team {
+  id             String           @id @default(cuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  slug           String
+  isDefault      Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+
+  memberships    TeamMembership[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+model User {
+  id              String           @id @default(cuid())
+  clerkUserId     String           @unique
+  email           String           @unique
+  name            String?
+  avatarUrl       String?
+  createdAt       DateTime         @default(now())
+
+  orgMemberships  OrgMembership[]
+  teamMemberships TeamMembership[]
+}
+
+model OrgMembership {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           OrgRole
+  createdAt      DateTime     @default(now())
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+}
+
+model TeamMembership {
+  id        String   @id @default(cuid())
+  userId    String
+  teamId    String
+  role      TeamRole
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+}
+
+model Plan {
+  id              String         @id @default(cuid())
+  code            String         @unique
+  name            String
+  priceMonthlyUsd Decimal
+  features        Json
+  limits          Json
+  isPublic        Boolean        @default(true)
+
+  organizations   Organization[]
+  subscriptions   Subscription[]
+}
+
+model Subscription {
+  id                 String          @id @default(cuid())
+  organizationId     String
+  planId             String
+  provider           BillingProvider
+  externalId         String
+  status             SubStatus
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean         @default(false)
+
+  organization       Organization    @relation(fields: [organizationId], references: [id])
+  plan               Plan            @relation(fields: [planId], references: [id])
+
+  @@index([organizationId])
+}
+
+model UsageCounter {
+  id             String       @id @default(cuid())
+  organizationId String
+  metric         UsageMetric
+  periodStart    DateTime
+  periodEnd      DateTime
+  value          BigInt       @default(0)
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, metric, periodStart])
+  @@index([organizationId, metric])
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  teamId         String?
+  actorUserId    String?
+  action         String
+  resourceType   String?
+  resourceId     String?
+  metadata       Json?
+  ip             String?
+  userAgent      String?
+  createdAt      DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, action])
+}
