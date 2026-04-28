@@ -135,16 +135,35 @@ Un usuario nuevo puede:
 
 ---
 
-## Cómo actualizar este archivo
+## Reglas de actualización (OBLIGATORIAS)
 
-Al terminar cada sesión de trabajo:
+> **Estas reglas no son opcionales.** Aplican a cualquier IA o desarrollador que cierre una sesión o complete una funcionalidad. El incumplimiento rompe la continuidad entre sesiones y deja el repo en estado ambiguo.
+
+### Al completar una funcionalidad o cerrar una fase
+
+1. **Actualizar `CHANGELOG.md`** con una entrada bajo `[Unreleased]` o crear una nueva versión si corresponde (ver formato Keep a Changelog en el propio archivo).
+2. **Actualizar `PROGRESS.md`** (este archivo) — ver pasos abajo.
+3. **Hacer commit** que incluya CHANGELOG + PROGRESS junto con el código de la funcionalidad. Mensaje en español.
+
+### Al terminar una sesión de trabajo (incluso si no se completó una funcionalidad)
 
 1. Mover de "Próximo paso" a "Resumen de lo hecho" lo que se completó.
 2. Actualizar el campo **Fase actual** y el **% de avance** si corresponde.
 3. Listar el nuevo "Próximo paso" concreto (la siguiente tarea ejecutable).
 4. Sumar entradas a "Decisiones tomadas" cuando se acuerde algo no trivial.
-5. Sumar al log al final de este archivo (sección "Bitácora de sesiones").
-6. Commitear: `docs: actualizar PROGRESS.md tras sesión <fecha>`.
+5. Sumar al log al final de este archivo (sección "Bitácora de sesiones") indicando qué IA/dev ejecutó la sesión.
+6. Si se completó funcionalidad, **actualizar también `CHANGELOG.md`** (regla anterior).
+7. Commitear con mensaje: `docs: actualizar PROGRESS.md y CHANGELOG.md tras sesión <fecha>` (o agruparlo con el commit de la funcionalidad).
+8. Pushear a `origin/main` salvo indicación explícita en contrario.
+
+### Qué va en cada archivo
+
+| Archivo | Para qué |
+|---------|----------|
+| `MIGRATION_PLAN.md` | Plan maestro inmutable. Solo se modifica si cambia una decisión arquitectónica de fondo. |
+| `PROGRESS.md` | Estado actual, próximo paso, decisiones, bitácora. Se actualiza en cada sesión. |
+| `CHANGELOG.md` | Historial de cambios entregados (features, fixes, infra, docs). Se actualiza al completar funcionalidad. |
+| Commits | Detalle granular de cada cambio. Mensajes en español, descriptivos. |
 
 ---
 
