@@ -1,0 +1,78 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { MeContextResponse } from '@massivo/shared-types';
+
+@Injectable()
+export class MeService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async getContext(clerkUserId: string): Promise<MeContextResponse> {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkUserId },
+      include: {
+        orgMemberships: {
+          include: {
+            organization: {
+              include: {
+                plan: true,
+                teams: {
+                  include: {
+                    memberships: { where: { user: { clerkUserId } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(
+        'Usuario no encontrado en la base local. Si te acabás de registrar, esperá a que se procese el webhook de Clerk y reintentá.',
+      );
+    }
+
+    const organizations = user.orgMemberships.map((membership) => {
+      const org = membership.organization;
+      const teams = org.teams
+        .filter((team) => team.memberships.length > 0)
+        .map((team) => {
+          const teamMembership = team.memberships[0];
+          return {
+            id: team.id,
+            name: team.name,
+            slug: team.slug,
+            isDefault: team.isDefault,
+            role: teamMembership!.role,
+          };
+        });
+
+      return {
+        id: org.id,
+        clerkOrgId: org.clerkOrgId,
+        name: org.name,
+        slug: org.slug,
+        role: membership.role,
+        plan: {
+          code: org.plan.code,
+          name: org.plan.name,
+          features: org.plan.features as Record<string, unknown>,
+          limits: org.plan.limits as Record<string, unknown>,
+        },
+        teams,
+      };
+    });
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+      },
+      organizations,
+      permissions: {},
+    };
+  }
+}

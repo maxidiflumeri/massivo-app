@@ -7,6 +7,7 @@ import { HealthController } from './common/health/health.controller';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './common/auth/auth.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { MeModule } from './modules/me/me.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     PrismaModule,
     AuthModule,
     WebhooksModule,
+    MeModule,
   ],
   controllers: [HealthController],
   providers: [],

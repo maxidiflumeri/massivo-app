@@ -125,7 +125,7 @@ Ver `MIGRATION_PLAN.md` sección **9. Plan de ejecución por fases → Fase 1**.
 - [x] `TenantContextGuard` resuelve `organizationId` (por `clerkOrgId`) y valida `teamId` del header `X-Team-Id`.
 - [x] `AsyncLocalStorage` con `RequestContext { userId, organizationId, teamId, orgRole, teamRole }`.
 - [x] Webhook `/webhooks/clerk` con manejo idempotente de `user.*`, `organization.*`, `organizationMembership.*`.
-- [ ] Endpoint `GET /api/me/context` (devuelve user + orgs + teams + permissions).
+- [x] Endpoint `GET /api/me/context` (devuelve user + orgs + teams + permissions).
 - [ ] CASL `AbilityFactory` en `@massivo/permissions` + `PoliciesGuard` + decorator `@CheckPolicies`.
 - [x] Prisma client extension que auto-inyecta `organizationId` + `teamId` (modo strict, rechaza queries sin contexto en modelos tenant-aware).
 - [x] Decorator `@SkipTenantScope()` para casos legítimos (admin, jobs de billing).
@@ -215,6 +215,10 @@ Un usuario nuevo puede:
 - Verificado: pnpm install + typecheck + build + lint + format → todo verde.
 - Commit `0d8d5fe`, push a `origin/main`.
 - Creado `PROGRESS.md` (este archivo) para continuidad entre sesiones / IAs.
+
+### 2026-04-29 — Sesión 5 (Claude Opus 4.7)
+- Implementado endpoint `GET /api/me/context` (`MeModule` con `MeService` + `MeController`). Devuelve user + orgs + teams + plan + roles del usuario logueado, sin requerir team elegido. Filtra teams a los que el user es miembro. Tipos en `@massivo/shared-types`. Auth: `ClerkAuthGuard`. Tests unitarios 3/3 ✅.
+- `permissions: {}` queda como placeholder hasta integrar CASL en la próxima tarea.
 
 ### 2026-04-29 — Sesión 4 (Claude Opus 4.7)
 - Implementada la **Prisma extension `tenant-scope`** (modo strict): auto-inyecta `organizationId` (y `teamId` cuando el modelo es tenant-scoped) en `where`/`data` de operaciones de read/write/upsert. Tira error si se hace una query a un modelo scoped sin `TenantContext`.
