@@ -127,8 +127,8 @@ Ver `MIGRATION_PLAN.md` sección **9. Plan de ejecución por fases → Fase 1**.
 - [x] Webhook `/webhooks/clerk` con manejo idempotente de `user.*`, `organization.*`, `organizationMembership.*`.
 - [ ] Endpoint `GET /api/me/context` (devuelve user + orgs + teams + permissions).
 - [ ] CASL `AbilityFactory` en `@massivo/permissions` + `PoliciesGuard` + decorator `@CheckPolicies`.
-- [ ] Prisma client extension que auto-inyecta `organizationId` + `teamId` (modo strict, rechaza queries sin contexto en modelos tenant-aware).
-- [ ] Decorator `@SkipTenantScope()` para casos legítimos (admin, jobs de billing).
+- [x] Prisma client extension que auto-inyecta `organizationId` + `teamId` (modo strict, rechaza queries sin contexto en modelos tenant-aware).
+- [x] Decorator `@SkipTenantScope()` para casos legítimos (admin, jobs de billing).
 - [ ] Onboarding: signup → crear org → crear team "General" → asignar plan FREE.
 - [ ] CRUD básico de teams (con plan-gate `multiTeam`).
 - [ ] CRUD de invitaciones a org y assignment a teams.
@@ -215,6 +215,13 @@ Un usuario nuevo puede:
 - Verificado: pnpm install + typecheck + build + lint + format → todo verde.
 - Commit `0d8d5fe`, push a `origin/main`.
 - Creado `PROGRESS.md` (este archivo) para continuidad entre sesiones / IAs.
+
+### 2026-04-29 — Sesión 4 (Claude Opus 4.7)
+- Implementada la **Prisma extension `tenant-scope`** (modo strict): auto-inyecta `organizationId` (y `teamId` cuando el modelo es tenant-scoped) en `where`/`data` de operaciones de read/write/upsert. Tira error si se hace una query a un modelo scoped sin `TenantContext`.
+- Categorización de modelos en `tenant-models.ts`: `TENANT_SCOPED` (vacío — se llena en Fase 2 con WapiConfig, EmailTemplate, Campaign, etc.), `ORG_SCOPED` (Subscription, UsageCounter, AuditLog), globales (Organization, Team, User, memberships, Plan).
+- `PrismaService` expone `prisma.scoped` (cliente con extension aplicada). El cliente raíz se reserva para `TenantContextGuard`, webhooks Clerk y onboarding que deben operar pre-contexto.
+- Sumadas API `TenantContext.runUnscoped()` y decorator `@SkipTenantScope()`.
+- Suite de tests unitarios de la extension (10/10 ✅): aislamiento, strict mode, skip, inject en read/create/upsert, distinción org vs tenant scoped.
 
 ### 2026-04-29 — Sesión 3 (Claude Opus 4.7)
 - Centralizada la carga de `.env` en la raíz del monorepo (backend, Vite, `prisma.config.ts`).
