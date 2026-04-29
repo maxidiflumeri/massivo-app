@@ -33,7 +33,7 @@ No avances sin confirmarme el plan del paso siguiente.
 
 - **Fase actual:** Fase 0 — Setup base ✅ **COMPLETADA**
 - **Próxima fase:** Fase 1 — Tenancy core + Auth (Clerk)
-- **Última actualización:** 2026-04-28
+- **Última actualización:** 2026-04-29
 - **Branch principal:** `main`
 - **Último commit:** `0d8d5fe` — `chore: setup inicial del monorepo Massivo App (Fase 0)`
 - **Repo remoto:** `https://github.com/maxidiflumeri/massivo-app`
@@ -215,6 +215,13 @@ Un usuario nuevo puede:
 - Verificado: pnpm install + typecheck + build + lint + format → todo verde.
 - Commit `0d8d5fe`, push a `origin/main`.
 - Creado `PROGRESS.md` (este archivo) para continuidad entre sesiones / IAs.
+
+### 2026-04-29 — Sesión 3 (Claude Opus 4.7)
+- Centralizada la carga de `.env` en la raíz del monorepo (backend, Vite, `prisma.config.ts`).
+- **Downgrade de Prisma 7 → 6.16** (alineado con `MIGRATION_PLAN.md`): Prisma 7 obliga a usar driver adapter o Accelerate, lo que rompía el arranque de `PrismaService`. Se ajustó `schema.prisma` con `url = env("DATABASE_URL")` y se simplificó `prisma.config.ts`.
+- Aplicada la migración inicial contra Postgres local en WSL y ejecutado el seed de planes (FREE, STARTER, BUSINESS, ENTERPRISE).
+- **Verificación funcional end-to-end de Clerk**: signup con Google, creación de organización, acceso a `/dashboard` protegido con `OrganizationSwitcher` + `UserButton`. Flujo UI + JWT operativo. Pendiente: verificar webhook `organization.created` contra Postgres (requiere tunnel ngrok/Cloudflare).
+- Confirmado que el backend levanta sin Redis (BullMQ entra recién en Fase 3).
 
 ### 2026-04-28 — Sesión 2 (Antigravity)
 - Configuración de Prisma 7 (`packages/prisma`) con esquema base (Postgres) y script de seed.

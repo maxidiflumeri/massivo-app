@@ -22,12 +22,19 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 ## [Unreleased]
 
 ### Added
-- Configuración de base de datos Postgres con Prisma 7 y script de seed inicial (`packages/prisma`).
+- Configuración de base de datos Postgres con Prisma y script de seed inicial (`packages/prisma`).
 - Integración de Clerk para autenticación en el Frontend (`@clerk/react`).
 - Vistas de Sign In, Sign Up y AppLayout protegidas con validación de sesión.
 - `ClerkAuthGuard` en el backend para interceptar y validar JWTs contra JWKS.
 - `ClerkWebhookController` en el backend para escuchar eventos de Clerk y sincronizar usuarios y organizaciones.
 - `TenantContextGuard` y `TenantContextInterceptor` para manejar el scope de tenants de manera aislada (`AsyncLocalStorage`).
+
+### Changed
+- Carga centralizada de `.env` desde la raíz del monorepo (backend `ConfigModule`, frontend `Vite envDir`, `prisma.config.ts`).
+
+### Fixed
+- Downgrade de Prisma 7 → 6.16 para alinear con `MIGRATION_PLAN.md` y restaurar conexión directa por `DATABASE_URL` (Prisma 7 obliga a usar driver adapter o Accelerate, lo que rompía el arranque de `PrismaService`).
+- `schema.prisma` ahora declara `url = env("DATABASE_URL")` en el bloque `datasource` (requerido por Prisma 6).
 
 ---
 
