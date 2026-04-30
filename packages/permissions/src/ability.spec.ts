@@ -12,8 +12,8 @@ const baseCtx: AbilityContext = {
 describe('defineAbilityFor', () => {
   it('OWNER puede manage Organization de su org pero no de otra', () => {
     const ability = defineAbilityFor({ ...baseCtx, orgRole: 'OWNER' });
-    expect(ability.can('manage', subject('Organization', { id: 'org1' }))).toBe(true);
-    expect(ability.can('manage', subject('Organization', { id: 'other' }))).toBe(false);
+    expect(ability.can('manage', subject('Organization', { id: 'org1' }) as unknown as 'Organization')).toBe(true);
+    expect(ability.can('manage', subject('Organization', { id: 'other' }) as unknown as 'Organization')).toBe(false);
   });
 
   it('TeamRole ADMIN puede manage all dentro del team', () => {
