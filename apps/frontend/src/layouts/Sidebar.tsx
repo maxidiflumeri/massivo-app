@@ -17,6 +17,7 @@ import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import ContactsIcon from '@mui/icons-material/Contacts';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DnsIcon from '@mui/icons-material/Dns';
+import BlockIcon from '@mui/icons-material/Block';
 import HomeIcon from '@mui/icons-material/Home';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -48,6 +49,7 @@ const NAV_GROUPS: NavGroupSpec[] = [
       { to: '/dashboard/email/campaigns', label: 'Campañas', icon: <CampaignIcon fontSize="small" /> },
       { to: '/dashboard/email/templates', label: 'Templates', icon: <DescriptionIcon fontSize="small" /> },
       { to: '/dashboard/email/smtp-accounts', label: 'Cuentas SMTP', icon: <DnsIcon fontSize="small" /> },
+      { to: '/dashboard/email/suppressions', label: 'Suppression list', icon: <BlockIcon fontSize="small" /> },
     ],
   },
   {

@@ -21,6 +21,18 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 3.C.4.c — Suppressions UI
+- **Backend**: refactor `SuppressionsController` con endpoints separados y paginados:
+  - `GET /api/email/suppressions/unsubscribes?cursor=&limit=&email=` — cursor pagination (take=limit+1), filtro `email` substring case-insensitive, devuelve `{ items, nextCursor }`.
+  - `GET /api/email/suppressions/bounces?cursor=&limit=&email=` — idem para bounces (orderBy `occurredAt desc`).
+  - `POST /api/email/suppressions/unsubscribes` body `{ email, scope, campaignId?, reason? }` — agrega manualmente con `source='manual'`. CASL: `create EmailSuppression`.
+  - `DELETE /api/email/suppressions/unsubscribes/:id` y `DELETE /api/email/suppressions/bounces/:id` — devuelven 204, 404 si no existe en tenant. CASL: `delete EmailSuppression`.
+  - Nuevos métodos `SuppressionService.deleteUnsubscribe(id)` / `deleteBounce(id)` con `deleteMany` por scoped (cross-tenant safe).
+  - DTO `CreateUnsubscribeDto` con validación condicional de `campaignId` cuando `scope=CAMPAIGN`.
+- **Tests**: `suppressions.controller.spec.ts` reescrito — 11 casos cubren default/limit/clamp/cursor/filtro email/paginación/create con scope GLOBAL+CAMPAIGN/delete OK+404 (unsub y bounce). Total 25/25 ✅ en módulo suppression.
+- **Frontend**: nueva página `/dashboard/email/suppressions` con dos Tabs (Unsubscribes / Bounces). Cada tabla muestra columnas relevantes (email, scope/code, source, reason/description, fecha, acción borrar) con paginación "Cargar más". Buscador por email (Enter o botón Buscar). Dialog "Agregar manual" — sólo permite scope GLOBAL para uso manual (CAMPAIGN se administra automáticamente vía link de unsubscribe). Confirm dialog antes de borrar. NavRow en sidebar con icono `BlockIcon`.
+- **Notas**: el listado de unsubscribes incluye `source` como chip (manual / link / webhook-ses) para diferenciar origen — los provenientes de webhook SES no son borrables sin perderlos hasta el siguiente envent.
+
 ### Fixed
 - **Campaign queda en PROCESSING para siempre tras enviar** — el worker marcaba reports `SENT/FAILED/SUPPRESSED` pero nunca transicionaba la campaign a `COMPLETED`. Agregado `EmailWorkerService.maybeCompleteCampaign(campaignId, teamId)` que cuenta reports `PENDING` y, si no quedan, hace `updateMany({ where: { id, status: 'PROCESSING' }, data: { status: 'COMPLETED' } })` (guard de status hace el update idempotente entre workers concurrentes). Se invoca tras cada transición terminal de report y emite `email.report.updated` para refrescar la UI. Tests worker: 7/7 ✅ (sumamos 2 casos).
 - **Loop infinito de `GET /api/email/campaigns/:id/reports`** en `CampaignSendsSection` — `useApi()` devuelve un objeto nuevo por render, así que `loadFirstPage` cambiaba siempre y disparaba el `useEffect`. Sacado de las deps; ahora sólo refetch ante cambio de `campaignId` / `statusFilter` / `refreshKey`.

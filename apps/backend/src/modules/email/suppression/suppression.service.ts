@@ -94,4 +94,18 @@ export class SuppressionService {
       } as never,
     });
   }
+
+  /**
+   * Borra un EmailUnsubscribe por id dentro del tenant. Devuelve true si borró,
+   * false si no existía / pertenecía a otro tenant.
+   */
+  async deleteUnsubscribe(id: string): Promise<boolean> {
+    const r = await this.prisma.scoped.emailUnsubscribe.deleteMany({ where: { id } });
+    return r.count > 0;
+  }
+
+  async deleteBounce(id: string): Promise<boolean> {
+    const r = await this.prisma.scoped.emailBounce.deleteMany({ where: { id } });
+    return r.count > 0;
+  }
 }
