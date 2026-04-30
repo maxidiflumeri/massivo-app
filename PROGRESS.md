@@ -189,7 +189,14 @@ Criterios de aceptación 3.A:
 - [x] Wiring en `EmailModule`.
 - [x] Tests: 12 nuevos en `email-campaigns.service.spec.ts` (create DRAFT/SCHEDULED/past, update DRAFT/Conflict, addContacts, send happy path + 4 edge cases, getReport). Backend total: **189/189 ✅**.
 
-**3.C.2 — Realtime events** (pendiente):
+**3.C.2 — Realtime events (✅ completada):**
+- [x] `EventsService.emitToTeamDebounced(teamId, event, key, payload, delayMs=1000)`: coalesce un burst de emisiones (mismo teamId+event+key) en 1 sola emisión que dispara tras `delayMs` sin nuevos eventos. Usa el payload de la llamada más reciente. `OnModuleDestroy` limpia timers pendientes.
+- [x] `EmailWorkerService` integra `EventsService` y emite `email.report.updated` con `{campaignId}` (debounce key=campaignId) en cada transición: SUPPRESSED, SENT, FAILED.
+- [x] `SesWebhookService` integra `EventsService` y emite `email.report.updated` en Bounce, Complaint, Open, Click. Delivery y eventos sin tenant resoluble NO emiten.
+- [x] `EmailModule` importa `EventsModule`.
+- [x] Tests: 5 nuevos — `events.service.spec.ts` (4: coalesce burst, keys distintas no coalescing, onModuleDestroy limpia, sin server no rompe), `ses-webhook.service.spec.ts` (1: emit en Open). Worker spec extendido con asserción de emit en happy path. Backend total: **194/194 ✅**.
+
+**3.C.3 — Frontend Unlayer + dashboard** (pendiente):
 - [ ] Editor Unlayer: portar embed desde AMSA (`apps/frontend/src/features/email/templates/`). Persiste `design` JSON + `html` en `EmailTemplate`.
 - [ ] Eventos en tiempo real: `EventsService.emitToTeam(teamId, 'email.report.updated', { campaignId, counts })` debounced 1s.
 - [ ] Tests integración + extensión `tenant-isolation.spec.ts` con `EmailCampaign`/`EmailReport`/`EmailEvent`.

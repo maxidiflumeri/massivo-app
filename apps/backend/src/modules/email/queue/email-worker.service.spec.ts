@@ -17,6 +17,7 @@ describe('EmailWorkerService.process', () => {
   let senders: { sendForAccount: jest.Mock };
   let tokens: { sign: jest.Mock; publicUrl: jest.Mock };
   let suppression: { check: jest.Mock };
+  let events: { emitToTeamDebounced: jest.Mock };
   let worker: EmailWorkerService;
 
   beforeEach(() => {
@@ -34,12 +35,14 @@ describe('EmailWorkerService.process', () => {
     suppression = {
       check: jest.fn().mockResolvedValue({ suppressed: false }),
     };
+    events = { emitToTeamDebounced: jest.fn() };
     worker = new EmailWorkerService(
       new ConfigService({}),
       { scoped: prismaScoped } as never,
       senders as never,
       tokens as never,
       suppression as never,
+      events as never,
     );
   });
 
@@ -102,6 +105,9 @@ describe('EmailWorkerService.process', () => {
         error: null,
       }),
     });
+    expect(events.emitToTeamDebounced).toHaveBeenCalledWith(
+      'team-a', 'email.report.updated', 'camp-1', { campaignId: 'camp-1' },
+    );
   });
 
   it('sender tira → update FAILED + rethrow', async () => {

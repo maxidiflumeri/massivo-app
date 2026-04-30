@@ -13,6 +13,7 @@ describe('SesWebhookService', () => {
     };
   };
   let suppression: { addUnsubscribe: jest.Mock };
+  let events: { emitToTeamDebounced: jest.Mock };
   let svc: SesWebhookService;
 
   beforeEach(() => {
@@ -21,7 +22,7 @@ describe('SesWebhookService', () => {
       emailReport: { findFirst: jest.fn() },
       scoped: {
         emailReport: {
-          findFirst: jest.fn().mockResolvedValue({ id: 'rep-1', contact: { email: 'a@b.com' } }),
+          findFirst: jest.fn().mockResolvedValue({ id: 'rep-1', campaignId: 'camp-1', contact: { email: 'a@b.com' } }),
           update: jest.fn().mockResolvedValue({}),
           updateMany: jest.fn().mockResolvedValue({}),
         },
@@ -30,10 +31,12 @@ describe('SesWebhookService', () => {
       },
     };
     suppression = { addUnsubscribe: jest.fn().mockResolvedValue(undefined) };
+    events = { emitToTeamDebounced: jest.fn() };
     svc = new SesWebhookService(
       new ConfigService({ SES_CONFIG_SET_PREFIX: 'massivo-team-' }),
       prisma as never,
       suppression as never,
+      events as never,
     );
   });
 
@@ -151,5 +154,14 @@ describe('SesWebhookService', () => {
     expect(prisma.scoped.emailEvent.create).not.toHaveBeenCalled();
     expect(prisma.scoped.emailBounce.create).not.toHaveBeenCalled();
     expect(suppression.addUnsubscribe).not.toHaveBeenCalled();
+    expect(events.emitToTeamDebounced).not.toHaveBeenCalled();
+  });
+
+  it('emite email.report.updated debounced en transiciones (Open/Bounce/Complaint/Click)', async () => {
+    prisma.team.findUnique.mockResolvedValueOnce({ id: 'team-9', organizationId: 'org-x' });
+    await svc.process(evt({ eventType: 'Open', open: { timestamp: 't' } }));
+    expect(events.emitToTeamDebounced).toHaveBeenCalledWith(
+      'team-9', 'email.report.updated', 'camp-1', { campaignId: 'camp-1' },
+    );
   });
 });

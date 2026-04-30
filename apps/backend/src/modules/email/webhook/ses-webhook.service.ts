@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { RequestContext } from '@massivo/shared-types';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { EventsService } from '../../events/events.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import type { SesEventNotification } from './sns-types';
 
@@ -28,7 +29,17 @@ export class SesWebhookService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly suppression: SuppressionService,
+    private readonly events: EventsService,
   ) {}
+
+  private notify(teamId: string, campaignId: string): void {
+    this.events.emitToTeamDebounced(
+      teamId,
+      'email.report.updated',
+      campaignId,
+      { campaignId },
+    );
+  }
 
   async process(event: SesEventNotification): Promise<void> {
     const tenant = await this.resolveTenant(event);
@@ -48,7 +59,7 @@ export class SesWebhookService {
     await TenantContext.run(ctx, async () => {
       const report = await this.prisma.scoped.emailReport.findFirst({
         where: { smtpMessageId: event.mail.messageId },
-        select: { id: true, contact: { select: { email: true } } },
+        select: { id: true, campaignId: true, contact: { select: { email: true } } },
       });
       if (!report) {
         this.logger.warn(`SES event para messageId ${event.mail.messageId} sin EmailReport en team ${tenant.teamId}`);
@@ -58,20 +69,24 @@ export class SesWebhookService {
       switch (event.eventType) {
         case 'Bounce':
           await this.handleBounce(report.id, report.contact.email, event);
+          this.notify(tenant.teamId, report.campaignId);
           break;
         case 'Complaint':
           await this.handleComplaint(report.id, report.contact.email, event);
+          this.notify(tenant.teamId, report.campaignId);
           break;
         case 'Delivery':
           await this.handleDelivery(report.id);
           break;
         case 'Open':
           await this.recordEvent(report.id, 'OPEN', event.open?.ipAddress, event.open?.userAgent);
+          this.notify(tenant.teamId, report.campaignId);
           break;
         case 'Click':
           await this.recordEvent(
             report.id, 'CLICK', event.click?.ipAddress, event.click?.userAgent, event.click?.link,
           );
+          this.notify(tenant.teamId, report.campaignId);
           break;
         default:
           this.logger.debug(`SES eventType ignorado: ${event.eventType}`);

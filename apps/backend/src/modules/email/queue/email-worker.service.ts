@@ -5,6 +5,7 @@ import Handlebars from 'handlebars';
 import type { RequestContext } from '@massivo/shared-types';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { EventsService } from '../../events/events.service';
 import { EmailSenderService } from '../sender/email-sender.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { prepareHtmlForTracking } from '../tracking/prepare-html';
@@ -31,7 +32,17 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly senders: EmailSenderService,
     private readonly tokens: TrackingTokenService,
     private readonly suppression: SuppressionService,
+    private readonly events: EventsService,
   ) {}
+
+  private notifyReportUpdate(teamId: string, campaignId: string): void {
+    this.events.emitToTeamDebounced(
+      teamId,
+      'email.report.updated',
+      campaignId,
+      { campaignId },
+    );
+  }
 
   onModuleInit(): void {
     if (this.config.get<string>('EMAIL_WORKER_ENABLED') === 'false') {
@@ -97,6 +108,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           where: { id: reportId },
           data: { status: 'SUPPRESSED', error: supp.reason ?? 'suppressed' },
         });
+        this.notifyReportUpdate(teamId, report.campaignId);
         this.logger.log(`Report ${reportId} suprimido (${supp.reason}) — skip send`);
         return { suppressed: true, reason: supp.reason };
       }
@@ -146,6 +158,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
             error: null,
           },
         });
+        this.notifyReportUpdate(teamId, report.campaignId);
         return { messageId: result.messageId };
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'unknown error';
@@ -153,6 +166,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           where: { id: reportId },
           data: { status: 'FAILED', error: msg.slice(0, 500) },
         });
+        this.notifyReportUpdate(teamId, report.campaignId);
         throw err;
       }
     });

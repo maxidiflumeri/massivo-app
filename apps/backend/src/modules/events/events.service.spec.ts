@@ -36,4 +36,38 @@ describe('EventsService', () => {
   it('roomsFor devuelve los 3 rooms en el orden esperado', () => {
     expect(EventsService.roomsFor('o', 't', 'u')).toEqual(['org:o', 'team:t', 'user:u']);
   });
+
+  describe('emitToTeamDebounced', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('coalesce burst → 1 emit con payload del último', () => {
+      service.emitToTeamDebounced('team-1', 'evt', 'key-a', { n: 1 }, 1000);
+      service.emitToTeamDebounced('team-1', 'evt', 'key-a', { n: 2 }, 1000);
+      service.emitToTeamDebounced('team-1', 'evt', 'key-a', { n: 3 }, 1000);
+      expect(emitMock).not.toHaveBeenCalled();
+      jest.advanceTimersByTime(1000);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      expect(emitMock).toHaveBeenCalledWith('evt', { n: 3 });
+    });
+
+    it('keys distintas no coalescing', () => {
+      service.emitToTeamDebounced('team-1', 'evt', 'a', { v: 'a' }, 500);
+      service.emitToTeamDebounced('team-1', 'evt', 'b', { v: 'b' }, 500);
+      jest.advanceTimersByTime(500);
+      expect(emitMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('onModuleDestroy limpia timers pendientes', () => {
+      service.emitToTeamDebounced('team-1', 'evt', 'k', { x: 1 }, 1000);
+      service.onModuleDestroy();
+      jest.advanceTimersByTime(2000);
+      expect(emitMock).not.toHaveBeenCalled();
+    });
+
+    it('sin server: no rompe', () => {
+      const fresh = new EventsService();
+      expect(() => fresh.emitToTeamDebounced('t', 'e', 'k', null)).not.toThrow();
+    });
+  });
 });
