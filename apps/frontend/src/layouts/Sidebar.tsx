@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -16,13 +16,13 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import ContactsIcon from '@mui/icons-material/Contacts';
 import SettingsIcon from '@mui/icons-material/Settings';
-import LightModeIcon from '@mui/icons-material/LightMode';
-import DarkModeIcon from '@mui/icons-material/DarkMode';
-import SendRoundedIcon from '@mui/icons-material/SendRounded';
-import { OrganizationSwitcher, UserButton } from '@clerk/clerk-react';
-import { useColorMode } from '../theme/ThemeProvider';
+import HomeIcon from '@mui/icons-material/Home';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import { OrganizationSwitcher } from '@clerk/clerk-react';
 
-export const SIDEBAR_WIDTH = 264;
+export const SIDEBAR_WIDTH = 248;
+export const SIDEBAR_COLLAPSED_WIDTH = 64;
 
 interface NavItemSpec {
   to?: string;
@@ -37,6 +37,10 @@ interface NavGroupSpec {
 }
 
 const NAV_GROUPS: NavGroupSpec[] = [
+  {
+    label: 'General',
+    items: [{ to: '/dashboard', label: 'Inicio', icon: <HomeIcon fontSize="small" /> }],
+  },
   {
     label: 'Email',
     items: [
@@ -53,201 +57,198 @@ const NAV_GROUPS: NavGroupSpec[] = [
   },
   {
     label: 'Datos',
-    items: [
-      { label: 'Contactos', icon: <ContactsIcon fontSize="small" />, disabled: true },
-    ],
+    items: [{ label: 'Contactos', icon: <ContactsIcon fontSize="small" />, disabled: true }],
   },
   {
     label: 'Cuenta',
-    items: [
-      { label: 'Configuración', icon: <SettingsIcon fontSize="small" />, disabled: true },
-    ],
+    items: [{ label: 'Configuración', icon: <SettingsIcon fontSize="small" />, disabled: true }],
   },
 ];
 
 interface SidebarProps {
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
   onNavigate?: () => void;
+  showCollapseButton?: boolean;
 }
 
-export function Sidebar({ onNavigate }: SidebarProps) {
-  const navigate = useNavigate();
-  const { mode, toggleMode } = useColorMode();
-
+export function Sidebar({
+  collapsed = false,
+  onToggleCollapsed,
+  onNavigate,
+  showCollapseButton = true,
+}: SidebarProps) {
   return (
     <Box
       sx={{
-        width: SIDEBAR_WIDTH,
+        width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH,
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'background.paper',
+        transition: (t) =>
+          t.transitions.create('width', {
+            easing: t.transitions.easing.sharp,
+            duration: t.transitions.duration.shortest,
+          }),
+        overflow: 'hidden',
       }}
     >
-      {/* Brand */}
-      <Box
-        sx={{
-          px: 3,
-          py: 2.5,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.5,
-          cursor: 'pointer',
-        }}
-        onClick={() => {
-          navigate('/dashboard');
-          onNavigate?.();
-        }}
-      >
-        <Box
-          sx={{
-            width: 36,
-            height: 36,
-            borderRadius: 2,
-            background: 'linear-gradient(135deg, #5B5BD6 0%, #8B5BD6 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'common.white',
-            boxShadow: '0 4px 12px rgba(91, 91, 214, 0.35)',
-          }}
-        >
-          <SendRoundedIcon fontSize="small" />
-        </Box>
-        <Box>
-          <Typography variant="subtitle1" fontWeight={700} lineHeight={1.1}>
-            Massivo
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Multichannel sender
-          </Typography>
-        </Box>
-      </Box>
-
-      <Divider />
-
-      {/* Org switcher */}
-      <Box sx={{ px: 2, py: 1.5 }}>
-        <OrganizationSwitcher
-          hidePersonal={false}
-          afterCreateOrganizationUrl="/dashboard"
-          afterLeaveOrganizationUrl="/dashboard"
-          afterSelectOrganizationUrl="/dashboard"
-          appearance={{
-            elements: {
-              rootBox: { width: '100%' },
-              organizationSwitcherTrigger: { width: '100%', justifyContent: 'flex-start' },
-            },
-          }}
-        />
-      </Box>
-
-      <Divider />
+      {/* Org switcher (oculto cuando colapsado) */}
+      {!collapsed && (
+        <>
+          <Box sx={{ px: 2, py: 1.5 }}>
+            <OrganizationSwitcher
+              hidePersonal={false}
+              afterCreateOrganizationUrl="/dashboard"
+              afterLeaveOrganizationUrl="/dashboard"
+              afterSelectOrganizationUrl="/dashboard"
+              appearance={{
+                elements: {
+                  rootBox: { width: '100%' },
+                  organizationSwitcherTrigger: {
+                    width: '100%',
+                    justifyContent: 'flex-start',
+                    padding: '8px 10px',
+                  },
+                },
+              }}
+            />
+          </Box>
+          <Divider />
+        </>
+      )}
 
       {/* Nav */}
-      <Box sx={{ flex: 1, overflowY: 'auto', py: 1.5, px: 1.5 }}>
-        <Stack spacing={2}>
-          {NAV_GROUPS.map((group) => (
+      <Box sx={{ flex: 1, overflowY: 'auto', py: 1.5, px: collapsed ? 0.75 : 1.25 }}>
+        <Stack spacing={collapsed ? 0.5 : 2}>
+          {NAV_GROUPS.map((group, idx) => (
             <Box key={group.label}>
-              <Typography
-                variant="overline"
-                sx={{
-                  px: 1.5,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: 0.6,
-                  color: 'text.secondary',
-                  display: 'block',
-                  mb: 0.5,
-                }}
-              >
-                {group.label}
-              </Typography>
+              {!collapsed && (
+                <Typography
+                  variant="overline"
+                  sx={{
+                    px: 1.5,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: 0.6,
+                    color: 'text.secondary',
+                    display: 'block',
+                    mb: 0.5,
+                  }}
+                >
+                  {group.label}
+                </Typography>
+              )}
+              {collapsed && idx > 0 && <Divider sx={{ my: 0.75, mx: 0.5 }} />}
               <Stack spacing={0.25}>
-                {group.items.map((item) => {
-                  const content = (
-                    <>
-                      <ListItemIcon sx={{ minWidth: 32, color: 'inherit' }}>
-                        {item.icon}
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={item.label}
-                        primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
-                      />
-                    </>
-                  );
-                  if (item.disabled || !item.to) {
-                    return (
-                      <ListItemButton
-                        key={item.label}
-                        disabled
-                        sx={{
-                          borderRadius: 1.5,
-                          py: 0.75,
-                          px: 1.5,
-                        }}
-                      >
-                        {content}
-                        <Typography variant="caption" color="text.disabled" sx={{ ml: 1 }}>
-                          pronto
-                        </Typography>
-                      </ListItemButton>
-                    );
-                  }
-                  return (
-                    <ListItemButton
-                      key={item.label}
-                      component={NavLink}
-                      to={item.to}
-                      onClick={() => onNavigate?.()}
-                      sx={{
-                        borderRadius: 1.5,
-                        py: 0.75,
-                        px: 1.5,
-                        color: 'text.secondary',
-                        '&:hover': {
-                          bgcolor: 'action.hover',
-                          color: 'text.primary',
-                        },
-                        '&.active': {
-                          bgcolor: 'primary.main',
-                          color: 'primary.contrastText',
-                          '&:hover': {
-                            bgcolor: 'primary.dark',
-                          },
-                          '& .MuiListItemIcon-root': { color: 'inherit' },
-                        },
-                      }}
-                    >
-                      {content}
-                    </ListItemButton>
-                  );
-                })}
+                {group.items.map((item) => (
+                  <NavRow
+                    key={item.label}
+                    item={item}
+                    collapsed={collapsed}
+                    onNavigate={onNavigate}
+                  />
+                ))}
               </Stack>
             </Box>
           ))}
         </Stack>
       </Box>
 
-      <Divider />
-
-      {/* Footer: user + theme toggle */}
-      <Box
-        sx={{
-          px: 2,
-          py: 1.5,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 1,
-        }}
-      >
-        <UserButton afterSignOutUrl="/sign-in" />
-        <Tooltip title={mode === 'light' ? 'Modo oscuro' : 'Modo claro'}>
-          <IconButton size="small" onClick={toggleMode}>
-            {mode === 'light' ? <DarkModeIcon fontSize="small" /> : <LightModeIcon fontSize="small" />}
-          </IconButton>
-        </Tooltip>
-      </Box>
+      {/* Collapse toggle (desktop only) */}
+      {showCollapseButton && (
+        <>
+          <Divider />
+          <Box
+            sx={{
+              p: 1,
+              display: 'flex',
+              justifyContent: collapsed ? 'center' : 'flex-end',
+            }}
+          >
+            <Tooltip title={collapsed ? 'Expandir' : 'Colapsar'} placement="right">
+              <IconButton size="small" onClick={onToggleCollapsed}>
+                {collapsed ? <ChevronRightIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </>
+      )}
     </Box>
   );
+}
+
+function NavRow({
+  item,
+  collapsed,
+  onNavigate,
+}: {
+  item: NavItemSpec;
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
+  const baseSx = {
+    borderRadius: 1.5,
+    py: 0.85,
+    px: collapsed ? 1 : 1.5,
+    minHeight: 40,
+    justifyContent: collapsed ? 'center' : 'flex-start',
+    color: 'text.secondary',
+    '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+    '&.active': {
+      bgcolor: 'primary.main',
+      color: 'primary.contrastText',
+      '&:hover': { bgcolor: 'primary.dark' },
+      '& .MuiListItemIcon-root': { color: 'inherit' },
+    },
+  } as const;
+
+  const iconSx = {
+    minWidth: collapsed ? 0 : 32,
+    color: 'inherit',
+    justifyContent: 'center',
+  } as const;
+
+  const button = item.disabled || !item.to ? (
+    <ListItemButton disabled sx={baseSx}>
+      <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
+      {!collapsed && (
+        <>
+          <ListItemText
+            primary={item.label}
+            primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+          />
+          <Typography variant="caption" color="text.disabled" sx={{ ml: 1 }}>
+            pronto
+          </Typography>
+        </>
+      )}
+    </ListItemButton>
+  ) : (
+    <ListItemButton
+      component={NavLink}
+      to={item.to}
+      end={item.to === '/dashboard'}
+      onClick={() => onNavigate?.()}
+      sx={baseSx}
+    >
+      <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
+      {!collapsed && (
+        <ListItemText
+          primary={item.label}
+          primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+        />
+      )}
+    </ListItemButton>
+  );
+
+  if (collapsed) {
+    return (
+      <Tooltip title={item.label} placement="right" arrow>
+        <span>{button}</span>
+      </Tooltip>
+    );
+  }
+  return button;
 }

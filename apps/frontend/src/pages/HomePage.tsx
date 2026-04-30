@@ -93,9 +93,10 @@ export function HomePage() {
       <Box
         sx={{
           minHeight: '100vh',
-          background: isDark
-            ? 'radial-gradient(ellipse at top, rgba(91,91,214,0.18), transparent 60%), #0b0d10'
-            : 'radial-gradient(ellipse at top, rgba(91,91,214,0.10), transparent 60%), #fafafa',
+          bgcolor: 'background.default',
+          backgroundImage: isDark
+            ? 'radial-gradient(ellipse at top, rgba(91,91,214,0.18), transparent 60%)'
+            : 'radial-gradient(ellipse at top, rgba(91,91,214,0.10), transparent 60%)',
         }}
       >
         {/* Navbar */}
@@ -106,7 +107,7 @@ export function HomePage() {
             top: 0,
             zIndex: 10,
             backdropFilter: 'blur(12px)',
-            background: isDark ? 'rgba(11,13,16,0.7)' : 'rgba(255,255,255,0.7)',
+            bgcolor: isDark ? 'rgba(20,23,28,0.72)' : 'rgba(255,255,255,0.72)',
             borderBottom: 1,
             borderColor: 'divider',
           }}
@@ -173,8 +174,8 @@ export function HomePage() {
                 lineHeight: 1.05,
                 letterSpacing: -1.5,
                 background: isDark
-                  ? 'linear-gradient(180deg, #fff 0%, #aaa 100%)'
-                  : 'linear-gradient(180deg, #111 0%, #555 100%)',
+                  ? 'linear-gradient(180deg, #ffffff 0%, #9aa3ad 100%)'
+                  : 'linear-gradient(180deg, #0f172a 0%, #64748b 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
               }}

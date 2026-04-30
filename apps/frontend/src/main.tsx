@@ -2,12 +2,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
-import { ThemeProvider } from './theme/ThemeProvider';
+import { ColorModeProvider, MuiThemeWithMode } from './theme/ThemeProvider';
+import { ClerkWithTheme } from './theme/ClerkWithTheme';
 import { TeamProvider } from './team/TeamContext';
 import { NotifyProvider } from './feedback/NotifyProvider';
 import { ConfirmProvider } from './feedback/ConfirmProvider';
-
-import { ClerkProvider } from '@clerk/clerk-react';
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Root element not found');
@@ -19,18 +18,20 @@ if (!clerkPubKey) {
 
 createRoot(rootEl).render(
   <StrictMode>
-    <ClerkProvider publishableKey={clerkPubKey} appearance={{ elements: { rootBox: { display: 'flex', justifyContent: 'center', width: '100%' } } }}>
-      <ThemeProvider>
-        <NotifyProvider>
-          <ConfirmProvider>
-            <TeamProvider>
-              <BrowserRouter>
-                <App />
-              </BrowserRouter>
-            </TeamProvider>
-          </ConfirmProvider>
-        </NotifyProvider>
-      </ThemeProvider>
-    </ClerkProvider>
+    <ColorModeProvider>
+      <MuiThemeWithMode>
+        <ClerkWithTheme publishableKey={clerkPubKey}>
+          <NotifyProvider>
+            <ConfirmProvider>
+              <TeamProvider>
+                <BrowserRouter>
+                  <App />
+                </BrowserRouter>
+              </TeamProvider>
+            </ConfirmProvider>
+          </NotifyProvider>
+        </ClerkWithTheme>
+      </MuiThemeWithMode>
+    </ColorModeProvider>
   </StrictMode>,
 );
