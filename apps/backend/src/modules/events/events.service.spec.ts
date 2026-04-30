@@ -37,32 +37,47 @@ describe('EventsService', () => {
     expect(EventsService.roomsFor('o', 't', 'u')).toEqual(['org:o', 'team:t', 'user:u']);
   });
 
-  describe('emitToTeamDebounced', () => {
+  describe('emitToTeamDebounced (throttle leading+trailing)', () => {
     beforeEach(() => jest.useFakeTimers());
     afterEach(() => jest.useRealTimers());
 
-    it('coalesce burst → 1 emit con payload del último', () => {
+    it('leading edge: el primer emit del burst sale inmediato', () => {
       service.emitToTeamDebounced('team-1', 'evt', 'key-a', { n: 1 }, 1000);
-      service.emitToTeamDebounced('team-1', 'evt', 'key-a', { n: 2 }, 1000);
-      service.emitToTeamDebounced('team-1', 'evt', 'key-a', { n: 3 }, 1000);
-      expect(emitMock).not.toHaveBeenCalled();
-      jest.advanceTimersByTime(1000);
       expect(emitMock).toHaveBeenCalledTimes(1);
-      expect(emitMock).toHaveBeenCalledWith('evt', { n: 3 });
+      expect(emitMock).toHaveBeenCalledWith('evt', { n: 1 });
     });
 
-    it('keys distintas no coalescing', () => {
+    it('trailing edge: dentro del intervalo, agenda 1 emit con el último payload', () => {
+      service.emitToTeamDebounced('team-1', 'evt', 'k', { n: 1 }, 1000); // leading
+      service.emitToTeamDebounced('team-1', 'evt', 'k', { n: 2 }, 1000);
+      service.emitToTeamDebounced('team-1', 'evt', 'k', { n: 3 }, 1000);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      jest.advanceTimersByTime(1000);
+      expect(emitMock).toHaveBeenCalledTimes(2);
+      expect(emitMock).toHaveBeenLastCalledWith('evt', { n: 3 });
+    });
+
+    it('emits posteriores al intervalo salen como nuevo leading edge', () => {
+      service.emitToTeamDebounced('team-1', 'evt', 'k', { n: 1 }, 1000);
+      jest.advanceTimersByTime(1500);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      service.emitToTeamDebounced('team-1', 'evt', 'k', { n: 2 }, 1000);
+      expect(emitMock).toHaveBeenCalledTimes(2);
+      expect(emitMock).toHaveBeenLastCalledWith('evt', { n: 2 });
+    });
+
+    it('keys distintas no comparten estado', () => {
       service.emitToTeamDebounced('team-1', 'evt', 'a', { v: 'a' }, 500);
       service.emitToTeamDebounced('team-1', 'evt', 'b', { v: 'b' }, 500);
-      jest.advanceTimersByTime(500);
       expect(emitMock).toHaveBeenCalledTimes(2);
     });
 
-    it('onModuleDestroy limpia timers pendientes', () => {
-      service.emitToTeamDebounced('team-1', 'evt', 'k', { x: 1 }, 1000);
+    it('onModuleDestroy limpia trailing timers pendientes', () => {
+      service.emitToTeamDebounced('team-1', 'evt', 'k', { x: 1 }, 1000); // leading
+      service.emitToTeamDebounced('team-1', 'evt', 'k', { x: 2 }, 1000); // schedules trailing
       service.onModuleDestroy();
       jest.advanceTimersByTime(2000);
-      expect(emitMock).not.toHaveBeenCalled();
+      expect(emitMock).toHaveBeenCalledTimes(1);
     });
 
     it('sin server: no rompe', () => {

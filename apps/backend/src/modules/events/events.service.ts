@@ -1,11 +1,17 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import type { Server } from 'socket.io';
 
+interface ThrottleState {
+  lastEmitAt: number;
+  tailTimer: NodeJS.Timeout | null;
+  latestPayload: unknown;
+}
+
 @Injectable()
 export class EventsService implements OnModuleDestroy {
   private readonly logger = new Logger(EventsService.name);
   private server: Server | null = null;
-  private debounceTimers = new Map<string, NodeJS.Timeout>();
+  private throttleState = new Map<string, ThrottleState>();
 
   setServer(server: Server): void {
     this.server = server;
@@ -17,33 +23,60 @@ export class EventsService implements OnModuleDestroy {
   }
 
   /**
-   * Coalesce un burst de emisiones (mismo teamId+event+key) en una sola emisión
-   * que dispara tras `delayMs` sin recibir nuevos eventos. Usa el payload de la
-   * llamada más reciente. Útil para `email.report.updated` cuando un worker
-   * procesa decenas de reports/segundo y queremos refrescar el dashboard sin
-   * spamear sockets.
+   * Throttle leading+trailing por (teamId, event, key): emite inmediato si la
+   * última emisión fue hace ≥ `intervalMs`, y siempre agenda un trailing emit
+   * con el payload más reciente del burst. Esto garantiza progreso visible
+   * en el frontend (1 emit/seg como mucho) durante envíos masivos, donde un
+   * debounce puro nunca dispara porque cada nuevo update reinicia el timer.
    */
   emitToTeamDebounced(
     teamId: string,
     event: string,
     key: string,
     payload: unknown,
-    delayMs = 1000,
+    intervalMs = 1000,
   ): void {
     if (!this.server) return;
     const cacheKey = `${teamId}|${event}|${key}`;
-    const existing = this.debounceTimers.get(cacheKey);
-    if (existing) clearTimeout(existing);
-    const timer = setTimeout(() => {
-      this.debounceTimers.delete(cacheKey);
-      this.server?.to(`team:${teamId}`).emit(event, payload);
-    }, delayMs);
-    this.debounceTimers.set(cacheKey, timer);
+    const now = Date.now();
+    const state = this.throttleState.get(cacheKey);
+
+    if (!state) {
+      this.server.to(`team:${teamId}`).emit(event, payload);
+      this.throttleState.set(cacheKey, {
+        lastEmitAt: now,
+        tailTimer: null,
+        latestPayload: payload,
+      });
+      return;
+    }
+
+    state.latestPayload = payload;
+    const elapsed = now - state.lastEmitAt;
+    if (elapsed >= intervalMs) {
+      this.server.to(`team:${teamId}`).emit(event, payload);
+      state.lastEmitAt = now;
+      if (state.tailTimer) {
+        clearTimeout(state.tailTimer);
+        state.tailTimer = null;
+      }
+      return;
+    }
+    if (state.tailTimer) return;
+    state.tailTimer = setTimeout(() => {
+      const s = this.throttleState.get(cacheKey);
+      if (!s) return;
+      s.tailTimer = null;
+      s.lastEmitAt = Date.now();
+      this.server?.to(`team:${teamId}`).emit(event, s.latestPayload);
+    }, intervalMs - elapsed);
   }
 
   onModuleDestroy(): void {
-    for (const t of this.debounceTimers.values()) clearTimeout(t);
-    this.debounceTimers.clear();
+    for (const s of this.throttleState.values()) {
+      if (s.tailTimer) clearTimeout(s.tailTimer);
+    }
+    this.throttleState.clear();
   }
 
   emitToOrg(organizationId: string, event: string, payload: unknown): void {
