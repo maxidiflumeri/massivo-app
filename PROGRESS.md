@@ -205,7 +205,12 @@ Criterios de aceptación 3.A:
 - [x] Router wiring: `/dashboard/email/templates`, `/dashboard/email/campaigns`, `/dashboard/email/campaigns/:id` (placeholders por ahora). `TeamProvider` envuelve la app antes del router.
 - [x] Dep nueva: `socket.io-client@^4.8.3`.
 
-**3.C.3.b — Templates + Unlayer** (pendiente):
+**3.C.3.b — Templates + Unlayer (✅ completada):**
+- [x] `TemplatesListPage` (`/dashboard/email/templates`): tabla con MUI con name/subject/updatedAt + acciones edit/delete + botón "Nuevo template". Confirm() antes de delete.
+- [x] `TemplateEditorPage` (`/dashboard/email/templates/new` y `/:id`): Unlayer embed (`react-email-editor`) con `onReady` → `loadDesign(design)` cuando se carga uno existente. Form con name + subject. Botón Guardar exporta `{design, html}` y POST/PATCH al backend. Redirige a la URL del id creado en modo new.
+- [x] Dep nueva: `react-email-editor@^1.8.0`.
+
+**3.C.3.c — Campaigns + contacts** (pendiente):
 - [ ] Editor Unlayer: portar embed desde AMSA (`apps/frontend/src/features/email/templates/`). Persiste `design` JSON + `html` en `EmailTemplate`.
 - [ ] Eventos en tiempo real: `EventsService.emitToTeam(teamId, 'email.report.updated', { campaignId, counts })` debounced 1s.
 - [ ] Tests integración + extensión `tenant-isolation.spec.ts` con `EmailCampaign`/`EmailReport`/`EmailEvent`.
