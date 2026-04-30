@@ -131,8 +131,8 @@ Ver `MIGRATION_PLAN.md` sección **9. Plan de ejecución por fases → Fase 1**.
 - [x] Decorator `@SkipTenantScope()` para casos legítimos (admin, jobs de billing).
 - [x] Onboarding: signup → crear org → crear team "General" → asignar plan FREE. Mejorado: upsert idempotente, OWNER para creator, auto-assign al team General.
 - [x] CRUD básico de teams (`TeamsModule`): list/get/create/update/delete con `@CheckPolicies` (primer consumer del auth chain completo). Plan-gate `create Team` via CASL. Tests: 8 ✅.
-- [ ] CRUD de invitaciones a org y assignment a teams.
-- [ ] Tests de integración: dos tenants concurrentes, no pueden leer datos del otro.
+- [x] CRUD de invitaciones a org y assignment a teams. Invites a org las maneja Clerk. Implementado: `TeamMembersController` + `TeamMembersService` para asignar/desasignar/cambiar rol de users en teams. Validación de pertenencia a la org, protección contra eliminar último admin. Tests: 6 ✅.
+- [x] Tests de integración: dos tenants concurrentes, no pueden leer datos del otro. Suite `tenant-isolation.spec.ts` con 10 tests ✅.
 
 ### Criterio de aceptación de Fase 1
 
@@ -260,3 +260,11 @@ Un usuario nuevo puede:
 - DTOs con `class-validator` (`CreateTeamDto`, `UpdateTeamDto`).
 - Tests `TeamsService`: 8 tests (sin contexto → 403, OWNER vs MEMBER visibility, slug duplicado, auto-assign creator, default protection, cross-org isolation).
 - Verificación: typecheck 8/8 ✅, build 5/5 ✅, tests backend 33/33 ✅, tests permissions 11/11 ✅.
+
+### 2026-04-29 — Sesión 6c (Antigravity — Opus 4.6)
+- **TeamMembersService**: CRUD de miembros de team (`GET/POST/PATCH/DELETE /api/teams/:teamId/members`). Valida pertenencia a la org antes de agregar, protege contra eliminar último admin, cross-org isolation.
+- DTOs `AddTeamMemberDto` / `UpdateTeamMemberRoleDto` con `class-validator`.
+- Tests `TeamMembersService`: 6 tests.
+- **Suite `tenant-isolation.spec.ts`**: 10 tests verificando que Tenant A no puede leer/escribir/eliminar datos de Tenant B, ni con TeamsService ni con TeamMembersService. ForbiddenException sin contexto.
+- **🏁 FASE 1 COMPLETADA**: todos los criterios de aceptación verificados.
+- Verificación final: typecheck 8/8 ✅, build 5/5 ✅, tests backend 49/49 ✅, tests permissions 11/11 ✅.
