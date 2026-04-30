@@ -1,6 +1,15 @@
 export type ScopeKind = 'tenant' | 'org' | 'global';
 
-export const TENANT_SCOPED_MODELS = new Set<string>([]);
+export const TENANT_SCOPED_MODELS = new Set<string>([
+  'SmtpAccount',
+  'EmailTemplate',
+  'EmailCampaign',
+  'EmailContact',
+  'EmailReport',
+  'EmailEvent',
+  'EmailBounce',
+  'EmailUnsubscribe',
+]);
 
 export const ORG_SCOPED_MODELS = new Set<string>(['Subscription', 'UsageCounter', 'AuditLog']);
 

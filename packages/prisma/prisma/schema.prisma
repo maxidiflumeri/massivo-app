@@ -45,63 +45,108 @@ enum UsageMetric {
   AI_TOKENS
 }
 
-model Organization {
-  id               String       @id @default(cuid())
-  clerkOrgId       String       @unique
-  name             String
-  slug             String       @unique
-  planId           String
-  plan             Plan         @relation(fields: [planId], references: [id])
-  stripeCustomerId String?      @unique
-  status           OrgStatus    @default(ACTIVE)
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+enum EmailCampaignStatus {
+  DRAFT
+  SCHEDULED
+  PROCESSING
+  PAUSED
+  COMPLETED
+  FAILED
+}
 
-  teams            Team[]
-  memberships      OrgMembership[]
-  subscriptions    Subscription[]
-  usageCounters    UsageCounter[]
-  auditLogs        AuditLog[]
+enum EmailReportStatus {
+  PENDING
+  SENT
+  FAILED
+  BOUNCED
+  COMPLAINED
+}
+
+enum EmailEventType {
+  OPEN
+  CLICK
+}
+
+enum EmailUnsubscribeScope {
+  GLOBAL
+  CAMPAIGN
+}
+
+model Organization {
+  id               String    @id @default(cuid())
+  clerkOrgId       String    @unique
+  name             String
+  slug             String    @unique
+  planId           String
+  plan             Plan      @relation(fields: [planId], references: [id])
+  stripeCustomerId String?   @unique
+  status           OrgStatus @default(ACTIVE)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  teams         Team[]
+  memberships   OrgMembership[]
+  subscriptions Subscription[]
+  usageCounters UsageCounter[]
+  auditLogs     AuditLog[]
+
+  smtpAccounts      SmtpAccount[]
+  emailTemplates    EmailTemplate[]
+  emailCampaigns    EmailCampaign[]
+  emailContacts     EmailContact[]
+  emailReports      EmailReport[]
+  emailEvents       EmailEvent[]
+  emailBounces      EmailBounce[]
+  emailUnsubscribes EmailUnsubscribe[]
 
   @@index([status])
 }
 
 model Team {
-  id             String           @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
-  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
   slug           String
-  isDefault      Boolean          @default(false)
-  createdAt      DateTime         @default(now())
+  isDefault      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
 
-  memberships    TeamMembership[]
+  memberships TeamMembership[]
+
+  smtpAccounts      SmtpAccount[]
+  emailTemplates    EmailTemplate[]
+  emailCampaigns    EmailCampaign[]
+  emailContacts     EmailContact[]
+  emailReports      EmailReport[]
+  emailEvents       EmailEvent[]
+  emailBounces      EmailBounce[]
+  emailUnsubscribes EmailUnsubscribe[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
 }
 
 model User {
-  id              String           @id @default(cuid())
-  clerkUserId     String           @unique
-  email           String           @unique
-  name            String?
-  avatarUrl       String?
-  createdAt       DateTime         @default(now())
+  id          String   @id @default(cuid())
+  clerkUserId String   @unique
+  email       String   @unique
+  name        String?
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
 
   orgMemberships  OrgMembership[]
   teamMemberships TeamMembership[]
 }
 
 model OrgMembership {
-  id             String       @id @default(cuid())
+  id             String   @id @default(cuid())
   userId         String
   organizationId String
   role           OrgRole
-  createdAt      DateTime     @default(now())
+  createdAt      DateTime @default(now())
 
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([userId, organizationId])
 }
@@ -113,23 +158,23 @@ model TeamMembership {
   role      TeamRole
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@unique([userId, teamId])
 }
 
 model Plan {
-  id              String         @id @default(cuid())
-  code            String         @unique
+  id              String  @id @default(cuid())
+  code            String  @unique
   name            String
   priceMonthlyUsd Decimal
   features        Json
   limits          Json
-  isPublic        Boolean        @default(true)
+  isPublic        Boolean @default(true)
 
-  organizations   Organization[]
-  subscriptions   Subscription[]
+  organizations Organization[]
+  subscriptions Subscription[]
 }
 
 model Subscription {
@@ -143,28 +188,28 @@ model Subscription {
   currentPeriodEnd   DateTime
   cancelAtPeriodEnd  Boolean         @default(false)
 
-  organization       Organization    @relation(fields: [organizationId], references: [id])
-  plan               Plan            @relation(fields: [planId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  plan         Plan         @relation(fields: [planId], references: [id])
 
   @@index([organizationId])
 }
 
 model UsageCounter {
-  id             String       @id @default(cuid())
+  id             String      @id @default(cuid())
   organizationId String
   metric         UsageMetric
   periodStart    DateTime
   periodEnd      DateTime
-  value          BigInt       @default(0)
+  value          BigInt      @default(0)
 
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
 
   @@unique([organizationId, metric, periodStart])
   @@index([organizationId, metric])
 }
 
 model AuditLog {
-  id             String       @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String
   teamId         String?
   actorUserId    String?
@@ -174,10 +219,209 @@ model AuditLog {
   metadata       Json?
   ip             String?
   userAgent      String?
-  createdAt      DateTime     @default(now())
+  createdAt      DateTime @default(now())
 
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId, createdAt])
   @@index([organizationId, action])
+}
+
+// ============================================================
+// Email channel (Fase 2 — sub-A)
+// ============================================================
+
+model SmtpAccount {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  name           String
+  host           String
+  port           Int
+  username       String
+  passwordEnc    String
+  fromName       String
+  fromEmail      String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team           Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  emailTemplates EmailTemplate[]
+  emailCampaigns EmailCampaign[]
+
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model EmailTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  name           String
+  subject        String
+  html           String
+  design         Json
+  smtpAccountId  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  smtpAccount  SmtpAccount?    @relation(fields: [smtpAccountId], references: [id], onDelete: SetNull)
+  campaigns    EmailCampaign[]
+
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model EmailCampaign {
+  id              String              @id @default(cuid())
+  organizationId  String
+  teamId          String
+  name            String
+  status          EmailCampaignStatus @default(DRAFT)
+  paused          Boolean             @default(false)
+  archived        Boolean             @default(false)
+  jobId           String?
+  templateId      String?
+  smtpAccountId   String?
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  config          Json?
+  createdByUserId String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  template     EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  smtpAccount  SmtpAccount?   @relation(fields: [smtpAccountId], references: [id], onDelete: SetNull)
+  contacts     EmailContact[]
+  reports      EmailReport[]
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([teamId, status])
+}
+
+model EmailContact {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  campaignId     String
+  email          String
+  name           String?
+  data           Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  reports      EmailReport[]
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([campaignId])
+}
+
+model EmailReport {
+  id             String            @id @default(cuid())
+  organizationId String
+  teamId         String
+  campaignId     String
+  contactId      String
+  status         EmailReportStatus @default(PENDING)
+  sentAt         DateTime?
+  error          String?
+  subject        String?
+  html           String?
+  trackingToken  String?           @unique
+  smtpMessageId  String?           @unique
+  firstOpenedAt  DateTime?
+  firstClickedAt DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact      EmailContact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  events       EmailEvent[]
+  bounces      EmailBounce[]
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([campaignId])
+  @@index([teamId, status])
+  @@index([sentAt])
+}
+
+model EmailEvent {
+  id             String         @id @default(cuid())
+  organizationId String
+  teamId         String
+  reportId       String
+  type           EmailEventType
+  targetUrl      String?
+  targetDomain   String?
+  occurredAt     DateTime       @default(now())
+  ip             String?
+  userAgent      String?
+  deviceFamily   String?
+  osName         String?
+  osVersion      String?
+  browserName    String?
+  browserVersion String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  report       EmailReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([reportId, type, occurredAt])
+  @@index([type, occurredAt])
+}
+
+model EmailBounce {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  reportId       String?
+  occurredAt     DateTime @default(now())
+  code           String?
+  description    String?
+  raw            String?
+  email          String?
+  smtpMessageId  String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  report       EmailReport? @relation(fields: [reportId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([reportId, occurredAt])
+}
+
+model EmailUnsubscribe {
+  id             String                @id @default(cuid())
+  organizationId String
+  teamId         String
+  email          String
+  emailHash      String
+  scope          EmailUnsubscribeScope @default(GLOBAL)
+  campaignId     String?
+  reason         String?
+  source         String?
+  createdAt      DateTime              @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, emailHash, scope, campaignId])
+  @@index([organizationId])
+  @@index([teamId, emailHash])
 }

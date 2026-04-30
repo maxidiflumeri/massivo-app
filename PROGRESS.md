@@ -31,11 +31,11 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 0 — Setup base ✅ **COMPLETADA**
-- **Próxima fase:** Fase 1 — Tenancy core + Auth (Clerk)
-- **Última actualización:** 2026-04-29
+- **Fase actual:** Fase 2 — Migración de modelos de dominio (sub-A: Email **en curso**)
+- **Fases completadas:** Fase 0 ✅ + Fase 1 ✅
+- **Última actualización:** 2026-04-30
 - **Branch principal:** `main`
-- **Último commit:** `0d8d5fe` — `chore: setup inicial del monorepo Massivo App (Fase 0)`
+- **Último commit:** `4e1442a` — `feat: sub-fase 2.A Email completada — schema, CRUD SmtpAccount/EmailTemplate, tests CASL + aislamiento tenant`
 - **Repo remoto:** `https://github.com/maxidiflumeri/massivo-app`
 
 ---
@@ -109,7 +109,89 @@ pnpm dev
 
 ---
 
-## Próximo paso (Fase 1 — Tenancy core + Auth)
+## Próximo paso (Fase 2 — Migración de modelos de dominio)
+
+Ver `MIGRATION_PLAN.md` sección **9 → Fase 2** y **2.4** (lista de modelos heredados).
+
+### Plan de Fase 2 (sub-dividido)
+
+**Sub-fase 2.A — Email** (completada ✅)
+
+Checklist:
+- [x] Schema Prisma: `SmtpAccount`, `EmailTemplate`, `EmailCampaign`, `EmailContact`, `EmailReport`, `EmailEvent`, `EmailBounce`, `EmailUnsubscribe` con `organizationId` + `teamId` + índices.
+- [x] Enums: `EmailCampaignStatus`, `EmailReportStatus`, `EmailEventType`, `EmailUnsubscribeScope`.
+- [x] Registrar los 8 modelos en `TENANT_SCOPED_MODELS` (`apps/backend/src/common/prisma/tenant-models.ts`) para que la Prisma extension los enforce.
+- [x] Migración Prisma `add_email_models` aplicada contra DB local.
+- [x] CRUD mínimo de `SmtpAccount` y `EmailTemplate` con `@CheckPolicies` (sin envío todavía — eso es Fase 3): DTOs `class-validator`, services usando `prisma.scoped`, controllers con stack `ClerkAuthGuard → TenantContextGuard → PoliciesGuard`. `EmailModule` registrado en `AppModule`.
+- [x] Tests unitarios de los services nuevos (`smtp-accounts.service.spec.ts`, `email-templates.service.spec.ts`): cada uno cubre `ForbiddenException` sin contexto, `NotFoundException` cross-tenant, `create` confía en la extension (no inyecta orgId/teamId manual), `delete` valida existencia previa.
+- [x] Sumar al `Ability` factory los subjects `SmtpAccount` y `Template` con sus rules por rol (read/create/update/delete). **Nota:** subjects ya estaban en `subjects.ts` y rules ya estaban en `ability.ts` (ADMIN → manage all, MEMBER → read SmtpAccount + CRUD Template, VIEWER → read all). Se agregaron 3 tests explícitos en `ability.spec.ts`.
+- [x] Extender `tenant-isolation.spec.ts` con casos para `SmtpAccount` y `EmailTemplate`: 6 tests cross-tenant (read/update/delete → NotFoundException) + 2 tests sin contexto (→ ForbiddenException). Total isolation suite: 18 tests.
+- [x] Fix errores TypeScript en services: uso de `Prisma.*.UncheckedCreateInput` para `create()` + imports vía `@massivo/prisma`.
+
+Criterios de aceptación 2.A:
+- `pnpm --filter @massivo/backend test` verde con los nuevos specs incluidos.
+- Llamada autenticada `POST /api/email/smtp-accounts` (Tenant A) crea y devuelve registro con `organizationId`/`teamId` del JWT, sin que el cliente los pase en el body.
+- Llamada autenticada `GET /api/email/templates` con `X-Team-Id` de Tenant A devuelve solo templates de ese team (validado en suite isolation).
+- Cualquier intento de leer/modificar un `SmtpAccount` o `EmailTemplate` de otro tenant retorna `404` (no `403`, para no filtrar existencia).
+
+**Sub-fase 2.B — WhatsApp**
+
+Checklist:
+- [ ] Schema Prisma: `WapiConfig` (phoneNumberId, businessAccountId, accessTokenEnc, webhookVerifyTokenEnc, isActive), `WapiTemplate` (nombre, categoría, status Meta, body/header/footer/buttons), `WapiCampaign`, `WapiContact`, `WapiReport`, `WapiConversation`, `WapiMessage` (direction, type, content, status, metaMessageId), `WapiOptOut`. Todos tenant-aware.
+- [ ] Registrar los 8 modelos en `TENANT_SCOPED_MODELS`.
+- [ ] Migración Prisma `add_wapi_models`.
+- [ ] Tokens marcados como encriptados a nivel de tipo (`*Enc: string`) — encriptación real con KMS queda para Fase 4; agregar TODO con referencia a la fase.
+- [ ] CRUD mínimo de `WapiConfig` y `WapiTemplate` con `@CheckPolicies` (subjects `WhatsappConfig`, `WhatsappTemplate`).
+- [ ] DTOs `class-validator` para `WapiConfig` (`phoneNumberId`, `businessAccountId`, `accessToken`, `webhookVerifyToken`, `isActive`).
+- [ ] Tests unitarios de los services + extensión de `tenant-isolation.spec.ts`.
+
+Criterios de aceptación 2.B:
+- `pnpm --filter @massivo/backend test` verde.
+- `POST /api/wapi/configs` autenticado guarda `accessToken` en `accessTokenEnc` (placeholder en claro hasta Fase 4) — verificado por test.
+- Cross-tenant access a `WapiConfig`/`WapiTemplate` retorna `404`.
+
+**Sub-fase 2.C — Cross-cutting**
+
+Checklist:
+- [ ] Schema Prisma: `Contact` (unificado email+wapi con `email`, `phone`, `attributes` JSONB), `Tag`, `ContactTag` (M:N), `ContactList`, `ContactListMember`, `ScheduledTask` (cron, payload, nextRunAt), `TaskExecution`, `CampaignLog`.
+- [ ] Registrar tenant-aware en `TENANT_SCOPED_MODELS`.
+- [ ] Migración Prisma `add_crosscutting_models`.
+- [ ] Servicios mínimos `ContactsService` (create/list/findByEmail/findByPhone con dedupe por `(orgId, teamId, email|phone)`) y `TagsService`.
+- [ ] Tests unitarios + isolation.
+
+Criterios de aceptación 2.C:
+- `pnpm --filter @massivo/backend test` verde.
+- Crear dos contacts con mismo email en distintos teams del mismo org **es válido** (lo distingue `(orgId, teamId, email)`); en el mismo team es duplicado.
+- Cross-tenant aislado.
+
+**Sub-fase 2.D — Sockets scopeados**
+
+Checklist:
+- [ ] Instalar `@nestjs/websockets` + `@nestjs/platform-socket.io`.
+- [ ] `AppGateway` con auth handshake: validar JWT Clerk del query/header `auth.token` + `teamId` del header, resolver `RequestContext` y guardar en `socket.data`.
+- [ ] Suscripción automática del socket a rooms `org:{orgId}`, `team:{teamId}`, `user:{userId}`.
+- [ ] Helper `EventsService` con `emitToTeam(teamId, event, payload)` / `emitToOrg(orgId, event, payload)` / `emitToUser(userId, event, payload)`.
+- [ ] Test de integración con dos clientes Socket.IO de tenants distintos: un `emitToTeam` solo llega al team correcto.
+
+Criterios de aceptación 2.D:
+- Test de aislamiento Socket.IO verde (cliente del Tenant B no recibe eventos del Tenant A).
+- Conexión sin token o sin teamId válido es rechazada en el handshake (no llega a `connection`).
+
+### Cierre Fase 2 (criterios globales — todos deben cumplirse)
+
+- [ ] Auditoría manual: `grep` en backend para asegurar que no quedan `prisma.<model>.findMany/findFirst/...` (sin `.scoped`) sobre modelos tenant-aware fuera de los caminos legítimos (webhook Clerk, onboarding, jobs marcados con `@SkipTenantScope`).
+- [ ] Suite `tenant-isolation.spec.ts` cubre los 24+ modelos nuevos (8 Email + 8 Wapi + ~6 cross-cutting + sockets).
+- [ ] `pnpm typecheck` 8/8 ✅, `pnpm --filter @massivo/backend test` verde, `pnpm --filter @massivo/backend dev` arranca sin errores.
+- [ ] `CHANGELOG.md` con entrada `Fase 2 — completada` y resumen de modelos agregados.
+- [ ] **Aplicar regla de propagación**: expandir el checklist + criterios de aceptación de **Fase 3 (Email Sender — envío real)** en este archivo antes de cerrar la sesión que cierra Fase 2.
+
+### Criterio de aceptación de Fase 2 (resumen)
+
+Suite de tests de aislamiento verde sobre todos los modelos de dominio nuevos; ningún query a un modelo tenant-scoped puede ejecutarse sin contexto; sockets aíslan eventos por team; backend levanta limpio y todos los CRUD mínimos respetan `@CheckPolicies`.
+
+---
+
+## Checklist Fase 1 ✅ (completada)
 
 Ver `MIGRATION_PLAN.md` sección **9. Plan de ejecución por fases → Fase 1**.
 
@@ -181,6 +263,15 @@ Un usuario nuevo puede:
 1. **Actualizar `CHANGELOG.md`** con una entrada bajo `[Unreleased]` o crear una nueva versión si corresponde (ver formato Keep a Changelog en el propio archivo).
 2. **Actualizar `PROGRESS.md`** (este archivo) — ver pasos abajo.
 3. **Hacer commit** que incluya CHANGELOG + PROGRESS junto con el código de la funcionalidad. Mensaje en español.
+
+### Regla de checklist por fase (OBLIGATORIA — propagación automática)
+
+Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklist concreto y criterios de aceptación explícitos.
+
+1. **Al iniciar una fase**: si su sección "Próximo paso" no tiene checklist detallado + criterios de aceptación, **expandirlos primero** (antes de tocar código). Basarse en `MIGRATION_PLAN.md` sección 9 + lectura del código heredado en AMSA Sender.
+2. **Al cerrar una fase** (todos sus criterios verificados): además de mover la fase a "Fases completadas", **expandir el checklist + criterios de aceptación de la fase siguiente** en la sección "Próximo paso", con el mismo nivel de detalle (sub-fases si aplica, ítems ejecutables, criterios verificables). Repetir este patrón hasta llegar a la Fase 9.
+3. **Formato de cada ítem del checklist**: empezar con verbo en infinitivo, mencionar archivos/módulos concretos cuando sea posible, marcar `[x]` solo si está verificado por test o ejecución. No anticipar tildes.
+4. **Criterios de aceptación**: deben ser verificables (comando que corre verde, request HTTP que responde X, test que pasa, métrica que cumple umbral). Frases como "todo funciona" no son criterios válidos.
 
 ### Al terminar una sesión de trabajo (incluso si no se completó una funcionalidad)
 
@@ -261,6 +352,12 @@ Un usuario nuevo puede:
 - Tests `TeamsService`: 8 tests (sin contexto → 403, OWNER vs MEMBER visibility, slug duplicado, auto-assign creator, default protection, cross-org isolation).
 - Verificación: typecheck 8/8 ✅, build 5/5 ✅, tests backend 33/33 ✅, tests permissions 11/11 ✅.
 
+### 2026-04-30 — Sesión 7 (Claude Opus 4.7)
+- **Inicio Fase 2 — sub-A: Email**. Schema Prisma con 8 modelos nuevos (`SmtpAccount`, `EmailTemplate`, `EmailCampaign`, `EmailContact`, `EmailReport`, `EmailEvent`, `EmailBounce`, `EmailUnsubscribe`) tenant-scoped (`organizationId` + `teamId` + índices). 4 enums nuevos (`EmailCampaignStatus`, `EmailReportStatus`, `EmailEventType`, `EmailUnsubscribeScope`). Migración `add_email_models` aplicada contra DB local.
+- Modelos registrados en `TENANT_SCOPED_MODELS` → la Prisma extension los enforce automáticamente.
+- **Fix de `pnpm dev` que rompía el backend** (`ERR_MODULE_NOT_FOUND` en `@massivo/permissions`): se descartaron los cambios uncommitted previos (que rompían jest), y se aplicó la solución correcta: `package.json` de los 3 packages workspace ahora apunta a `./dist/index.js` y `./dist/index.d.ts`; `tsconfig.json` de los 3 packages cambia a `module: CommonJS` + `moduleResolution: Node`; `turbo.json` agrega `dependsOn: ["^build"]` al task `dev`.
+- Verificación: typecheck 8/8 ✅, build 5/5 ✅, tests backend 49/49 ✅, tests permissions 11/11 ✅, `pnpm --filter @massivo/backend dev` arranca y `GET /api/health` responde `{"status":"ok"}`.
+
 ### 2026-04-29 — Sesión 6c (Antigravity — Opus 4.6)
 - **TeamMembersService**: CRUD de miembros de team (`GET/POST/PATCH/DELETE /api/teams/:teamId/members`). Valida pertenencia a la org antes de agregar, protege contra eliminar último admin, cross-org isolation.
 - DTOs `AddTeamMemberDto` / `UpdateTeamMemberRoleDto` con `class-validator`.
@@ -268,3 +365,12 @@ Un usuario nuevo puede:
 - **Suite `tenant-isolation.spec.ts`**: 10 tests verificando que Tenant A no puede leer/escribir/eliminar datos de Tenant B, ni con TeamsService ni con TeamMembersService. ForbiddenException sin contexto.
 - **🏁 FASE 1 COMPLETADA**: todos los criterios de aceptación verificados.
 - Verificación final: typecheck 8/8 ✅, build 5/5 ✅, tests backend 49/49 ✅, tests permissions 11/11 ✅.
+
+### 2026-04-30 — Sesión 8 (Antigravity — Opus 4.6 Thinking)
+- **🏁 Sub-fase 2.A Email COMPLETADA**: todos los ítems del checklist verificados.
+- Fix de 2 errores TypeScript en `SmtpAccountsService` y `EmailTemplatesService`: uso de `Prisma.*.UncheckedCreateInput` (la extension inyecta orgId/teamId en runtime, el tipo `CreateInput` exige relaciones que no se pasan manualmente).
+- Fix imports `@prisma/client` → `@massivo/prisma` (convención del monorepo).
+- 3 tests CASL nuevos en `@massivo/permissions/ability.spec.ts`: ADMIN manage SmtpAccount/Template, MEMBER read SmtpAccount + CRUD Template, VIEWER read only.
+- 8 tests isolation nuevos en `tenant-isolation.spec.ts`: cross-tenant read/update/delete SmtpAccount y EmailTemplate → NotFoundException; sin contexto → ForbiddenException.
+- Verificación final: typecheck 8/8 ✅, tests backend 67/67 ✅, tests permissions 14/14 ✅.
+- **Próximo paso:** sub-fase 2.B — WhatsApp.

@@ -9,6 +9,7 @@ import { AuthModule } from './common/auth/auth.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { MeModule } from './modules/me/me.module';
 import { TeamsModule } from './modules/teams/teams.module';
+import { EmailModule } from './modules/email/email.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { TeamsModule } from './modules/teams/teams.module';
     WebhooksModule,
     MeModule,
     TeamsModule,
+    EmailModule,
   ],
   controllers: [HealthController],
   providers: [],

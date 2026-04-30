@@ -11,6 +11,8 @@ import { Test } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { TeamsService } from '../../modules/teams/teams.service';
 import { TeamMembersService } from '../../modules/teams/team-members.service';
+import { SmtpAccountsService } from '../../modules/email/smtp-accounts.service';
+import { EmailTemplatesService } from '../../modules/email/email-templates.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContext } from './tenant-context';
 import type { RequestContext } from '@massivo/shared-types';
@@ -18,6 +20,8 @@ import type { RequestContext } from '@massivo/shared-types';
 describe('Aislamiento tenant-a-tenant', () => {
   let teamsService: TeamsService;
   let membersService: TeamMembersService;
+  let smtpService: SmtpAccountsService;
+  let templatesService: EmailTemplatesService;
   let prismaMock: Record<string, Record<string, jest.Mock>>;
 
   const tenantA: RequestContext = {
@@ -57,18 +61,36 @@ describe('Aislamiento tenant-a-tenant', () => {
       orgMembership: {
         findUnique: jest.fn(),
       },
+      smtpAccount: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
+      emailTemplate: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
     };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         TeamsService,
         TeamMembersService,
-        { provide: PrismaService, useValue: prismaMock },
+        SmtpAccountsService,
+        EmailTemplatesService,
+        { provide: PrismaService, useValue: { scoped: prismaMock, ...prismaMock } },
       ],
     }).compile();
 
     teamsService = moduleRef.get(TeamsService);
     membersService = moduleRef.get(TeamMembersService);
+    smtpService = moduleRef.get(SmtpAccountsService);
+    templatesService = moduleRef.get(EmailTemplatesService);
   });
 
   describe('TeamsService — aislamiento por organizationId', () => {
@@ -162,6 +184,59 @@ describe('Aislamiento tenant-a-tenant', () => {
     });
   });
 
+  describe('SmtpAccountsService — aislamiento cross-tenant', () => {
+    it('Tenant A no puede leer SmtpAccount de Tenant B (NotFoundException)', async () => {
+      // findFirst returns null because the scoped prisma filters by tenant context
+      prismaMock['smtpAccount']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => smtpService.findOne('smtp-b1')),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('Tenant A no puede eliminar SmtpAccount de Tenant B (NotFoundException)', async () => {
+      prismaMock['smtpAccount']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => smtpService.remove('smtp-b1')),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('Tenant A no puede actualizar SmtpAccount de Tenant B (NotFoundException)', async () => {
+      prismaMock['smtpAccount']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => smtpService.update('smtp-b1', { name: 'Hacked' })),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('EmailTemplatesService — aislamiento cross-tenant', () => {
+    it('Tenant A no puede leer EmailTemplate de Tenant B (NotFoundException)', async () => {
+      prismaMock['emailTemplate']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => templatesService.findOne('tpl-b1')),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('Tenant A no puede eliminar EmailTemplate de Tenant B (NotFoundException)', async () => {
+      prismaMock['emailTemplate']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => templatesService.remove('tpl-b1')),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('Tenant A no puede actualizar EmailTemplate de Tenant B (NotFoundException)', async () => {
+      prismaMock['emailTemplate']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => templatesService.update('tpl-b1', { name: 'Hacked' })),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   describe('Sin TenantContext — error inmediato', () => {
     it('TeamsService.findAll lanza ForbiddenException sin contexto', async () => {
       await expect(teamsService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
@@ -169,6 +244,14 @@ describe('Aislamiento tenant-a-tenant', () => {
 
     it('TeamMembersService.findAll lanza ForbiddenException sin contexto', async () => {
       await expect(membersService.findAll('any-team')).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('SmtpAccountsService.findAll lanza ForbiddenException sin contexto', async () => {
+      await expect(smtpService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('EmailTemplatesService.findAll lanza ForbiddenException sin contexto', async () => {
+      await expect(templatesService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 });

@@ -59,4 +59,36 @@ describe('defineAbilityFor', () => {
     expect(ability.can('manage', 'Billing')).toBe(true);
     expect(ability.can('manage', 'Organization')).toBe(false);
   });
+
+  it('TeamRole ADMIN puede manage SmtpAccount y Template', () => {
+    const ability = defineAbilityFor({ ...baseCtx, teamRole: 'ADMIN' });
+    expect(ability.can('manage', 'SmtpAccount')).toBe(true);
+    expect(ability.can('manage', 'Template')).toBe(true);
+    expect(ability.can('delete', 'SmtpAccount')).toBe(true);
+    expect(ability.can('delete', 'Template')).toBe(true);
+  });
+
+  it('TeamRole MEMBER puede CRUD Template pero solo read SmtpAccount', () => {
+    const ability = defineAbilityFor({ ...baseCtx, teamRole: 'MEMBER' });
+    // Template: create, read, update, send — but not delete
+    expect(ability.can('create', 'Template')).toBe(true);
+    expect(ability.can('read', 'Template')).toBe(true);
+    expect(ability.can('update', 'Template')).toBe(true);
+    expect(ability.can('delete', 'Template')).toBe(false);
+    // SmtpAccount: read only
+    expect(ability.can('read', 'SmtpAccount')).toBe(true);
+    expect(ability.can('create', 'SmtpAccount')).toBe(false);
+    expect(ability.can('update', 'SmtpAccount')).toBe(false);
+    expect(ability.can('delete', 'SmtpAccount')).toBe(false);
+  });
+
+  it('TeamRole VIEWER puede read SmtpAccount y Template pero nada más', () => {
+    const ability = defineAbilityFor({ ...baseCtx, teamRole: 'VIEWER' });
+    expect(ability.can('read', 'SmtpAccount')).toBe(true);
+    expect(ability.can('read', 'Template')).toBe(true);
+    expect(ability.can('create', 'SmtpAccount')).toBe(false);
+    expect(ability.can('create', 'Template')).toBe(false);
+    expect(ability.can('delete', 'SmtpAccount')).toBe(false);
+    expect(ability.can('delete', 'Template')).toBe(false);
+  });
 });

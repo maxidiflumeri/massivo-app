@@ -1,0 +1,97 @@
+import { Test } from '@nestjs/testing';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { SmtpAccountsService } from './smtp-accounts.service';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/auth/tenant-context';
+import type { RequestContext } from '@massivo/shared-types';
+
+describe('SmtpAccountsService', () => {
+  let service: SmtpAccountsService;
+  let prismaScopedMock: Record<string, jest.Mock>;
+
+  const tenantA: RequestContext = {
+    userId: 'user-a',
+    organizationId: 'org-a',
+    teamId: 'team-a1',
+    orgRole: 'OWNER',
+    teamRole: 'ADMIN',
+  };
+
+  beforeEach(async () => {
+    prismaScopedMock = {
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        SmtpAccountsService,
+        {
+          provide: PrismaService,
+          useValue: { scoped: { smtpAccount: prismaScopedMock } },
+        },
+      ],
+    }).compile();
+
+    service = moduleRef.get(SmtpAccountsService);
+  });
+
+  it('findAll lanza ForbiddenException sin contexto', async () => {
+    await expect(service.findAll()).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('findAll usa prisma.scoped (la extension inyecta orgId+teamId)', async () => {
+    await TenantContext.run(tenantA, () => service.findAll());
+    expect(prismaScopedMock['findMany']).toHaveBeenCalledTimes(1);
+  });
+
+  it('findOne devuelve NotFoundException si no existe en el scope', async () => {
+    prismaScopedMock['findFirst']!.mockResolvedValue(null);
+    await expect(
+      TenantContext.run(tenantA, () => service.findOne('id-de-otro-tenant')),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('create no pasa orgId/teamId en data (los inyecta la extension)', async () => {
+    prismaScopedMock['create']!.mockResolvedValue({
+      id: 's1',
+      name: 'n',
+      host: 'h',
+      port: 587,
+      username: 'u',
+      fromName: 'fn',
+      fromEmail: 'a@b.com',
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await TenantContext.run(tenantA, () =>
+      service.create({
+        name: 'n',
+        host: 'h',
+        port: 587,
+        username: 'u',
+        password: 'pwd',
+        fromName: 'fn',
+        fromEmail: 'a@b.com',
+      }),
+    );
+
+    const args = prismaScopedMock['create']!.mock.calls[0][0];
+    expect(args.data.organizationId).toBeUndefined();
+    expect(args.data.teamId).toBeUndefined();
+    expect(args.data.passwordEnc).toBe('pwd');
+  });
+
+  it('remove valida existencia previa antes de delete', async () => {
+    prismaScopedMock['findFirst']!.mockResolvedValue(null);
+    await expect(
+      TenantContext.run(tenantA, () => service.remove('id-otra-org')),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prismaScopedMock['delete']).not.toHaveBeenCalled();
+  });
+});

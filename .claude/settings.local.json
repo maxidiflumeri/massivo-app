@@ -22,7 +22,23 @@
       "Bash(git commit *)",
       "Bash(pnpm --filter @massivo/backend run test -- me.service)",
       "Bash(pnpm --filter @massivo/permissions typecheck)",
-      "Bash(pnpm --filter @massivo/permissions test)"
+      "Bash(pnpm --filter @massivo/permissions test)",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm --filter @massivo/backend test)",
+      "Bash(git checkout *)",
+      "Bash(mkdir -p prisma/migrations/20260430000000_add_email_models)",
+      "Bash(rm prisma/migrations/20260430000000_add_email_models/migration.sql)",
+      "Bash(pnpm --filter @massivo/backend build)",
+      "Bash(pnpm *)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(pnpm build *)",
+      "Read(//tmp/**)",
+      "Bash(echo \"EXIT=$?\")",
+      "Read(//c/c/Users/MDIFLUME/Documents/Proyectos/Propios/massivo-app/packages/permissions/dist/**)",
+      "Read(//c/c/Users/MDIFLUME/Documents/Proyectos/Propios/massivo-app/packages/shared-types/dist/**)",
+      "Bash(curl -sS http://localhost:3000/api/health)",
+      "Bash(curl *)"
     ]
   }
 }
