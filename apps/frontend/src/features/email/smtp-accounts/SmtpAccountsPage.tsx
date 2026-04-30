@@ -7,13 +7,11 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControlLabel,
   IconButton,
   MenuItem,
   Paper,
   Skeleton,
   Stack,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -28,12 +26,15 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SendIcon from '@mui/icons-material/Send';
+import VerifiedIcon from '@mui/icons-material/Verified';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useConfirm } from '../../../feedback/ConfirmProvider';
 import type {
   CreateSmtpAccountPayload,
   SmtpAccount,
+  SmtpAccountWithVerify,
   SmtpProvider,
   UpdateSmtpAccountPayload,
 } from './types';
@@ -48,7 +49,6 @@ interface FormState {
   fromName: string;
   fromEmail: string;
   sesConfigSet: string;
-  isActive: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -61,7 +61,6 @@ const EMPTY_FORM: FormState = {
   fromName: '',
   fromEmail: '',
   sesConfigSet: '',
-  isActive: true,
 };
 
 export function SmtpAccountsPage() {
@@ -69,6 +68,8 @@ export function SmtpAccountsPage() {
   const notify = useNotify();
   const confirm = useConfirm();
   const [accounts, setAccounts] = useState<SmtpAccount[] | null>(null);
+  const [verifyErrors, setVerifyErrors] = useState<Record<string, string>>({});
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<SmtpAccount | null>(null);
@@ -114,7 +115,6 @@ export function SmtpAccountsPage() {
       fromName: acc.fromName,
       fromEmail: acc.fromEmail,
       sesConfigSet: acc.sesConfigSet ?? '',
-      isActive: acc.isActive,
     });
     setEditorOpen(true);
   }
@@ -122,6 +122,35 @@ export function SmtpAccountsPage() {
   function closeEditor() {
     if (saving) return;
     setEditorOpen(false);
+  }
+
+  function applyVerifyResult(res: SmtpAccountWithVerify, action: 'created' | 'updated' | 'verified') {
+    setVerifyErrors((prev) => {
+      const next = { ...prev };
+      if (res.verify.ok) {
+        delete next[res.account.id];
+      } else {
+        next[res.account.id] = res.verify.error;
+      }
+      return next;
+    });
+    if (res.verify.ok) {
+      const msg =
+        action === 'created'
+          ? 'Cuenta creada y verificada (activa)'
+          : action === 'updated'
+            ? 'Cuenta actualizada y verificada (activa)'
+            : 'Verificación OK — cuenta activa';
+      notify.success(msg);
+    } else {
+      const head =
+        action === 'created'
+          ? 'Cuenta creada pero la verificación falló'
+          : action === 'updated'
+            ? 'Cuenta actualizada pero la verificación falló'
+            : 'La verificación falló';
+      notify.warning(`${head}: ${res.verify.error}`);
+    }
   }
 
   async function handleSave() {
@@ -136,6 +165,7 @@ export function SmtpAccountsPage() {
     }
     setSaving(true);
     try {
+      let res: SmtpAccountWithVerify;
       if (isEditing && editing) {
         const payload: UpdateSmtpAccountPayload = {
           name: form.name,
@@ -145,12 +175,14 @@ export function SmtpAccountsPage() {
           username: form.username,
           fromName: form.fromName,
           fromEmail: form.fromEmail,
-          isActive: form.isActive,
           sesConfigSet: form.provider === 'ses' ? form.sesConfigSet || undefined : undefined,
         };
         if (form.password) payload.password = form.password;
-        await api.patch(`/api/email/smtp-accounts/${editing.id}`, payload);
-        notify.success('Cuenta SMTP actualizada');
+        res = await api.patch<SmtpAccountWithVerify>(
+          `/api/email/smtp-accounts/${editing.id}`,
+          payload,
+        );
+        applyVerifyResult(res, 'updated');
       } else {
         const payload: CreateSmtpAccountPayload = {
           name: form.name,
@@ -163,8 +195,8 @@ export function SmtpAccountsPage() {
           fromEmail: form.fromEmail,
           sesConfigSet: form.provider === 'ses' ? form.sesConfigSet || undefined : undefined,
         };
-        await api.post('/api/email/smtp-accounts', payload);
-        notify.success('Cuenta SMTP creada');
+        res = await api.post<SmtpAccountWithVerify>('/api/email/smtp-accounts', payload);
+        applyVerifyResult(res, 'created');
       }
       setEditorOpen(false);
       await load();
@@ -172,6 +204,21 @@ export function SmtpAccountsPage() {
       notify.error(e instanceof Error ? e.message : 'Error guardando');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleVerify(acc: SmtpAccount) {
+    setVerifyingId(acc.id);
+    try {
+      const res = await api.post<SmtpAccountWithVerify>(
+        `/api/email/smtp-accounts/${acc.id}/verify`,
+      );
+      applyVerifyResult(res, 'verified');
+      await load();
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error verificando');
+    } finally {
+      setVerifyingId(null);
     }
   }
 
@@ -293,14 +340,37 @@ export function SmtpAccountsPage() {
                     {a.fromName} &lt;{a.fromEmail}&gt;
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      size="small"
-                      label={a.isActive ? 'Activa' : 'Inactiva'}
-                      color={a.isActive ? 'success' : 'default'}
-                    />
+                    {a.isActive ? (
+                      <Chip size="small" label="Activa" color="success" />
+                    ) : (
+                      <Tooltip
+                        title={verifyErrors[a.id] ?? 'Sin verificar — usá el botón Verificar'}
+                        arrow
+                      >
+                        <Chip
+                          size="small"
+                          icon={<ErrorOutlineIcon fontSize="small" />}
+                          label="Inactiva"
+                          color="default"
+                          variant="outlined"
+                        />
+                      </Tooltip>
+                    )}
                   </TableCell>
                   <TableCell align="right">
-                    <Tooltip title="Enviar prueba">
+                    <Tooltip title="Verificar conexión">
+                      <span>
+                        <IconButton
+                          size="small"
+                          color="info"
+                          onClick={() => handleVerify(a)}
+                          disabled={verifyingId === a.id}
+                        >
+                          <VerifiedIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title={a.isActive ? 'Enviar prueba' : 'Activá la cuenta para enviar pruebas'}>
                       <span>
                         <IconButton
                           size="small"
@@ -410,17 +480,11 @@ export function SmtpAccountsPage() {
                 helperText="Si lo dejás vacío, se autoprovisiona uno por team."
               />
             )}
-            {isEditing && (
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={form.isActive}
-                    onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
-                  />
-                }
-                label="Activa"
-              />
-            )}
+            <Typography variant="caption" color="text.secondary">
+              El estado activa/inactiva se determina automáticamente al guardar:
+              si las credenciales verifican OK la cuenta queda activa, si no, queda
+              inactiva y podés reintentarla con el botón "Verificar".
+            </Typography>
           </Stack>
         </DialogContent>
         <DialogActions>

@@ -15,6 +15,16 @@ import type {
   UpdateSmtpAccountDto,
 } from './smtp-accounts.dto';
 
+export interface SmtpAccountVerifyResult {
+  ok: boolean;
+  error?: string;
+}
+
+export interface SmtpAccountWithVerify {
+  account: SmtpAccountListItem;
+  verify: SmtpAccountVerifyResult;
+}
+
 export interface SmtpAccountListItem {
   id: string;
   name: string;
@@ -86,9 +96,9 @@ export class SmtpAccountsService {
     return toListItem(row);
   }
 
-  async create(dto: CreateSmtpAccountDto): Promise<SmtpAccountListItem> {
+  async create(dto: CreateSmtpAccountDto): Promise<SmtpAccountWithVerify> {
     const ctx = this.requireContext();
-    const row = await this.prisma.scoped.smtpAccount.create({
+    const created = await this.prisma.scoped.smtpAccount.create({
       // organizationId + teamId are injected by the tenant-scope Prisma extension
       data: {
         name: dto.name,
@@ -98,22 +108,25 @@ export class SmtpAccountsService {
         passwordEnc: dto.password,
         fromName: dto.fromName,
         fromEmail: dto.fromEmail,
+        isActive: false, // se activa solo si verify pasa
         ...(dto.provider !== undefined && { provider: dto.provider }),
         ...(dto.sesConfigSet !== undefined && { sesConfigSet: dto.sesConfigSet }),
       } as Prisma.SmtpAccountUncheckedCreateInput,
     });
-    this.logger.log(`SmtpAccount created: ${row.id} in org ${ctx.organizationId} team ${ctx.teamId}`);
-    return toListItem(row);
+    this.logger.log(`SmtpAccount created: ${created.id} in org ${ctx.organizationId} team ${ctx.teamId}`);
+    const final = await this.runVerifyAndUpdate(created);
+    return final;
   }
 
-  async update(id: string, dto: UpdateSmtpAccountDto): Promise<SmtpAccountListItem> {
+  async update(id: string, dto: UpdateSmtpAccountDto): Promise<SmtpAccountWithVerify> {
     this.requireContext();
     const existing = await this.prisma.scoped.smtpAccount.findFirst({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Cuenta SMTP no encontrada');
     }
 
-    const row = await this.prisma.scoped.smtpAccount.update({
+    // isActive es system-controlled (resultado del verify); ignoramos dto.isActive
+    const updated = await this.prisma.scoped.smtpAccount.update({
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -123,12 +136,20 @@ export class SmtpAccountsService {
         ...(dto.password !== undefined && { passwordEnc: dto.password }),
         ...(dto.fromName !== undefined && { fromName: dto.fromName }),
         ...(dto.fromEmail !== undefined && { fromEmail: dto.fromEmail }),
-        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
         ...(dto.provider !== undefined && { provider: dto.provider }),
         ...(dto.sesConfigSet !== undefined && { sesConfigSet: dto.sesConfigSet }),
       },
     });
-    return toListItem(row);
+    return this.runVerifyAndUpdate(updated);
+  }
+
+  async verify(id: string): Promise<SmtpAccountWithVerify> {
+    this.requireContext();
+    const existing = await this.prisma.scoped.smtpAccount.findFirst({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException('Cuenta SMTP no encontrada');
+    }
+    return this.runVerifyAndUpdate(existing);
   }
 
   async testSend(
@@ -184,6 +205,52 @@ export class SmtpAccountsService {
     }
     await this.prisma.scoped.smtpAccount.delete({ where: { id } });
     this.logger.log(`SmtpAccount deleted: ${id} from org ${ctx.organizationId} team ${ctx.teamId}`);
+  }
+
+  private async runVerifyAndUpdate(row: {
+    id: string;
+    name: string;
+    teamId: string;
+    host: string;
+    port: number;
+    username: string;
+    passwordEnc: string;
+    fromName: string;
+    fromEmail: string;
+    provider: string;
+    sesConfigSet: string | null;
+    isActive: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  }): Promise<SmtpAccountWithVerify> {
+    const verify = await this.senderService.verifyAccount({
+      id: row.id,
+      teamId: row.teamId,
+      host: row.host,
+      port: row.port,
+      username: row.username,
+      passwordEnc: row.passwordEnc,
+      fromName: row.fromName,
+      fromEmail: row.fromEmail,
+      provider: row.provider,
+      sesConfigSet: row.sesConfigSet,
+    });
+
+    const desiredActive = verify.ok;
+    let finalRow = row;
+    if (row.isActive !== desiredActive) {
+      finalRow = await this.prisma.scoped.smtpAccount.update({
+        where: { id: row.id },
+        data: { isActive: desiredActive },
+      });
+    }
+
+    if (verify.ok) {
+      this.logger.log(`SmtpAccount verified OK: ${row.id} (active=true)`);
+      return { account: toListItem(finalRow), verify: { ok: true } };
+    }
+    this.logger.warn(`SmtpAccount verify FAILED: ${row.id}: ${verify.error}`);
+    return { account: toListItem(finalRow), verify: { ok: false, error: verify.error } };
   }
 
   private requireContext() {

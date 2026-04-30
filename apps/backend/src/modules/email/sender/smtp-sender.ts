@@ -31,6 +31,10 @@ export class SmtpSender implements EmailSender {
     });
   }
 
+  async verify(): Promise<void> {
+    await this.transporter.verify();
+  }
+
   async send(input: SendEmailInput): Promise<SendEmailResult> {
     const info = await this.transporter.sendMail({
       from: input.from,

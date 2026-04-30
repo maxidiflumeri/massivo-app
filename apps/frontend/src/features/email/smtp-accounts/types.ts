@@ -31,5 +31,9 @@ export type UpdateSmtpAccountPayload = Partial<
   Omit<CreateSmtpAccountPayload, 'password'>
 > & {
   password?: string;
-  isActive?: boolean;
 };
+
+export interface SmtpAccountWithVerify {
+  account: SmtpAccount;
+  verify: { ok: true } | { ok: false; error: string };
+}

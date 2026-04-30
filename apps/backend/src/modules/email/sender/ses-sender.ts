@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import {
   CreateConfigurationSetCommand,
   CreateConfigurationSetEventDestinationCommand,
+  GetAccountCommand,
   GetConfigurationSetEventDestinationsCommand,
   GetConfigurationSetCommand,
   SendEmailCommand,
@@ -96,6 +97,10 @@ export class SesSender implements EmailSender {
       }),
     );
     this.logger.log(`SES event destination SNS creado en ${configSetName}`);
+  }
+
+  async verify(): Promise<void> {
+    await this.client.send(new GetAccountCommand({}));
   }
 
   configSetName(teamId: string): string {

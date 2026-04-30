@@ -30,6 +30,29 @@ export class EmailSenderService {
 
   constructor(private readonly config: ConfigService) {}
 
+  /**
+   * Valida la conexión / credenciales de una cuenta sin enviar email.
+   * SMTP: handshake + AUTH (transporter.verify de nodemailer).
+   * SES: GetAccount (call cheapest del API que requiere credenciales válidas).
+   */
+  async verifyAccount(account: SmtpAccountForSend): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      const sender = this.resolveSender(account);
+      if (account.provider === 'ses') {
+        await (sender as SesSender).verify();
+      } else {
+        await (sender as SmtpSender).verify();
+      }
+      return { ok: true };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`verifyAccount FAILED ${account.id}: ${error}`);
+      // Invalidar cache SMTP (transporter pudo haber quedado en estado raro)
+      this.smtpCache.delete(account.id);
+      return { ok: false, error };
+    }
+  }
+
   async sendForAccount(
     account: SmtpAccountForSend,
     input: Omit<SendEmailInput, 'from' | 'configurationSet'> & { from?: string },

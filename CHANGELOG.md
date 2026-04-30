@@ -21,6 +21,14 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 3.C.4.a' — Verify automático de cuentas SMTP + reintento manual
+- **Backend**: nuevo `EmailSenderService.verifyAccount(account)` que valida credenciales sin enviar email — para SMTP usa `transporter.verify()` de nodemailer (handshake + AUTH); para SES usa `GetAccountCommand` (cheap call que requiere credenciales válidas). Devuelve `{ ok }` o `{ ok: false, error }` y nunca lanza.
+- **`SmtpAccountsService.create/update` ahora corren verify automáticamente** y setean `isActive` según el resultado: si verifica OK → activa, si falla → se guarda igual pero inactiva (con `error` para mostrar al usuario). `isActive` deja de ser editable manualmente — pasa a ser system-controlled.
+- Nuevo endpoint `POST /email/smtp-accounts/:id/verify` + método `verify(id)` en el service para reintentar bajo demanda (caso típico: usuario edita el password con app-password de Gmail y vuelve a verificar).
+- **Tests**: 14/14 ✅. Sumamos 4 casos: `create activa si verify OK`, `create deja inactiva si verify falla`, `verify reactiva cuenta inactiva`, `verify desactiva cuenta activa que ya no responde`.
+- **Frontend**: dialog editor sin switch isActive (system-controlled, con leyenda explicativa). Nuevo botón "Verificar conexión" (icono `VerifiedIcon`) en cada fila. El chip "Inactiva" muestra el motivo del último fallo en tooltip (`ErrorOutlineIcon`). Snackbar al guardar diferencia entre "creada y verificada (activa)" vs "creada pero la verificación falló: …".
+- **Rationale**: caso real reproducido por el usuario — alta de cuenta Gmail con password normal, todo OK, y recién al test send llegaba el error `534-5.7.9 Application-specific password required`. Ahora el feedback llega al guardar.
+
 ### 3.C.4.a — SMTP accounts UI + test send (BLOCKER resuelto)
 - **Backend**: nuevo `TestSmtpAccountDto` (`smtp-accounts.dto.ts`) y método `SmtpAccountsService.testSend(id, dto)` que carga la cuenta dentro del scope del tenant, valida que esté activa, y delega en `EmailSenderService.sendForAccount()` para mandar un email autocomposeado ("[Massivo] Test de cuenta SMTP …"). Endpoint `POST /email/smtp-accounts/:id/test` con `@CheckPolicies('update', 'SmtpAccount')`.
 - **Tests**: `smtp-accounts.service.spec.ts` extendido con 4 casos para `testSend` (envío OK, NotFound, BadRequest si inactive, BadRequest si sender lanza). Total 9/9 ✅.

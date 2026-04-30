@@ -48,6 +48,13 @@ export class SmtpAccountsController {
     return this.service.create(dto);
   }
 
+  @Post(':id/verify')
+  @HttpCode(HttpStatus.OK)
+  @CheckPolicies((ability: AppAbility) => ability.can('update', 'SmtpAccount'))
+  verify(@Param('id') id: string) {
+    return this.service.verify(id);
+  }
+
   @Post(':id/test')
   @HttpCode(HttpStatus.OK)
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'SmtpAccount'))

@@ -9,7 +9,7 @@ import type { RequestContext } from '@massivo/shared-types';
 describe('SmtpAccountsService', () => {
   let service: SmtpAccountsService;
   let prismaScopedMock: Record<string, jest.Mock>;
-  let senderMock: { sendForAccount: jest.Mock };
+  let senderMock: { sendForAccount: jest.Mock; verifyAccount: jest.Mock };
 
   const tenantA: RequestContext = {
     userId: 'user-a',
@@ -28,7 +28,10 @@ describe('SmtpAccountsService', () => {
       delete: jest.fn(),
     };
 
-    senderMock = { sendForAccount: jest.fn() };
+    senderMock = {
+      sendForAccount: jest.fn(),
+      verifyAccount: jest.fn().mockResolvedValue({ ok: true }),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -63,19 +66,27 @@ describe('SmtpAccountsService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('create no pasa orgId/teamId en data (los inyecta la extension)', async () => {
-    prismaScopedMock['create']!.mockResolvedValue({
-      id: 's1',
-      name: 'n',
-      host: 'h',
-      port: 587,
-      username: 'u',
-      fromName: 'fn',
-      fromEmail: 'a@b.com',
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+  const fakeAccountRow = (overrides: Record<string, unknown> = {}) => ({
+    id: 's1',
+    name: 'n',
+    teamId: 'team-a1',
+    host: 'h',
+    port: 587,
+    username: 'u',
+    passwordEnc: 'pwd',
+    fromName: 'fn',
+    fromEmail: 'a@b.com',
+    provider: 'smtp',
+    sesConfigSet: null,
+    isActive: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  });
+
+  it('create no pasa orgId/teamId en data, isActive=false hasta verify', async () => {
+    prismaScopedMock['create']!.mockResolvedValue(fakeAccountRow());
+    prismaScopedMock['update']!.mockResolvedValue(fakeAccountRow({ isActive: true }));
 
     await TenantContext.run(tenantA, () =>
       service.create({
@@ -93,6 +104,72 @@ describe('SmtpAccountsService', () => {
     expect(args.data.organizationId).toBeUndefined();
     expect(args.data.teamId).toBeUndefined();
     expect(args.data.passwordEnc).toBe('pwd');
+    expect(args.data.isActive).toBe(false);
+  });
+
+  it('create activa la cuenta si verifyAccount pasa', async () => {
+    prismaScopedMock['create']!.mockResolvedValue(fakeAccountRow());
+    prismaScopedMock['update']!.mockResolvedValue(fakeAccountRow({ isActive: true }));
+    senderMock.verifyAccount.mockResolvedValue({ ok: true });
+
+    const res = await TenantContext.run(tenantA, () =>
+      service.create({
+        name: 'n', host: 'h', port: 587, username: 'u', password: 'pwd',
+        fromName: 'fn', fromEmail: 'a@b.com',
+      }),
+    );
+
+    expect(res.verify).toEqual({ ok: true });
+    expect(res.account.isActive).toBe(true);
+    expect(prismaScopedMock['update']).toHaveBeenCalledTimes(1);
+    const updateArgs = prismaScopedMock['update']!.mock.calls[0][0];
+    expect(updateArgs.data).toEqual({ isActive: true });
+  });
+
+  it('create deja la cuenta inactiva si verifyAccount falla', async () => {
+    prismaScopedMock['create']!.mockResolvedValue(fakeAccountRow());
+    senderMock.verifyAccount.mockResolvedValue({ ok: false, error: 'Invalid login' });
+
+    const res = await TenantContext.run(tenantA, () =>
+      service.create({
+        name: 'n', host: 'h', port: 587, username: 'u', password: 'pwd',
+        fromName: 'fn', fromEmail: 'a@b.com',
+      }),
+    );
+
+    expect(res.verify).toEqual({ ok: false, error: 'Invalid login' });
+    expect(res.account.isActive).toBe(false);
+    expect(prismaScopedMock['update']).not.toHaveBeenCalled();
+  });
+
+  describe('verify (re-verificación bajo demanda)', () => {
+    it('NotFoundException si la cuenta no existe', async () => {
+      prismaScopedMock['findFirst']!.mockResolvedValue(null);
+      await expect(
+        TenantContext.run(tenantA, () => service.verify('id-no-existe')),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(senderMock.verifyAccount).not.toHaveBeenCalled();
+    });
+
+    it('activa una cuenta inactiva si pasa verify', async () => {
+      prismaScopedMock['findFirst']!.mockResolvedValue(fakeAccountRow({ isActive: false }));
+      prismaScopedMock['update']!.mockResolvedValue(fakeAccountRow({ isActive: true }));
+      senderMock.verifyAccount.mockResolvedValue({ ok: true });
+
+      const res = await TenantContext.run(tenantA, () => service.verify('s1'));
+      expect(res.verify.ok).toBe(true);
+      expect(res.account.isActive).toBe(true);
+    });
+
+    it('desactiva una cuenta activa si verify falla', async () => {
+      prismaScopedMock['findFirst']!.mockResolvedValue(fakeAccountRow({ isActive: true }));
+      prismaScopedMock['update']!.mockResolvedValue(fakeAccountRow({ isActive: false }));
+      senderMock.verifyAccount.mockResolvedValue({ ok: false, error: 'AUTH failed' });
+
+      const res = await TenantContext.run(tenantA, () => service.verify('s1'));
+      expect(res.verify).toEqual({ ok: false, error: 'AUTH failed' });
+      expect(res.account.isActive).toBe(false);
+    });
   });
 
   describe('testSend', () => {
