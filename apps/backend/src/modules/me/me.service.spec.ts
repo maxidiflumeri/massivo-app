@@ -102,9 +102,10 @@ describe('MeService', () => {
     expect(result.organizations[0]!.teams).toHaveLength(2);
     expect(result.organizations[0]!.teams.map((t) => t.id)).toEqual(['t1', 't2']);
     expect(result.organizations[0]!.teams[0]!.role).toBe('ADMIN');
+    expect(result.organizations[0]!.permissions).toEqual({ hasAi: false, canCreateTeam: false, canSso: false });
     expect(result.organizations[1]!.role).toBe('MEMBER');
     expect(result.organizations[1]!.teams[0]!.role).toBe('VIEWER');
-    expect(result.permissions).toEqual({});
+    expect(result.organizations[1]!.permissions).toEqual({ hasAi: false, canCreateTeam: false, canSso: false });
   });
 
   it('filtra teams donde el usuario no es miembro', async () => {
@@ -134,5 +135,38 @@ describe('MeService', () => {
     const result = await service.getContext('clerk_u1');
     expect(result.organizations[0]!.teams).toHaveLength(1);
     expect(result.organizations[0]!.teams[0]!.id).toBe('t1');
+    expect(result.organizations[0]!.permissions).toEqual({ hasAi: false, canCreateTeam: false, canSso: false });
+  });
+
+  it('computa plan flags con features habilitadas', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      email: 'a@b.com',
+      name: null,
+      avatarUrl: null,
+      orgMemberships: [
+        {
+          role: 'OWNER',
+          organization: {
+            id: 'o1',
+            clerkOrgId: 'clerk_o1',
+            name: 'Enterprise',
+            slug: 'enterprise',
+            plan: {
+              code: 'ENTERPRISE',
+              name: 'Enterprise',
+              features: { ai: true, multiTeam: true, sso: true },
+              limits: {},
+            },
+            teams: [
+              { id: 't1', name: 'General', slug: 'general', isDefault: true, memberships: [{ role: 'ADMIN' }] },
+            ],
+          },
+        },
+      ],
+    });
+
+    const result = await service.getContext('clerk_u1');
+    expect(result.organizations[0]!.permissions).toEqual({ hasAi: true, canCreateTeam: true, canSso: true });
   });
 });

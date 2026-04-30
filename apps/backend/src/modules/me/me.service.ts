@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MeContextResponse } from '@massivo/shared-types';
+import { computePlanFlags } from '@massivo/permissions';
 
 @Injectable()
 export class MeService {
@@ -60,6 +61,7 @@ export class MeService {
           features: org.plan.features as Record<string, unknown>,
           limits: org.plan.limits as Record<string, unknown>,
         },
+        permissions: computePlanFlags(org.plan.features as Record<string, unknown> | null),
         teams,
       };
     });
@@ -72,7 +74,6 @@ export class MeService {
         avatarUrl: user.avatarUrl,
       },
       organizations,
-      permissions: {},
     };
   }
 }

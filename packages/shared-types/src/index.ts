@@ -31,6 +31,12 @@ export interface MeTeam {
   role: TeamRole;
 }
 
+export interface PlanFlags {
+  hasAi: boolean;
+  canCreateTeam: boolean;
+  canSso: boolean;
+}
+
 export interface MeOrganization {
   id: string;
   clerkOrgId: string;
@@ -38,11 +44,11 @@ export interface MeOrganization {
   slug: string;
   role: OrgRole;
   plan: MePlan;
+  permissions: PlanFlags;
   teams: MeTeam[];
 }
 
 export interface MeContextResponse {
   user: MeUser;
   organizations: MeOrganization[];
-  permissions: Record<string, unknown>;
 }

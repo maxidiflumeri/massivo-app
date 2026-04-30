@@ -8,5 +8,6 @@
     "experimentalDecorators": false,
     "emitDecoratorMetadata": false
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.spec.ts"]
 }

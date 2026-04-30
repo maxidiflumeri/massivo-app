@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@clerk/backend": "^3.4.1",
+    "@massivo/permissions": "workspace:*",
     "@massivo/prisma": "workspace:*",
     "@massivo/shared-types": "workspace:*",
     "@nestjs/common": "^11.0.1",

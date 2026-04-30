@@ -29,7 +29,7 @@ export class TenantContextGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<Request & { clerkUserId?: string; clerkOrgId?: string; tenantContext?: RequestContext }>();
+    const request = context.switchToHttp().getRequest<Request & { clerkUserId?: string; clerkOrgId?: string; tenantContext?: RequestContext; planFeatures?: Record<string, unknown> }>();
     const clerkUserId = request.clerkUserId;
     const clerkOrgId = request.clerkOrgId;
     const teamIdHeader = request.headers['x-team-id'] as string;
@@ -42,9 +42,10 @@ export class TenantContextGuard implements CanActivate {
       throw new UnauthorizedException('Falta header X-Team-Id');
     }
 
-    // Resolver usuario y org local
+    // Resolver usuario y org local (incluyendo plan para CASL)
     const org = await this.prisma.organization.findUnique({
       where: { clerkOrgId },
+      include: { plan: true },
     });
     
     const user = await this.prisma.user.findUnique({
@@ -100,6 +101,7 @@ export class TenantContextGuard implements CanActivate {
       orgRole: orgMembership.role,
       teamRole: teamMembership.role,
     };
+    request.planFeatures = (org.plan.features ?? {}) as Record<string, unknown>;
 
     return true;
   }

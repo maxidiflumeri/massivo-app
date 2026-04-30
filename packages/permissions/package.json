@@ -8,12 +8,24 @@
     "build": "tsc",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
+    "test": "jest",
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@casl/ability": "^6.7.3",
     "@massivo/shared-types": "workspace:*"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
     "typescript": "^5.7.2"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+    "testEnvironment": "node"
   }
 }

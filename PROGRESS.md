@@ -126,7 +126,7 @@ Ver `MIGRATION_PLAN.md` sección **9. Plan de ejecución por fases → Fase 1**.
 - [x] `AsyncLocalStorage` con `RequestContext { userId, organizationId, teamId, orgRole, teamRole }`.
 - [x] Webhook `/webhooks/clerk` con manejo idempotente de `user.*`, `organization.*`, `organizationMembership.*`.
 - [x] Endpoint `GET /api/me/context` (devuelve user + orgs + teams + permissions).
-- [ ] CASL `AbilityFactory` en `@massivo/permissions` + `PoliciesGuard` + decorator `@CheckPolicies`.
+- [x] CASL `AbilityFactory` en `@massivo/permissions` + `PoliciesGuard` + decorator `@CheckPolicies`. Plan flags (Opción A) en `/me/context` con `computePlanFlags`. Tests: 6 (AbilityFactory) + 5 (PoliciesGuard) + 4 (MeService actualizado) ✅.
 - [x] Prisma client extension que auto-inyecta `organizationId` + `teamId` (modo strict, rechaza queries sin contexto en modelos tenant-aware).
 - [x] Decorator `@SkipTenantScope()` para casos legítimos (admin, jobs de billing).
 - [ ] Onboarding: signup → crear org → crear team "General" → asignar plan FREE.
@@ -242,3 +242,14 @@ Un usuario nuevo puede:
 - Implementación de `ClerkAuthGuard` en el backend usando `@clerk/backend` y corrección de tipos TypeScript en Express Request.
 - Implementación de webhooks de Clerk (`ClerkWebhookController`, `ClerkWebhookService`) usando `svix` para sincronizar usuarios, organizaciones y membresías.
 - Implementación de `TenantContextGuard` y `TenantContextInterceptor` con `AsyncLocalStorage` para manejar el scope de tenants en las peticiones.
+
+### 2026-04-29 — Sesión 6 (Antigravity — Opus 4.6)
+- Completada integración CASL end-to-end: `@massivo/permissions` package (ya existente) → backend `AbilityFactory` + `PoliciesGuard` + `@CheckPolicies` (ya existentes) → wiring verificado.
+- `TenantContextGuard` ya cargaba `planFeatures` desde `org.plan.features` en `request.planFeatures` (confirmado, no requirió cambio).
+- Implementada **Opción A para plan flags** en `GET /api/me/context`: cada org ahora devuelve `permissions: { hasAi, canCreateTeam, canSso }` usando `computePlanFlags()`. Removido `permissions: {}` top-level del response.
+- Actualizado tipo `MeContextResponse` en `@massivo/shared-types`: `PlanFlags` per-org en lugar de `Record<string, unknown>` global.
+- Tests nuevos: `AbilityFactory` (6 tests) + `PoliciesGuard` (5 tests) + `MeService` actualizado (4 tests con plan flags).
+- Fix pre-existente: `vite-env.d.ts` agregado en frontend para resolver `import.meta.env` en `pnpm build`.
+- Fix pre-existente: `@massivo/permissions/tsconfig.json` excluye `*.spec.ts` del build.
+- Fix: `@massivo/backend/package.json` ahora declara dependencia `@massivo/permissions`.
+- Verificación: typecheck 8/8 ✅, build 5/5 ✅, tests backend 25/25 ✅, tests permissions 11/11 ✅.
