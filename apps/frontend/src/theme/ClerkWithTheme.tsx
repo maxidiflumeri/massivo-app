@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { ClerkProvider } from '@clerk/clerk-react';
 import { dark } from '@clerk/themes';
+import { esES } from '@clerk/localizations';
 import { useColorMode } from './ThemeProvider';
 
 interface Props {
@@ -15,6 +16,7 @@ export function ClerkWithTheme({ publishableKey, children }: Props) {
   return (
     <ClerkProvider
       publishableKey={publishableKey}
+      localization={esES}
       appearance={{
         baseTheme: isDark ? dark : undefined,
         variables: {

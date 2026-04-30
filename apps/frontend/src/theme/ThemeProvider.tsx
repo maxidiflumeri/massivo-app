@@ -56,8 +56,24 @@ function buildTheme(mode: ColorMode) {
     components: {
       MuiPaper: {
         styleOverrides: {
-          root: {
+          root: ({ ownerState }) => ({
             backgroundImage: 'none',
+            ...(isDark &&
+              ownerState.variant !== 'outlined' &&
+              (ownerState.elevation ?? 1) > 0 && {
+                boxShadow:
+                  '0 1px 2px rgba(0,0,0,0.45), 0 6px 16px rgba(0,0,0,0.32), inset 0 0 0 1px rgba(255,255,255,0.05)',
+              }),
+          }),
+        },
+      },
+      MuiTableContainer: {
+        styleOverrides: {
+          root: {
+            ...(isDark && {
+              boxShadow:
+                '0 1px 2px rgba(0,0,0,0.45), 0 6px 16px rgba(0,0,0,0.32), inset 0 0 0 1px rgba(255,255,255,0.05)',
+            }),
           },
         },
       },
