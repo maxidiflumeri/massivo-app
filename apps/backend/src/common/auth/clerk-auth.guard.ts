@@ -31,9 +31,13 @@ export class ClerkAuthGuard implements CanActivate {
         secretKey: secretKey,
       });
 
-      // Inject the decoded information into the request for downstream guards (e.g. TenantContextGuard)
+      // Inject the decoded information into the request for downstream guards (e.g. TenantContextGuard).
+      // Clerk v2 JWT pone la org en `o.id`; v1 la pone en `org_id`. Soportamos ambos.
+      const orgId =
+        (payload as { org_id?: string }).org_id ??
+        (payload as { o?: { id?: string } }).o?.id;
       (request as Request & { clerkUserId: string; clerkOrgId?: string }).clerkUserId = payload.sub;
-      (request as Request & { clerkUserId: string; clerkOrgId?: string }).clerkOrgId = payload.org_id;
+      (request as Request & { clerkUserId: string; clerkOrgId?: string }).clerkOrgId = orgId;
 
       return true;
     } catch (err) {

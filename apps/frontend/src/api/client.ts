@@ -2,7 +2,7 @@ import { useAuth } from '@clerk/clerk-react';
 import { useCallback } from 'react';
 import { useActiveTeam } from '../team/TeamContext';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body?: unknown) {

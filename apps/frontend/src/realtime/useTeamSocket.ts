@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useActiveTeam } from '../team/TeamContext';
 
-const SOCKET_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+const SOCKET_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 
 /**
  * Conecta a backend socket con `auth: { token, teamId }` y se une a los rooms

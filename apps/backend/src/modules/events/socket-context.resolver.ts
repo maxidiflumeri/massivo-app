@@ -31,7 +31,9 @@ export class SocketContextResolver {
     try {
       const payload = await verifyToken(token, { secretKey });
       clerkUserId = payload.sub;
-      clerkOrgId = payload.org_id;
+      clerkOrgId =
+        (payload as { org_id?: string }).org_id ??
+        (payload as { o?: { id?: string } }).o?.id;
     } catch {
       throw new UnauthorizedException('Token inválido o expirado');
     }

@@ -55,7 +55,7 @@ describe('PoliciesGuard', () => {
     const ctx = createMockContext({ ai: true });
 
     expect(guard.canActivate(ctx)).toBe(true);
-    expect(abilityFactory.create).toHaveBeenCalledWith({ ai: true });
+    expect(abilityFactory.create).toHaveBeenCalledWith({ ai: true }, undefined);
     expect(handler1).toHaveBeenCalledWith(mockAbility);
     expect(handler2).toHaveBeenCalledWith(mockAbility);
   });
@@ -75,6 +75,6 @@ describe('PoliciesGuard', () => {
     const ctx = createMockContext(undefined);
 
     guard.canActivate(ctx);
-    expect(abilityFactory.create).toHaveBeenCalledWith({});
+    expect(abilityFactory.create).toHaveBeenCalledWith({}, undefined);
   });
 });
