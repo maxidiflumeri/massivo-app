@@ -15,6 +15,8 @@ import { SuppressionsController } from './suppression/suppressions.controller';
 import { SesWebhookController } from './webhook/ses-webhook.controller';
 import { SesWebhookService } from './webhook/ses-webhook.service';
 import { SnsValidatorAdapter } from './webhook/sns-validator.adapter';
+import { EmailCampaignsController } from './campaigns/email-campaigns.controller';
+import { EmailCampaignsService } from './campaigns/email-campaigns.service';
 
 @Module({
   controllers: [
@@ -24,6 +26,7 @@ import { SnsValidatorAdapter } from './webhook/sns-validator.adapter';
     UnsubscribeController,
     SuppressionsController,
     SesWebhookController,
+    EmailCampaignsController,
   ],
   providers: [
     SmtpAccountsService,
@@ -36,6 +39,7 @@ import { SnsValidatorAdapter } from './webhook/sns-validator.adapter';
     SuppressionService,
     SesWebhookService,
     SnsValidatorAdapter,
+    EmailCampaignsService,
   ],
   exports: [EmailQueueService, EmailSenderService, TrackingTokenService, SuppressionService],
 })

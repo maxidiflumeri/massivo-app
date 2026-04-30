@@ -181,8 +181,15 @@ Criterios de aceptación 3.A:
 > **🏁 Sub-fase 3.B completa**: tracking saliente + suppression + webhook SES en 3 sub-pasos. Falta solo 3.C (campañas, Unlayer, frontend) para cerrar Fase 3.
 
 **Sub-fase 3.C — Campañas + Unlayer + Frontend**:
-- [ ] CRUD `EmailCampaign` (`/api/email/campaigns`): create DRAFT, update, schedule. `POST /:id/send` enquola jobs por contacto.
-- [ ] Reporte agregado `GET /api/email/campaigns/:id/report` (counts sent/delivered/opened/clicked/bounced/complained/unsubscribed).
+
+**3.C.1 — Backend campaigns CRUD + send + report (✅ completada):**
+- [x] DTOs (`email-campaigns.dto.ts`): `CreateEmailCampaignDto`, `UpdateEmailCampaignDto`, `CampaignContactDto`, `AddCampaignContactsDto` (max 5000 contacts, `@IsEmail` + normalización).
+- [x] `EmailCampaignsService`: create (DRAFT o SCHEDULED si `scheduledAt > now`), findAll/findOne con relaciones + `_count`, update/remove con guard de estados (`EDITABLE_STATUSES = DRAFT|SCHEDULED|PAUSED`, bloquea PROCESSING), `addContacts` con bulk `createMany`, `send` (valida ready → transiciona PROCESSING → `$transaction` crea `EmailReport[]` PENDING → enquola en BullMQ con `jobId=reportId`), `getReport` (groupBy status counts + opens/clicks/uniqueOpens/uniqueClicks).
+- [x] `EmailCampaignsController` (`/api/email/campaigns`): stack auth completo + `@CheckPolicies` por acción. `POST /:id/send` retorna 202 ACCEPTED. `DELETE /:id` retorna 204.
+- [x] Wiring en `EmailModule`.
+- [x] Tests: 12 nuevos en `email-campaigns.service.spec.ts` (create DRAFT/SCHEDULED/past, update DRAFT/Conflict, addContacts, send happy path + 4 edge cases, getReport). Backend total: **189/189 ✅**.
+
+**3.C.2 — Realtime events** (pendiente):
 - [ ] Editor Unlayer: portar embed desde AMSA (`apps/frontend/src/features/email/templates/`). Persiste `design` JSON + `html` en `EmailTemplate`.
 - [ ] Eventos en tiempo real: `EventsService.emitToTeam(teamId, 'email.report.updated', { campaignId, counts })` debounced 1s.
 - [ ] Tests integración + extensión `tenant-isolation.spec.ts` con `EmailCampaign`/`EmailReport`/`EmailEvent`.
