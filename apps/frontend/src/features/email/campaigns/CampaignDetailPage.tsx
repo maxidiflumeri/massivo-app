@@ -237,7 +237,7 @@ export function CampaignDetailPage() {
         {},
       );
       notify.success(`Encolados ${res.enqueued} envíos`);
-      await load();
+      await Promise.all([load(), loadReport()]);
     } catch (e) {
       notify.error(e instanceof Error ? e.message : 'Error enviando');
     } finally {

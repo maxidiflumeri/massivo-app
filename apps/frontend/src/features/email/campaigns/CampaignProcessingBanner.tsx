@@ -30,14 +30,19 @@ interface Props {
 export function CampaignProcessingBanner({ totalReports, report, socketConnected }: Props) {
   const counts = report?.counts ?? {};
   const pending = counts.PENDING ?? 0;
-  const processed = Math.max(0, totalReports - pending);
-  const pct = totalReports > 0 ? (processed / totalReports) * 100 : 0;
-
   const sent = counts.SENT ?? 0;
   const failed = counts.FAILED ?? 0;
   const bounced = counts.BOUNCED ?? 0;
   const complained = counts.COMPLAINED ?? 0;
   const suppressed = counts.SUPPRESSED ?? 0;
+
+  // Si todavía no llegó un report con datos consistentes (ej. recién se enquoló
+  // y el primer socket update aún no llegó), counts viene todo en 0. En ese
+  // caso el cálculo `total - PENDING` daría 100% falso → mostramos indeterminate.
+  const totalCounted = pending + sent + failed + bounced + complained + suppressed;
+  const hasFreshData = report !== null && totalCounted > 0;
+  const processed = hasFreshData ? Math.max(0, totalReports - pending) : 0;
+  const pct = hasFreshData && totalReports > 0 ? (processed / totalReports) * 100 : 0;
 
   const throughput = useThroughput(processed);
 
@@ -57,18 +62,26 @@ export function CampaignProcessingBanner({ totalReports, report, socketConnected
 
       <Box sx={{ mb: 1.5 }}>
         <LinearProgress
-          variant="determinate"
-          value={Math.min(100, pct)}
+          variant={hasFreshData ? 'determinate' : 'indeterminate'}
+          value={hasFreshData ? Math.min(100, pct) : undefined}
           sx={{ height: 10, borderRadius: 5 }}
         />
       </Box>
 
       <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap' }} useFlexGap>
         <Typography variant="body2" sx={{ fontWeight: 500 }}>
-          {processed.toLocaleString()} / {totalReports.toLocaleString()} procesados
-          <Typography component="span" color="text.secondary" sx={{ ml: 0.75 }}>
-            ({pct.toFixed(1)}%)
-          </Typography>
+          {hasFreshData ? (
+            <>
+              {processed.toLocaleString()} / {totalReports.toLocaleString()} procesados
+              <Typography component="span" color="text.secondary" sx={{ ml: 0.75 }}>
+                ({pct.toFixed(1)}%)
+              </Typography>
+            </>
+          ) : (
+            <Typography component="span" color="text.secondary">
+              Iniciando envío…
+            </Typography>
+          )}
         </Typography>
         <Box sx={{ flex: 1 }} />
         {throughput !== null && (
