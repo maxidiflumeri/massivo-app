@@ -11,6 +11,7 @@ import { CampaignsListPage } from './features/email/campaigns/CampaignsListPage'
 import { CampaignDetailPage } from './features/email/campaigns/CampaignDetailPage';
 import { SmtpAccountsPage } from './features/email/smtp-accounts/SmtpAccountsPage';
 import { SuppressionsPage } from './features/email/suppressions/SuppressionsPage';
+import { MetricsPage } from './features/email/metrics/MetricsPage';
 
 export function App() {
   return (
@@ -42,6 +43,7 @@ export function App() {
         <Route path="email/campaigns/:id" element={<CampaignDetailPage />} />
         <Route path="email/smtp-accounts" element={<SmtpAccountsPage />} />
         <Route path="email/suppressions" element={<SuppressionsPage />} />
+        <Route path="email/metrics" element={<MetricsPage />} />
       </Route>
 
       {/* Fallback */}

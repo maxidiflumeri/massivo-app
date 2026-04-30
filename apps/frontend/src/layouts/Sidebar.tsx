@@ -18,6 +18,7 @@ import ContactsIcon from '@mui/icons-material/Contacts';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DnsIcon from '@mui/icons-material/Dns';
 import BlockIcon from '@mui/icons-material/Block';
+import InsightsIcon from '@mui/icons-material/Insights';
 import HomeIcon from '@mui/icons-material/Home';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -46,10 +47,31 @@ const NAV_GROUPS: NavGroupSpec[] = [
   {
     label: 'Email',
     items: [
-      { to: '/dashboard/email/campaigns', label: 'Campañas', icon: <CampaignIcon fontSize="small" /> },
-      { to: '/dashboard/email/templates', label: 'Templates', icon: <DescriptionIcon fontSize="small" /> },
-      { to: '/dashboard/email/smtp-accounts', label: 'Cuentas SMTP', icon: <DnsIcon fontSize="small" /> },
-      { to: '/dashboard/email/suppressions', label: 'Suppression list', icon: <BlockIcon fontSize="small" /> },
+      {
+        to: '/dashboard/email/campaigns',
+        label: 'Campañas',
+        icon: <CampaignIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/email/templates',
+        label: 'Templates',
+        icon: <DescriptionIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/email/smtp-accounts',
+        label: 'Cuentas SMTP',
+        icon: <DnsIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/email/suppressions',
+        label: 'Desuscriptos',
+        icon: <BlockIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/email/metrics',
+        label: 'Métricas',
+        icon: <InsightsIcon fontSize="small" />,
+      },
     ],
   },
   {
@@ -173,7 +195,11 @@ export function Sidebar({
           >
             <Tooltip title={collapsed ? 'Expandir' : 'Colapsar'} placement="right">
               <IconButton size="small" onClick={onToggleCollapsed}>
-                {collapsed ? <ChevronRightIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
+                {collapsed ? (
+                  <ChevronRightIcon fontSize="small" />
+                ) : (
+                  <ChevronLeftIcon fontSize="small" />
+                )}
               </IconButton>
             </Tooltip>
           </Box>
@@ -214,38 +240,39 @@ function NavRow({
     justifyContent: 'center',
   } as const;
 
-  const button = item.disabled || !item.to ? (
-    <ListItemButton disabled sx={baseSx}>
-      <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
-      {!collapsed && (
-        <>
+  const button =
+    item.disabled || !item.to ? (
+      <ListItemButton disabled sx={baseSx}>
+        <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
+        {!collapsed && (
+          <>
+            <ListItemText
+              primary={item.label}
+              primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+            />
+            <Typography variant="caption" color="text.disabled" sx={{ ml: 1 }}>
+              pronto
+            </Typography>
+          </>
+        )}
+      </ListItemButton>
+    ) : (
+      <ListItemButton
+        component={NavLink}
+        to={item.to}
+        end={item.to === '/dashboard'}
+        onClick={() => onNavigate?.()}
+        sx={baseSx}
+      >
+        <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
+        {!collapsed && (
           <ListItemText
             primary={item.label}
             primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
           />
-          <Typography variant="caption" color="text.disabled" sx={{ ml: 1 }}>
-            pronto
-          </Typography>
-        </>
-      )}
-    </ListItemButton>
-  ) : (
-    <ListItemButton
-      component={NavLink}
-      to={item.to}
-      end={item.to === '/dashboard'}
-      onClick={() => onNavigate?.()}
-      sx={baseSx}
-    >
-      <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
-      {!collapsed && (
-        <ListItemText
-          primary={item.label}
-          primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
-        />
-      )}
-    </ListItemButton>
-  );
+        )}
+      </ListItemButton>
+    );
 
   if (collapsed) {
     return (

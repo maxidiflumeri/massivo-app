@@ -21,6 +21,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 3.C.4.d — Métricas globales de email
+- **Backend**: nuevo `EmailMetricsService.getOverview(days)` (window 7|30) con queries agregadas via `prisma.scoped.emailReport.groupBy`. Calcula totales por status (sent, failed, bounced, complained, suppressed, pending), aperturas/clicks únicos (reports cuyo `firstOpenedAt`/`firstClickedAt` cae en ventana) y rates: openRate / clickRate / bounceRate / complaintRate. Top 5 campañas (por enviados) con sent + opens + clicks únicos por campaña.
+- **Endpoint** `GET /api/email/metrics/overview?days=7|30` con `@CheckPolicies('read', 'Analytics')`. 400 si days no es 7 ni 30.
+- **Tests**: `email-metrics.service.spec.ts` 3 casos (totales+rates+top, rates=0 sin sent, ventana 30d).
+- **Frontend**: nueva página `/dashboard/email/metrics` con 4 KpiCards (Enviados / Open rate / Click rate / Bounce rate), distribución por estado en chips, tabla top 5 campañas con link al detalle. ToggleButtonGroup 7d/30d. NavRow con `InsightsIcon`.
+
 ### 3.C.4.c — Suppressions UI
 - **Backend**: refactor `SuppressionsController` con endpoints separados y paginados:
   - `GET /api/email/suppressions/unsubscribes?cursor=&limit=&email=` — cursor pagination (take=limit+1), filtro `email` substring case-insensitive, devuelve `{ items, nextCursor }`.
