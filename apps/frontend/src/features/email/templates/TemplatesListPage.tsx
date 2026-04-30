@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
-  Alert,
   Box,
   Button,
-  CircularProgress,
   IconButton,
   Paper,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -21,21 +20,23 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { useApi } from '../../../api/client';
+import { useNotify } from '../../../feedback/NotifyProvider';
+import { useConfirm } from '../../../feedback/ConfirmProvider';
 import type { EmailTemplate } from './types';
 
 export function TemplatesListPage() {
   const api = useApi();
+  const notify = useNotify();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<EmailTemplate[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
       const data = await api.get<EmailTemplate[]>('/api/email/templates');
       setTemplates(data);
-      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando templates');
+      notify.error(e instanceof Error ? e.message : 'Error cargando templates');
     }
   }
 
@@ -44,19 +45,34 @@ export function TemplatesListPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleDelete(id: string) {
-    if (!confirm('¿Borrar este template?')) return;
+  async function handleDelete(t: EmailTemplate) {
+    const ok = await confirm({
+      title: 'Borrar template',
+      message: `¿Seguro que querés borrar "${t.name}"? Esta acción no se puede deshacer.`,
+      confirmText: 'Borrar',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
-      await api.delete(`/api/email/templates/${id}`);
+      await api.delete(`/api/email/templates/${t.id}`);
+      notify.success('Template eliminado');
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error borrando');
+      notify.error(e instanceof Error ? e.message : 'Error borrando');
     }
   }
 
   return (
     <Stack spacing={3}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 2,
+          flexWrap: 'wrap',
+        }}
+      >
         <Typography variant="h4">Email Templates</Typography>
         <Button
           variant="contained"
@@ -67,12 +83,14 @@ export function TemplatesListPage() {
         </Button>
       </Box>
 
-      {error && <Alert severity="error">{error}</Alert>}
-
-      {templates === null && !error && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress />
-        </Box>
+      {templates === null && (
+        <Paper sx={{ p: 2 }}>
+          <Stack spacing={1}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} variant="rectangular" height={48} />
+            ))}
+          </Stack>
+        </Paper>
       )}
 
       {templates !== null && templates.length === 0 && (
@@ -83,12 +101,12 @@ export function TemplatesListPage() {
 
       {templates !== null && templates.length > 0 && (
         <TableContainer component={Paper}>
-          <Table>
+          <Table size="small">
             <TableHead>
               <TableRow>
                 <TableCell>Nombre</TableCell>
-                <TableCell>Subject</TableCell>
-                <TableCell>Actualizado</TableCell>
+                <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Subject</TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Actualizado</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
             </TableHead>
@@ -102,9 +120,18 @@ export function TemplatesListPage() {
                     >
                       {t.name}
                     </RouterLink>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: { xs: 'block', sm: 'none' } }}
+                    >
+                      {t.subject}
+                    </Typography>
                   </TableCell>
-                  <TableCell>{t.subject}</TableCell>
-                  <TableCell>{new Date(t.updatedAt).toLocaleString()}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{t.subject}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                    {new Date(t.updatedAt).toLocaleString()}
+                  </TableCell>
                   <TableCell align="right">
                     <Tooltip title="Editar">
                       <IconButton
@@ -115,7 +142,7 @@ export function TemplatesListPage() {
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="Borrar">
-                      <IconButton size="small" color="error" onClick={() => handleDelete(t.id)}>
+                      <IconButton size="small" color="error" onClick={() => handleDelete(t)}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>

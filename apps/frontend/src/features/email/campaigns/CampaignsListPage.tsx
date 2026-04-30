@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
-  Alert,
   Box,
   Button,
   Chip,
-  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   IconButton,
   Paper,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -27,6 +26,8 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { useApi } from '../../../api/client';
 import { useTeamSocket } from '../../../realtime/useTeamSocket';
+import { useNotify } from '../../../feedback/NotifyProvider';
+import { useConfirm } from '../../../feedback/ConfirmProvider';
 import type { CampaignListItem, CampaignStatus } from './types';
 
 const STATUS_COLOR: Record<CampaignStatus, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
@@ -40,9 +41,10 @@ const STATUS_COLOR: Record<CampaignStatus, 'default' | 'info' | 'warning' | 'suc
 
 export function CampaignsListPage() {
   const api = useApi();
+  const notify = useNotify();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [items, setItems] = useState<CampaignListItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [openNew, setOpenNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -52,9 +54,8 @@ export function CampaignsListPage() {
     try {
       const data = await api.get<CampaignListItem[]>('/api/email/campaigns');
       setItems(data);
-      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando campañas');
+      notify.error(e instanceof Error ? e.message : 'Error cargando campañas');
     }
   }
 
@@ -84,21 +85,29 @@ export function CampaignsListPage() {
       });
       setOpenNew(false);
       setNewName('');
+      notify.success('Campaña creada');
       navigate(`/dashboard/email/campaigns/${created.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error creando campaña');
+      notify.error(e instanceof Error ? e.message : 'Error creando campaña');
     } finally {
       setCreating(false);
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('¿Borrar esta campaña?')) return;
+  async function handleDelete(c: CampaignListItem) {
+    const ok = await confirm({
+      title: 'Borrar campaña',
+      message: `¿Seguro que querés borrar "${c.name}"? Se perderán contactos y reports asociados.`,
+      confirmText: 'Borrar',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
-      await api.delete(`/api/email/campaigns/${id}`);
+      await api.delete(`/api/email/campaigns/${c.id}`);
+      notify.success('Campaña eliminada');
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error borrando');
+      notify.error(e instanceof Error ? e.message : 'Error borrando');
     }
   }
 
@@ -111,12 +120,14 @@ export function CampaignsListPage() {
         </Button>
       </Box>
 
-      {error && <Alert severity="error">{error}</Alert>}
-
-      {items === null && !error && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress />
-        </Box>
+      {items === null && (
+        <Paper sx={{ p: 2 }}>
+          <Stack spacing={1}>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} variant="rectangular" height={48} />
+            ))}
+          </Stack>
+        </Paper>
       )}
 
       {items !== null && items.length === 0 && (
@@ -127,15 +138,19 @@ export function CampaignsListPage() {
 
       {items !== null && items.length > 0 && (
         <TableContainer component={Paper}>
-          <Table>
+          <Table size="small">
             <TableHead>
               <TableRow>
                 <TableCell>Nombre</TableCell>
                 <TableCell>Estado</TableCell>
-                <TableCell align="right">Contactos</TableCell>
-                <TableCell align="right">Reports</TableCell>
-                <TableCell>Programada</TableCell>
-                <TableCell>Creada</TableCell>
+                <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
+                  Contactos
+                </TableCell>
+                <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
+                  Reports
+                </TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Programada</TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Creada</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
             </TableHead>
@@ -149,14 +164,29 @@ export function CampaignsListPage() {
                     >
                       {c.name}
                     </RouterLink>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: { xs: 'block', sm: 'none' } }}
+                    >
+                      {c._count.contacts} contactos · {c._count.reports} reports
+                    </Typography>
                   </TableCell>
                   <TableCell>
                     <Chip size="small" label={c.status} color={STATUS_COLOR[c.status]} />
                   </TableCell>
-                  <TableCell align="right">{c._count.contacts}</TableCell>
-                  <TableCell align="right">{c._count.reports}</TableCell>
-                  <TableCell>{c.scheduledAt ? new Date(c.scheduledAt).toLocaleString() : '—'}</TableCell>
-                  <TableCell>{new Date(c.createdAt).toLocaleString()}</TableCell>
+                  <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
+                    {c._count.contacts}
+                  </TableCell>
+                  <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
+                    {c._count.reports}
+                  </TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                    {c.scheduledAt ? new Date(c.scheduledAt).toLocaleString() : '—'}
+                  </TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                    {new Date(c.createdAt).toLocaleString()}
+                  </TableCell>
                   <TableCell align="right">
                     <Tooltip title="Borrar">
                       <span>
@@ -164,7 +194,7 @@ export function CampaignsListPage() {
                           size="small"
                           color="error"
                           disabled={c.status === 'PROCESSING'}
-                          onClick={() => handleDelete(c.id)}
+                          onClick={() => handleDelete(c)}
                         >
                           <DeleteIcon fontSize="small" />
                         </IconButton>

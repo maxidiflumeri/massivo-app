@@ -4,7 +4,7 @@ import {
   Alert,
   Box,
   Button,
-  CircularProgress,
+  Skeleton,
   Stack,
   TextField,
   Typography,
@@ -13,6 +13,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EmailEditor, { type EditorRef } from 'react-email-editor';
 import { useApi, ApiError } from '../../../api/client';
+import { useNotify } from '../../../feedback/NotifyProvider';
 import type { CreateTemplatePayload, EmailTemplate } from './types';
 
 interface ExportResult {
@@ -24,6 +25,7 @@ export function TemplateEditorPage() {
   const { id } = useParams<{ id: string }>();
   const isNew = !id || id === 'new';
   const api = useApi();
+  const notify = useNotify();
   const navigate = useNavigate();
   const editorRef = useRef<EditorRef>(null);
 
@@ -73,7 +75,7 @@ export function TemplateEditorPage() {
 
   async function handleSave() {
     if (!name.trim() || !subject.trim()) {
-      setError('Nombre y subject son requeridos');
+      notify.warning('Nombre y subject son requeridos');
       return;
     }
     setSaving(true);
@@ -83,12 +85,15 @@ export function TemplateEditorPage() {
       const payload: CreateTemplatePayload = { name, subject, html, design };
       if (isNew) {
         const created = await api.post<EmailTemplate>('/api/email/templates', payload);
+        notify.success('Template creado');
         navigate(`/dashboard/email/templates/${created.id}`, { replace: true });
       } else {
         await api.patch<EmailTemplate>(`/api/email/templates/${id}`, payload);
+        notify.success('Template guardado');
       }
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Error guardando';
+      notify.error(msg);
       setError(msg);
     } finally {
       setSaving(false);
@@ -97,9 +102,12 @@ export function TemplateEditorPage() {
 
   if (!loaded) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-        {error ? <Alert severity="error">{error}</Alert> : <CircularProgress />}
-      </Box>
+      <Stack spacing={2} sx={{ py: 2 }}>
+        {error && <Alert severity="error">{error}</Alert>}
+        <Skeleton variant="rectangular" height={56} />
+        <Skeleton variant="rectangular" height={56} />
+        <Skeleton variant="rectangular" height={500} />
+      </Stack>
     );
   }
 

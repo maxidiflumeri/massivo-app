@@ -5,13 +5,13 @@ import {
   Box,
   Button,
   Chip,
-  CircularProgress,
   Divider,
   FormControl,
   InputLabel,
   MenuItem,
   Paper,
   Select,
+  Skeleton,
   Stack,
   TextField,
   Typography,
@@ -21,6 +21,8 @@ import SendIcon from '@mui/icons-material/Send';
 import UploadIcon from '@mui/icons-material/Upload';
 import { useApi } from '../../../api/client';
 import { useTeamSocket } from '../../../realtime/useTeamSocket';
+import { useNotify } from '../../../feedback/NotifyProvider';
+import { useConfirm } from '../../../feedback/ConfirmProvider';
 import type { EmailTemplate } from '../templates/types';
 import type {
   CampaignContactInput,
@@ -100,6 +102,8 @@ function parseContactsCsv(text: string): { contacts: CampaignContactInput[]; err
 export function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
   const api = useApi();
+  const notify = useNotify();
+  const confirm = useConfirm();
   const navigate = useNavigate();
 
   const [campaign, setCampaign] = useState<CampaignDetail | null>(null);
@@ -107,7 +111,6 @@ export function CampaignDetailPage() {
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [smtpAccounts, setSmtpAccounts] = useState<SmtpAccountListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
   const [liveTick, setLiveTick] = useState(0);
   const socket = useTeamSocket();
 
@@ -184,18 +187,16 @@ export function CampaignDetailPage() {
   async function handleSave() {
     if (!campaign) return;
     setSaving(true);
-    setError(null);
-    setInfo(null);
     try {
       const payload: Record<string, unknown> = { name };
       payload.templateId = templateId || null;
       payload.smtpAccountId = smtpAccountId || null;
       payload.scheduledAt = scheduledAt ? new Date(scheduledAt).toISOString() : null;
       await api.patch(`/api/email/campaigns/${campaign.id}`, payload);
-      setInfo('Cambios guardados');
+      notify.success('Cambios guardados');
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error guardando');
+      notify.error(e instanceof Error ? e.message : 'Error guardando');
     } finally {
       setSaving(false);
     }
@@ -204,18 +205,16 @@ export function CampaignDetailPage() {
   async function handleUploadContacts() {
     if (!campaign || parsed.contacts.length === 0) return;
     setUploading(true);
-    setError(null);
-    setInfo(null);
     try {
       const res = await api.post<{ created: number }>(
         `/api/email/campaigns/${campaign.id}/contacts`,
         { contacts: parsed.contacts },
       );
-      setInfo(`${res.created} contactos agregados`);
+      notify.success(`${res.created} contacto${res.created === 1 ? '' : 's'} agregado${res.created === 1 ? '' : 's'}`);
       setContactsText('');
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error subiendo contactos');
+      notify.error(e instanceof Error ? e.message : 'Error subiendo contactos');
     } finally {
       setUploading(false);
     }
@@ -223,21 +222,22 @@ export function CampaignDetailPage() {
 
   async function handleSend() {
     if (!campaign) return;
-    if (!confirm(`¿Enviar campaña "${campaign.name}" a ${campaign._count.contacts} contactos?`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Enviar campaña',
+      message: `Vas a enviar "${campaign.name}" a ${campaign._count.contacts} contacto${campaign._count.contacts === 1 ? '' : 's'}.\nEsta acción no se puede deshacer una vez encolada.`,
+      confirmText: 'Enviar',
+    });
+    if (!ok) return;
     setSending(true);
-    setError(null);
-    setInfo(null);
     try {
       const res = await api.post<{ enqueued: number }>(
         `/api/email/campaigns/${campaign.id}/send`,
         {},
       );
-      setInfo(`Encolados ${res.enqueued} envíos`);
+      notify.success(`Encolados ${res.enqueued} envíos`);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error enviando');
+      notify.error(e instanceof Error ? e.message : 'Error enviando');
     } finally {
       setSending(false);
     }
@@ -245,9 +245,11 @@ export function CampaignDetailPage() {
 
   if (!campaign && !error) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-        <CircularProgress />
-      </Box>
+      <Stack spacing={3}>
+        <Skeleton variant="rectangular" height={48} />
+        <Skeleton variant="rectangular" height={240} />
+        <Skeleton variant="rectangular" height={200} />
+      </Stack>
     );
   }
 
@@ -272,7 +274,6 @@ export function CampaignDetailPage() {
       </Box>
 
       {error && <Alert severity="error">{error}</Alert>}
-      {info && <Alert severity="success">{info}</Alert>}
 
       {report && (campaign.status === 'PROCESSING' || campaign.status === 'COMPLETED' || campaign._count.reports > 0) && (
         <Paper sx={{ p: 3 }}>

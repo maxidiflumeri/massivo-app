@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 import { ThemeProvider } from './theme/ThemeProvider';
 import { TeamProvider } from './team/TeamContext';
+import { NotifyProvider } from './feedback/NotifyProvider';
+import { ConfirmProvider } from './feedback/ConfirmProvider';
 
 import { ClerkProvider } from '@clerk/clerk-react';
 
@@ -19,11 +21,15 @@ createRoot(rootEl).render(
   <StrictMode>
     <ClerkProvider publishableKey={clerkPubKey} appearance={{ elements: { rootBox: { display: 'flex', justifyContent: 'center', width: '100%' } } }}>
       <ThemeProvider>
-        <TeamProvider>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
-        </TeamProvider>
+        <NotifyProvider>
+          <ConfirmProvider>
+            <TeamProvider>
+              <BrowserRouter>
+                <App />
+              </BrowserRouter>
+            </TeamProvider>
+          </ConfirmProvider>
+        </NotifyProvider>
       </ThemeProvider>
     </ClerkProvider>
   </StrictMode>,
