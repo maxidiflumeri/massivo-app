@@ -43,7 +43,7 @@ export function defineAbilityFor(ctx: AbilityContext): AppAbility {
   }
 
   if (teamRole === 'MEMBER') {
-    can(['create', 'read', 'update', 'send'], ['Campaign', 'Template', 'Contact'], { teamId });
+    can(['create', 'read', 'update', 'send'], ['Campaign', 'Template', 'Contact', 'WapiTemplate'], { teamId });
     can('read', ['WapiConfig', 'SmtpAccount', 'Analytics'], { teamId });
   }
 

@@ -9,6 +9,15 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'EmailEvent',
   'EmailBounce',
   'EmailUnsubscribe',
+  // WhatsApp channel (Fase 2.B)
+  'WapiConfig',
+  'WapiTemplate',
+  'WapiCampaign',
+  'WapiContact',
+  'WapiReport',
+  'WapiConversation',
+  'WapiMessage',
+  'WapiOptOut',
 ]);
 
 export const ORG_SCOPED_MODELS = new Set<string>(['Subscription', 'UsageCounter', 'AuditLog']);

@@ -3,6 +3,7 @@ export type SubjectName =
   | 'Contact'
   | 'Template'
   | 'WapiConfig'
+  | 'WapiTemplate'
   | 'SmtpAccount'
   | 'Team'
   | 'Organization'

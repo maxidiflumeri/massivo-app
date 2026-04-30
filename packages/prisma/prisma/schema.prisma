@@ -98,6 +98,14 @@ model Organization {
   emailEvents       EmailEvent[]
   emailBounces      EmailBounce[]
   emailUnsubscribes EmailUnsubscribe[]
+  wapiConfigs       WapiConfig[]
+  wapiTemplates     WapiTemplate[]
+  wapiCampaigns     WapiCampaign[]
+  wapiContacts      WapiContact[]
+  wapiReports       WapiReport[]
+  wapiConversations WapiConversation[]
+  wapiMessages      WapiMessage[]
+  wapiOptOuts       WapiOptOut[]
 
   @@index([status])
 }
@@ -121,6 +129,14 @@ model Team {
   emailEvents       EmailEvent[]
   emailBounces      EmailBounce[]
   emailUnsubscribes EmailUnsubscribe[]
+  wapiConfigs       WapiConfig[]
+  wapiTemplates     WapiTemplate[]
+  wapiCampaigns     WapiCampaign[]
+  wapiContacts      WapiContact[]
+  wapiReports       WapiReport[]
+  wapiConversations WapiConversation[]
+  wapiMessages      WapiMessage[]
+  wapiOptOuts       WapiOptOut[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -424,4 +440,237 @@ model EmailUnsubscribe {
   @@unique([teamId, emailHash, scope, campaignId])
   @@index([organizationId])
   @@index([teamId, emailHash])
+}
+
+// ============================================================
+// WhatsApp channel (Fase 2 — sub-B)
+// ============================================================
+
+enum WapiCampaignStatus {
+  DRAFT
+  SCHEDULED
+  PROCESSING
+  PAUSED
+  COMPLETED
+  FAILED
+}
+
+enum WapiReportStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum WapiConversationStatus {
+  UNASSIGNED
+  ASSIGNED
+  RESOLVED
+}
+
+enum WapiOptOutScope {
+  GLOBAL
+  CAMPAIGN
+}
+
+model WapiConfig {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  teamId                String
+  name                  String?
+  phoneNumberId         String
+  businessAccountId     String
+  accessTokenEnc        String
+  webhookVerifyTokenEnc String
+  appSecretEnc          String?
+  welcomeMessage        String?
+  optOutConfirmMessage  String?
+  dailyLimit            Int      @default(200)
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team          Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  campaigns     WapiCampaign[]
+  conversations WapiConversation[]
+
+  @@unique([teamId, phoneNumberId])
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model WapiTemplate {
+  id                String   @id @default(cuid())
+  organizationId    String
+  teamId            String
+  metaName          String
+  businessAccountId String   @default("")
+  category          String
+  language          String
+  status            String
+  components        Json
+  buttonActions     Json?
+  syncedAt          DateTime
+  createdAt         DateTime @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  campaigns    WapiCampaign[]
+
+  @@unique([teamId, metaName, businessAccountId])
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model WapiCampaign {
+  id              String             @id @default(cuid())
+  organizationId  String
+  teamId          String
+  name            String
+  status          WapiCampaignStatus @default(DRAFT)
+  paused          Boolean            @default(false)
+  archived        Boolean            @default(false)
+  jobId           String?
+  templateId      String?
+  configId        String?
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  config          Json?
+  createdByUserId String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  template     WapiTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  configRel    WapiConfig?   @relation(fields: [configId], references: [id], onDelete: SetNull)
+  contacts     WapiContact[]
+  reports      WapiReport[]
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([teamId, status])
+}
+
+model WapiContact {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  campaignId     String
+  phone          String
+  name           String?
+  data           Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  campaign     WapiCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  report       WapiReport?
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([campaignId])
+}
+
+model WapiReport {
+  id             String           @id @default(cuid())
+  organizationId String
+  teamId         String
+  campaignId     String
+  contactId      String           @unique
+  phone          String
+  metaMessageId  String?          @unique
+  status         WapiReportStatus @default(PENDING)
+  error          String?
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  failedAt       DateTime?
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  campaign     WapiCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact      WapiContact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([campaignId])
+  @@index([teamId, status])
+  @@index([sentAt])
+}
+
+model WapiConversation {
+  id             String                 @id @default(cuid())
+  organizationId String
+  teamId         String
+  configId       String
+  phone          String
+  name           String?
+  status         WapiConversationStatus @default(UNASSIGNED)
+  assignedUserId String?
+  lastMessageAt  DateTime?
+  window24hAt    DateTime?
+  firstReplyAt   DateTime?
+  resolvedAt     DateTime?
+  unreadCount    Int                    @default(0)
+  lastReadAt     DateTime?
+  campaignName   String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  config       WapiConfig    @relation(fields: [configId], references: [id], onDelete: Cascade)
+  messages     WapiMessage[]
+
+  @@unique([teamId, configId, phone])
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([assignedUserId])
+  @@index([status])
+}
+
+model WapiMessage {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  conversationId String
+  metaMessageId  String?  @unique
+  fromMe         Boolean
+  type           String
+  content        Json
+  status         String   @default("sent")
+  timestamp      DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  conversation WapiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([conversationId, timestamp])
+}
+
+model WapiOptOut {
+  id             String          @id @default(cuid())
+  organizationId String
+  teamId         String
+  phone          String
+  phoneHash      String
+  scope          WapiOptOutScope @default(GLOBAL)
+  campaignId     String?
+  reason         String?
+  source         String?
+  createdAt      DateTime        @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, phoneHash, scope, campaignId])
+  @@index([organizationId])
+  @@index([teamId, phoneHash])
 }

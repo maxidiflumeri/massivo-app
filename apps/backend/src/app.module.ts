@@ -10,6 +10,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { MeModule } from './modules/me/me.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { EmailModule } from './modules/email/email.module';
+import { WapiModule } from './modules/wapi/wapi.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { EmailModule } from './modules/email/email.module';
     MeModule,
     TeamsModule,
     EmailModule,
+    WapiModule,
   ],
   controllers: [HealthController],
   providers: [],

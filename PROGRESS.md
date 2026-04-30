@@ -134,16 +134,16 @@ Criterios de aceptación 2.A:
 - Llamada autenticada `GET /api/email/templates` con `X-Team-Id` de Tenant A devuelve solo templates de ese team (validado en suite isolation).
 - Cualquier intento de leer/modificar un `SmtpAccount` o `EmailTemplate` de otro tenant retorna `404` (no `403`, para no filtrar existencia).
 
-**Sub-fase 2.B — WhatsApp**
+**Sub-fase 2.B — WhatsApp** (completada ✅)
 
 Checklist:
-- [ ] Schema Prisma: `WapiConfig` (phoneNumberId, businessAccountId, accessTokenEnc, webhookVerifyTokenEnc, isActive), `WapiTemplate` (nombre, categoría, status Meta, body/header/footer/buttons), `WapiCampaign`, `WapiContact`, `WapiReport`, `WapiConversation`, `WapiMessage` (direction, type, content, status, metaMessageId), `WapiOptOut`. Todos tenant-aware.
-- [ ] Registrar los 8 modelos en `TENANT_SCOPED_MODELS`.
-- [ ] Migración Prisma `add_wapi_models`.
-- [ ] Tokens marcados como encriptados a nivel de tipo (`*Enc: string`) — encriptación real con KMS queda para Fase 4; agregar TODO con referencia a la fase.
-- [ ] CRUD mínimo de `WapiConfig` y `WapiTemplate` con `@CheckPolicies` (subjects `WhatsappConfig`, `WhatsappTemplate`).
-- [ ] DTOs `class-validator` para `WapiConfig` (`phoneNumberId`, `businessAccountId`, `accessToken`, `webhookVerifyToken`, `isActive`).
-- [ ] Tests unitarios de los services + extensión de `tenant-isolation.spec.ts`.
+- [x] Schema Prisma: `WapiConfig`, `WapiTemplate`, `WapiCampaign`, `WapiContact`, `WapiReport`, `WapiConversation`, `WapiMessage`, `WapiOptOut`. Todos tenant-aware.
+- [x] Registrar los 8 modelos en `TENANT_SCOPED_MODELS`.
+- [x] Migración Prisma `add_wapi_models`.
+- [x] Tokens marcados como encriptados a nivel de tipo (`*Enc: string`) — encriptación real con KMS queda para Fase 4; agregar TODO con referencia a la fase.
+- [x] CRUD mínimo de `WapiConfig` y `WapiTemplate` con `@CheckPolicies` (subjects `WhatsappConfig`, `WhatsappTemplate`).
+- [x] DTOs `class-validator` para `WapiConfig` (`phoneNumberId`, `businessAccountId`, `accessToken`, `webhookVerifyToken`, `isActive`).
+- [x] Tests unitarios de los services + extensión de `tenant-isolation.spec.ts`.
 
 Criterios de aceptación 2.B:
 - `pnpm --filter @massivo/backend test` verde.

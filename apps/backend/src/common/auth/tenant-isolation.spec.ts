@@ -13,6 +13,8 @@ import { TeamsService } from '../../modules/teams/teams.service';
 import { TeamMembersService } from '../../modules/teams/team-members.service';
 import { SmtpAccountsService } from '../../modules/email/smtp-accounts.service';
 import { EmailTemplatesService } from '../../modules/email/email-templates.service';
+import { WapiConfigsService } from '../../modules/wapi/wapi-configs.service';
+import { WapiTemplatesService } from '../../modules/wapi/wapi-templates.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContext } from './tenant-context';
 import type { RequestContext } from '@massivo/shared-types';
@@ -22,6 +24,8 @@ describe('Aislamiento tenant-a-tenant', () => {
   let membersService: TeamMembersService;
   let smtpService: SmtpAccountsService;
   let templatesService: EmailTemplatesService;
+  let wapiConfigService: WapiConfigsService;
+  let wapiTemplateService: WapiTemplatesService;
   let prismaMock: Record<string, Record<string, jest.Mock>>;
 
   const tenantA: RequestContext = {
@@ -75,6 +79,20 @@ describe('Aislamiento tenant-a-tenant', () => {
         update: jest.fn(),
         delete: jest.fn(),
       },
+      wapiConfig: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
+      wapiTemplate: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -83,6 +101,8 @@ describe('Aislamiento tenant-a-tenant', () => {
         TeamMembersService,
         SmtpAccountsService,
         EmailTemplatesService,
+        WapiConfigsService,
+        WapiTemplatesService,
         { provide: PrismaService, useValue: { scoped: prismaMock, ...prismaMock } },
       ],
     }).compile();
@@ -91,6 +111,8 @@ describe('Aislamiento tenant-a-tenant', () => {
     membersService = moduleRef.get(TeamMembersService);
     smtpService = moduleRef.get(SmtpAccountsService);
     templatesService = moduleRef.get(EmailTemplatesService);
+    wapiConfigService = moduleRef.get(WapiConfigsService);
+    wapiTemplateService = moduleRef.get(WapiTemplatesService);
   });
 
   describe('TeamsService — aislamiento por organizationId', () => {
@@ -237,6 +259,58 @@ describe('Aislamiento tenant-a-tenant', () => {
     });
   });
 
+  describe('WapiConfigsService — aislamiento cross-tenant', () => {
+    it('Tenant A no puede leer WapiConfig de Tenant B (NotFoundException)', async () => {
+      prismaMock['wapiConfig']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => wapiConfigService.findOne('wcfg-b1')),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('Tenant A no puede eliminar WapiConfig de Tenant B (NotFoundException)', async () => {
+      prismaMock['wapiConfig']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => wapiConfigService.remove('wcfg-b1')),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('Tenant A no puede actualizar WapiConfig de Tenant B (NotFoundException)', async () => {
+      prismaMock['wapiConfig']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => wapiConfigService.update('wcfg-b1', { name: 'Hacked' })),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('WapiTemplatesService — aislamiento cross-tenant', () => {
+    it('Tenant A no puede leer WapiTemplate de Tenant B (NotFoundException)', async () => {
+      prismaMock['wapiTemplate']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => wapiTemplateService.findOne('wtpl-b1')),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('Tenant A no puede eliminar WapiTemplate de Tenant B (NotFoundException)', async () => {
+      prismaMock['wapiTemplate']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => wapiTemplateService.remove('wtpl-b1')),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('Tenant A no puede actualizar WapiTemplate de Tenant B (NotFoundException)', async () => {
+      prismaMock['wapiTemplate']!['findFirst']!.mockResolvedValue(null);
+
+      await expect(
+        TenantContext.run(tenantA, () => wapiTemplateService.update('wtpl-b1', { metaName: 'Hacked' })),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   describe('Sin TenantContext — error inmediato', () => {
     it('TeamsService.findAll lanza ForbiddenException sin contexto', async () => {
       await expect(teamsService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
@@ -252,6 +326,14 @@ describe('Aislamiento tenant-a-tenant', () => {
 
     it('EmailTemplatesService.findAll lanza ForbiddenException sin contexto', async () => {
       await expect(templatesService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('WapiConfigsService.findAll lanza ForbiddenException sin contexto', async () => {
+      await expect(wapiConfigService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('WapiTemplatesService.findAll lanza ForbiddenException sin contexto', async () => {
+      await expect(wapiTemplateService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 });
