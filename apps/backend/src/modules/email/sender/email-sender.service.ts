@@ -62,6 +62,7 @@ export class EmailSenderService {
           secretAccessKey: this.config.get<string>('AWS_SECRET_ACCESS_KEY'),
           configSetPrefix:
             this.config.get<string>('SES_CONFIG_SET_PREFIX') ?? 'massivo-team-',
+          eventsSnsTopicArn: this.config.get<string>('SES_EVENTS_SNS_TOPIC_ARN') || undefined,
         });
       }
       return this.sesSender;

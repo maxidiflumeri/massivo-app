@@ -171,9 +171,14 @@ Criterios de aceptación 3.A:
 - [x] `SuppressionsController` (`GET /api/email/suppressions`): stack auth completo + `@CheckPolicies('read', 'EmailSuppression')`, paginado por cursor (clamp 200).
 - [x] Tests: 17 nuevos (suppression service, unsubscribe controller, suppressions list, worker SUPPRESSED branch). Backend total: **159/159 ✅**.
 
-**3.B.3 — Webhook SES (pendiente):**
-- [ ] Webhook SES `POST /webhooks/ses`: valida firma SNS (`sns-validator`), resuelve tenant via `configurationSet` o `messageId`. Maneja Bounce/Complaint/Delivery/Open/Click (idempotente). `@SkipTenantScope()`.
-- [ ] Configurar SNS destinations en `SesSender.ensureConfigurationSet` (Bounce/Complaint/Delivery/Open/Click → topic ARN).
+**3.B.3 — Webhook SES (✅ completada):**
+- [x] `SesSender.ensureConfigurationSet`: extiende para crear EventDestination tipo SNS (idempotente vía `GetConfigurationSetEventDestinationsCommand`) cuando hay `SES_EVENTS_SNS_TOPIC_ARN`. Eventos: BOUNCE, COMPLAINT, DELIVERY, OPEN, CLICK.
+- [x] `SnsValidatorAdapter`: wrapper Promise sobre `sns-validator` (callback API) para mock fácil en tests.
+- [x] `SesWebhookController` (`POST /webhooks/ses`, `@SkipTenantScope`): valida firma RSA, maneja SubscriptionConfirmation (auto-confirma vía fetch al SubscribeURL), UnsubscribeConfirmation (log) y Notification (parsea Message, delega).
+- [x] `SesWebhookService.process`: resuelve tenant por `mail.tags['ses:configuration-set']` (formato `{prefix}{teamId}`) con fallback a buscar por `messageId` con cliente raíz, corre todo dentro de `TenantContext.run`. Bounce permanent → `EmailBounce` hard + `EmailReport` BOUNCED + suppression GLOBAL. Complaint → COMPLAINED + suppression. Open/Click idempotentes (dedupe 2s + targetDomain). Delivery sin acción (no hay enum DELIVERY).
+- [x] Tests: 18 nuevos — `ses-sender.spec` extendido (3 SNS destination tests), `ses-webhook.controller.spec` (6: SubscriptionConfirmation, Notification, firma inválida, BadRequest, UnsubscribeConfirmation), `ses-webhook.service.spec` (9: tenant resolution por tag y fallback, Bounce permanent/transient, Complaint, Open dedupe, Click targetDomain, Delivery sin acción). Backend total: **177/177 ✅**.
+
+> **🏁 Sub-fase 3.B completa**: tracking saliente + suppression + webhook SES en 3 sub-pasos. Falta solo 3.C (campañas, Unlayer, frontend) para cerrar Fase 3.
 
 **Sub-fase 3.C — Campañas + Unlayer + Frontend**:
 - [ ] CRUD `EmailCampaign` (`/api/email/campaigns`): create DRAFT, update, schedule. `POST /:id/send` enquola jobs por contacto.

@@ -12,6 +12,9 @@ import { TrackingTokenService } from './tracking/tracking-token.service';
 import { SuppressionService } from './suppression/suppression.service';
 import { UnsubscribeController } from './suppression/unsubscribe.controller';
 import { SuppressionsController } from './suppression/suppressions.controller';
+import { SesWebhookController } from './webhook/ses-webhook.controller';
+import { SesWebhookService } from './webhook/ses-webhook.service';
+import { SnsValidatorAdapter } from './webhook/sns-validator.adapter';
 
 @Module({
   controllers: [
@@ -20,6 +23,7 @@ import { SuppressionsController } from './suppression/suppressions.controller';
     TrackController,
     UnsubscribeController,
     SuppressionsController,
+    SesWebhookController,
   ],
   providers: [
     SmtpAccountsService,
@@ -30,6 +34,8 @@ import { SuppressionsController } from './suppression/suppressions.controller';
     TrackService,
     TrackingTokenService,
     SuppressionService,
+    SesWebhookService,
+    SnsValidatorAdapter,
   ],
   exports: [EmailQueueService, EmailSenderService, TrackingTokenService, SuppressionService],
 })

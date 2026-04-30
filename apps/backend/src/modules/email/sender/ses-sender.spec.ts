@@ -5,6 +5,8 @@
  */
 import {
   CreateConfigurationSetCommand,
+  CreateConfigurationSetEventDestinationCommand,
+  GetConfigurationSetEventDestinationsCommand,
   GetConfigurationSetCommand,
   SendEmailCommand,
 } from '@aws-sdk/client-sesv2';
@@ -83,6 +85,49 @@ describe('SesSender', () => {
     });
     expect(out).toEqual({ messageId: 'ses-msg-123', provider: 'ses' });
     expect(sendMock.mock.calls[0]![0]).toBeInstanceOf(SendEmailCommand);
+  });
+
+  describe('SNS event destination', () => {
+    function makeSenderWithSns() {
+      return new SesSender({
+        region: 'us-east-1',
+        accessKeyId: 'a',
+        secretAccessKey: 'b',
+        configSetPrefix: 'massivo-team-',
+        eventsSnsTopicArn: 'arn:aws:sns:us-east-1:123:topic',
+      });
+    }
+
+    it('config set existe sin event destination → crea destination', async () => {
+      sendMock.mockResolvedValueOnce({}); // GetConfigurationSet OK
+      sendMock.mockResolvedValueOnce({ EventDestinations: [] }); // GetEventDestinations vacío
+      sendMock.mockResolvedValueOnce({}); // CreateEventDestination OK
+      const s = makeSenderWithSns();
+      await s.ensureConfigurationSet('team-1');
+      expect(sendMock).toHaveBeenCalledTimes(3);
+      expect(sendMock.mock.calls[2]![0]).toBeInstanceOf(CreateConfigurationSetEventDestinationCommand);
+      const cmd = sendMock.mock.calls[2]![0] as CreateConfigurationSetEventDestinationCommand;
+      expect(cmd.input.EventDestination?.MatchingEventTypes).toEqual(['BOUNCE', 'COMPLAINT', 'DELIVERY', 'OPEN', 'CLICK']);
+      expect(cmd.input.EventDestination?.SnsDestination?.TopicArn).toBe('arn:aws:sns:us-east-1:123:topic');
+    });
+
+    it('event destination ya existe → no recrea', async () => {
+      sendMock.mockResolvedValueOnce({}); // Get config set
+      sendMock.mockResolvedValueOnce({ EventDestinations: [{ Name: 'massivo-sns' }] });
+      const s = makeSenderWithSns();
+      await s.ensureConfigurationSet('team-2');
+      expect(sendMock).toHaveBeenCalledTimes(2);
+      expect(sendMock.mock.calls[1]![0]).toBeInstanceOf(GetConfigurationSetEventDestinationsCommand);
+    });
+
+    it('sin eventsSnsTopicArn → no chequea destination', async () => {
+      sendMock.mockResolvedValueOnce({}); // Get config set
+      const s = new SesSender({
+        region: 'us-east-1', configSetPrefix: 'massivo-team-',
+      });
+      await s.ensureConfigurationSet('team-3');
+      expect(sendMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('send sin MessageId → tira', async () => {
