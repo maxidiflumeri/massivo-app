@@ -21,6 +21,62 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 3.C.4.a — SMTP accounts UI + test send (BLOCKER resuelto)
+- **Backend**: nuevo `TestSmtpAccountDto` (`smtp-accounts.dto.ts`) y método `SmtpAccountsService.testSend(id, dto)` que carga la cuenta dentro del scope del tenant, valida que esté activa, y delega en `EmailSenderService.sendForAccount()` para mandar un email autocomposeado ("[Massivo] Test de cuenta SMTP …"). Endpoint `POST /email/smtp-accounts/:id/test` con `@CheckPolicies('update', 'SmtpAccount')`.
+- **Tests**: `smtp-accounts.service.spec.ts` extendido con 4 casos para `testSend` (envío OK, NotFound, BadRequest si inactive, BadRequest si sender lanza). Total 9/9 ✅.
+- **Frontend**: nueva ruta `/dashboard/email/smtp-accounts` con `SmtpAccountsPage.tsx`. Tabla con name/provider chip/host:port/from/estado/acciones (test send, edit, delete). Dialog crear/editar con campos completos (provider smtp|ses con helper, password opcional al editar, sesConfigSet visible solo si provider=ses, switch isActive en edición). Dialog "Enviar prueba" que pide email destino y muestra messageId al éxito. NavRow nuevo en sidebar Email ("Cuentas SMTP", icon `DnsIcon`).
+- **Impacto**: ya no hace falta SQL para crear cuentas SMTP — el onboarding de un equipo nuevo se puede completar 100% por UI.
+
+### Docs — `MIGRATION_PLAN.md` v2.0 (reescritura tras audit exhaustivo de AMSA)
+- **Audit feature-por-feature** de AMSA Sender (`backend/src/modules/*`, `backend/src/workers/*`, `frontend/src/features/*`, schema Prisma, crons): listado completo de capacidades a portar.
+- **Plan reorganizado** con sub-fases granulares ejecutables (estilo `3.A`/`3.B`/`3.C.1...`) marcando estado real (✅/🟡/🆕/⛔).
+- **Fase 3** dividida en `3.A` (infra) ✅, `3.B` (tracking/suppression/SES) ✅, **`3.B'`** (One-Click RFC 8058, bounce DSN parsing, EmailEvent metadata extendida) 🆕, `3.C` (campañas + frontend) parcial, **`3.C.4`** (frontend restante: SMTP UI con test send, suppressions UI, drill-down events, métricas, live processing, manual send, preview) 🆕, **`3.C.5`** (pausar/reanudar/forzar cierre) 🆕, **`3.D`** (reportes consolidados con export CSV/XLSX) 🆕.
+- **Fase 4** expandida en 11 sub-fases (4.A envío + rate limit per-config / 4.B KMS / 4.C webhook / 4.D sync templates / 4.E campañas + acciones control / 4.F inbox full / 4.G respuestas rápidas / 4.H opt-out / 4.I welcome msg / 4.J live dashboard / 4.K botones templates).
+- **Fase 5 nueva** — **Contacts unificados con `externalId` + Timeline cross-canal** (reemplaza módulo `Deudores` de AMSA, generalizado): sub `Contact.externalId` con `@@unique([teamId, externalId])`, `ContactTimelineService` agregador cross-canal, búsqueda avanzada, ficha con timeline, reportes consolidados.
+- **Fase 7 nueva** (ex 6) — IA con interface `LlmProvider` y dos implementaciones (`GeminiProvider` + `BedrockProvider`), elección por `AI_PROVIDER` env var + feature flag (operador elige, no usuario final). BYO API key opcional por tenant.
+- **Fase 8 nueva** — **Scheduler genérico de reportes**: `ScheduledTask` extendido con `kind` enum (REPORT_EMAIL_SUMMARY/WAPI/CONTACT_ACTIVITY/BOUNCES/SUPPRESSIONS/CUSTOM), engine BullMQ scheduled, `ReportGenerator` interface, entrega por email con adjunto CSV/XLSX (S3 link para >5MB), UI CRUD + ejecución manual + historial.
+- **Fase 9 nueva** — Dev Simulator (panel interno gated por `ENABLE_DEV_SIMULATOR` o flag por org): endpoints `/api/dev/simulator/*` (mensaje, status, button, image, doc, audio, sticker, contact, reaction).
+- **Fases 10/11/12** — ex 7/8/9 (compliance + admin / hardening + prod / lanzamiento).
+- **Excluidos del MVP** confirmados: WhatsApp Web.js (legacy), Gmail OAuth read (reemplazado por reply-to del cliente).
+- **Sección nueva** "Mapa AMSA Sender → Massivo App": tabla con cada módulo de AMSA, su destino en Massivo, fase y estado (✅/🟡/🆕/⛔).
+- Stack actualizado: AI con Gemini 1.5 Flash + AWS Bedrock (Claude/Nova) switcheable.
+- Modelo `Contact` actualizado: agregar `externalId String?` con `@@unique([teamId, externalId])` cuando arranque Fase 5.
+
+### Added — Fase 3 sub-C.3.e (UX polish: notify + confirm + skeletons + responsive)
+- **`NotifyProvider`** (`apps/frontend/src/feedback/NotifyProvider.tsx`): Snackbar global bottom-right con hook `useNotify()` (`success/error/info/warning/notify`). Errores duran 8s, resto 4s. Alert filled con close button.
+- **`ConfirmProvider`** (`apps/frontend/src/feedback/ConfirmProvider.tsx`): hook `useConfirm()` Promise-based. Soporta `destructive` (botón rojo), `title`, `confirmLabel`, `cancelLabel`. Se usa en delete de templates y campañas + send de campaña.
+- **Skeletons** en listas (templates, campañas, dashboard) durante loading inicial.
+- **Responsive**: tablas ocultan columnas secundarias en `xs`/`sm`, AppLayout usa `Drawer` mobile en lugar de sidebar persistente, snackbars adaptados.
+- **Provider order** en `main.tsx`: `ColorModeProvider > MuiThemeWithMode > ClerkWithTheme > NotifyProvider > ConfirmProvider > TeamProvider > BrowserRouter > App`.
+
+### Added — Fase 3 sub-C.3.d (Realtime dashboard email.report.updated)
+- **`CampaignsListPage`** suscrita al socket: en `email.report.updated` re-fetcha la lista (debounced backend ya coalesce 1s).
+- **`CampaignDetailPage`** suscrita filtrando por `campaignId` del payload: re-fetcha report en cada update. Counts (PENDING/SENT/FAILED/BOUNCED/COMPLAINED/SUPPRESSED) + opens/clicks/uniqueOpens/uniqueClicks live.
+- **`useTeamSocket()`** ya provisto en 3.C.3.a — consumido aquí por primera vez en producción.
+
+### Added — Fase 3 sub-C.3.c (Frontend campaigns: list + detail + CSV + send)
+- **`CampaignsListPage`** (`/dashboard/email/campaigns`): tabla MUI con `name/status/template/smtp/contacts/sent/scheduledAt/updatedAt` + chips de status coloreados + botones edit/delete + CTA "Nueva campaña". Dialog de creación con name + (opcional) template/smtp/scheduledAt. Confirm() destructive antes de delete.
+- **`CampaignDetailPage`** (`/dashboard/email/campaigns/:id`): edita name/templateId/smtpAccountId/scheduledAt solo si `status ∈ {DRAFT, SCHEDULED, PAUSED}`. Bloque de carga de contactos por **CSV paste** con detección de header `email,name` (o filas planas). Botón **Enviar** con confirm() — POST `/:id/send` (202). Panel de report con counts + opens/clicks.
+- **`features/email/campaigns/types.ts`**: `CampaignListItem`, `CampaignDetail`, `CampaignReport`, `CreateCampaignPayload`, `UpdateCampaignPayload`, `CampaignContactInput`, `SmtpAccountListItem`, `CampaignStatus`.
+- **CSV parser**: detecta header (`email`/`name`) case-insensitive, normaliza email a lowercase+trim, ignora filas vacías, máx 5000 filas.
+
+### Added — Landing page + GitLab-style layout + Clerk theming
+- **`HomePage`** (`apps/frontend/src/pages/HomePage.tsx`): landing moderno estilo SaaS con hero (gradient text), navbar sticky con blur, 6 features grid (Email/WhatsApp/Realtime/Multi-tenant/Analytics/Secure), CTA paper con benefits + dual button, footer. Patrón `<SignedIn><Navigate to="/dashboard"/></SignedIn><SignedOut>...</SignedOut>` para redirección automática.
+- **`AppLayout`** (`apps/frontend/src/layouts/AppLayout.tsx`) — **rediseño GitLab-Cloud**: topbar fijo full-width (`TOPBAR_HEIGHT=56`) con hamburguesa mobile, brand gradient, theme toggle, `<UserButton/>`. Body con sidebar sticky desktop / `Drawer` mobile + main scrollable (max-width 1400).
+- **`Sidebar`** (`apps/frontend/src/layouts/Sidebar.tsx`) — **colapsable**: `SIDEBAR_WIDTH=248` / `SIDEBAR_COLLAPSED_WIDTH=64`. Estado persistido en `localStorage['massivo:sidebarCollapsed']`. Cuando colapsada, OrgSwitcher se oculta y NavRows muestran solo icono + tooltip a la derecha. NAV_GROUPS: General/Email/WhatsApp/Datos/Cuenta (con disabled "pronto" para los no implementados).
+- **`ClerkWithTheme`** (`apps/frontend/src/theme/ClerkWithTheme.tsx`): wrapper de `<ClerkProvider>` que sincroniza `baseTheme` de `@clerk/themes` (`dark` o undefined) con el modo MUI vía `useColorMode()`. Variables de color custom (colorPrimary `#5B5BD6`, colorBackground/Text/InputBackground en dark) y `localization={esES}` de `@clerk/localizations` (Clerk en español).
+- **Auth redirects**: `SignInPage` y `SignUpPage` con `forceRedirectUrl="/dashboard"` y `fallbackRedirectUrl="/dashboard"`.
+- **`DashboardHome`** (`apps/frontend/src/pages/DashboardHome.tsx`): greeting + ActionCards a Campaigns/Templates como entrada al feature email.
+
+### Changed — Theming dark/light pulido
+- **`ThemeProvider`** dividido: `ColorModeProvider` (context-only) + `MuiThemeWithMode` (consumer que construye MUI theme). Permite que `ClerkWithTheme` consuma el contexto y sincronice baseTheme.
+- **Paleta dark**: `background.default=#0b0d10`, `paper=#14171c`, `divider=rgba(255,255,255,0.08)`. Light: `#fafafa` / `#ffffff`. Primary `#5B5BD6` en ambos.
+- **Component overrides**:
+  - `MuiPaper` dark con `boxShadow` custom + inner ring (`inset 0 0 0 1px rgba(255,255,255,0.05)`) — solo si no es `outlined` y `elevation > 0`. `backgroundImage: 'none'` para evitar el filtro lavado MUI.
+  - `MuiTableContainer` dark con la misma sombra (resuelve "tablas no se ven en modo oscuro").
+  - `MuiCssBaseline` con scrollbar custom (color por modo) + `::selection` con tinte primary.
+- **Deps nuevas**: `@clerk/themes`, `@clerk/localizations`.
+
 ### Added — Fase 3 sub-C.3.b (Frontend templates + Unlayer)
 - **`TemplatesListPage`** (`/dashboard/email/templates`): tabla MUI con `name/subject/updatedAt` + botones Editar/Borrar + CTA "Nuevo template". Confirm() antes de borrar. Click en nombre o ícono lápiz → abre editor.
 - **`TemplateEditorPage`** (`/dashboard/email/templates/new` y `/:id`): embed Unlayer via `react-email-editor`. Flujo:

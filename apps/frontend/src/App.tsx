@@ -9,6 +9,7 @@ import { TemplatesListPage } from './features/email/templates/TemplatesListPage'
 import { TemplateEditorPage } from './features/email/templates/TemplateEditorPage';
 import { CampaignsListPage } from './features/email/campaigns/CampaignsListPage';
 import { CampaignDetailPage } from './features/email/campaigns/CampaignDetailPage';
+import { SmtpAccountsPage } from './features/email/smtp-accounts/SmtpAccountsPage';
 
 export function App() {
   return (
@@ -38,6 +39,7 @@ export function App() {
         <Route path="email/templates/:id" element={<TemplateEditorPage />} />
         <Route path="email/campaigns" element={<CampaignsListPage />} />
         <Route path="email/campaigns/:id" element={<CampaignDetailPage />} />
+        <Route path="email/smtp-accounts" element={<SmtpAccountsPage />} />
       </Route>
 
       {/* Fallback */}

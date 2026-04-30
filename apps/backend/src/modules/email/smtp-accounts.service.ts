@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -7,7 +8,12 @@ import {
 import type { Prisma } from '@massivo/prisma';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
-import type { CreateSmtpAccountDto, UpdateSmtpAccountDto } from './smtp-accounts.dto';
+import { EmailSenderService } from './sender/email-sender.service';
+import type {
+  CreateSmtpAccountDto,
+  TestSmtpAccountDto,
+  UpdateSmtpAccountDto,
+} from './smtp-accounts.dto';
 
 export interface SmtpAccountListItem {
   id: string;
@@ -58,7 +64,10 @@ function toListItem(row: {
 export class SmtpAccountsService {
   private readonly logger = new Logger(SmtpAccountsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly senderService: EmailSenderService,
+  ) {}
 
   async findAll(): Promise<SmtpAccountListItem[]> {
     this.requireContext();
@@ -122,6 +131,51 @@ export class SmtpAccountsService {
     return toListItem(row);
   }
 
+  async testSend(
+    id: string,
+    dto: TestSmtpAccountDto,
+  ): Promise<{ ok: true; messageId: string | null }> {
+    const ctx = this.requireContext();
+    const account = await this.prisma.scoped.smtpAccount.findFirst({ where: { id } });
+    if (!account) {
+      throw new NotFoundException('Cuenta SMTP no encontrada');
+    }
+    if (!account.isActive) {
+      throw new BadRequestException('La cuenta SMTP está deshabilitada');
+    }
+    try {
+      const result = await this.senderService.sendForAccount(
+        {
+          id: account.id,
+          teamId: account.teamId,
+          host: account.host,
+          port: account.port,
+          username: account.username,
+          passwordEnc: account.passwordEnc,
+          fromName: account.fromName,
+          fromEmail: account.fromEmail,
+          provider: account.provider,
+          sesConfigSet: account.sesConfigSet,
+        },
+        {
+          to: dto.to,
+          subject: `[Massivo] Test de cuenta SMTP "${account.name}"`,
+          html: `<p>Este es un email de prueba enviado desde Massivo App.</p>
+<p>Si lo recibiste, la cuenta <strong>${escapeHtml(account.name)}</strong> está configurada correctamente.</p>
+<p>—<br/>Enviado por: ${escapeHtml(account.fromName)} &lt;${escapeHtml(account.fromEmail)}&gt;</p>`,
+        },
+      );
+      this.logger.log(
+        `SmtpAccount test send OK: ${id} → ${dto.to} (org ${ctx.organizationId} team ${ctx.teamId})`,
+      );
+      return { ok: true, messageId: result.messageId };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`SmtpAccount test send FAILED: ${id} → ${dto.to}: ${message}`);
+      throw new BadRequestException(`Falló el envío de prueba: ${message}`);
+    }
+  }
+
   async remove(id: string): Promise<void> {
     const ctx = this.requireContext();
     const existing = await this.prisma.scoped.smtpAccount.findFirst({ where: { id } });
@@ -139,4 +193,13 @@ export class SmtpAccountsService {
     }
     return ctx;
   }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

@@ -31,11 +31,11 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 3 — Canal Email (sub-A ✅, sub-B pendiente, sub-C pendiente)
+- **Fase actual:** Fase 3 — Canal Email (sub-A ✅, sub-B ✅, sub-C.1/.2/.3.a/.3.b/.3.c/.3.d/.3.e ✅, sub-C.4.a ✅; **falta 3.C.4.b–.g + 3.C.5 control actions + 3.D reports**)
 - **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅
 - **Última actualización:** 2026-04-30
 - **Branch principal:** `main`
-- **Último commit:** `153c5a1` — cierre Fase 2 + 2.D pusheado; sub-fase 3.A en working tree
+- **Último commit:** `df5ca0d` — Fase 1 cierre. Trabajo de 3.C.3.c/.d/.e + landing + GitLab layout + Clerk dark/es + tablas dark shadow en working tree (pendiente commit).
 - **Repo remoto:** `https://github.com/maxidiflumeri/massivo-app`
 
 ---
@@ -196,7 +196,7 @@ Criterios de aceptación 3.A:
 - [x] `EmailModule` importa `EventsModule`.
 - [x] Tests: 5 nuevos — `events.service.spec.ts` (4: coalesce burst, keys distintas no coalescing, onModuleDestroy limpia, sin server no rompe), `ses-webhook.service.spec.ts` (1: emit en Open). Worker spec extendido con asserción de emit en happy path. Backend total: **194/194 ✅**.
 
-**3.C.3 — Frontend Unlayer + dashboard** (en progreso):
+**3.C.3 — Frontend Unlayer + dashboard** (✅ completada):
 
 **3.C.3.a — Infra frontend (✅ completada):**
 - [x] `useApi()` hook (`apps/frontend/src/api/client.ts`): wrapper sobre fetch con base URL `VITE_API_URL`, adjunta `Authorization: Bearer <clerk-token>` y `x-team-id` (del TeamContext) automáticamente. Métodos `get/post/patch/delete`. Throw `ApiError(status, message, body)` en 4xx/5xx.
@@ -210,11 +210,41 @@ Criterios de aceptación 3.A:
 - [x] `TemplateEditorPage` (`/dashboard/email/templates/new` y `/:id`): Unlayer embed (`react-email-editor`) con `onReady` → `loadDesign(design)` cuando se carga uno existente. Form con name + subject. Botón Guardar exporta `{design, html}` y POST/PATCH al backend. Redirige a la URL del id creado en modo new.
 - [x] Dep nueva: `react-email-editor@^1.8.0`.
 
-**3.C.3.c — Campaigns + contacts** (pendiente):
-- [ ] Editor Unlayer: portar embed desde AMSA (`apps/frontend/src/features/email/templates/`). Persiste `design` JSON + `html` en `EmailTemplate`.
-- [ ] Eventos en tiempo real: `EventsService.emitToTeam(teamId, 'email.report.updated', { campaignId, counts })` debounced 1s.
-- [ ] Tests integración + extensión `tenant-isolation.spec.ts` con `EmailCampaign`/`EmailReport`/`EmailEvent`.
-- [ ] Tracking JWT: payload `{ rid: reportId, oid: orgId, tid: teamId, cid: campaignId }` firmado con `EMAIL_TRACKING_JWT_SECRET`. Endpoints `GET /api/track/open.gif` (1×1 transparente, registra `EmailEvent` OPEN) y `GET /api/track/click` (registra CLICK + 302 al destino). Ambos públicos (sin Clerk) pero validan firma JWT y resuelven tenant del payload, no del header.
+**3.C.3.c — Campaigns + contacts (✅ completada):**
+- [x] `CampaignsListPage` (`/dashboard/email/campaigns`): tabla con status chips, dialog de creación (name + template/smtp/scheduledAt opcionales), confirm() destructive en delete. Columnas secundarias hidden en xs/sm.
+- [x] `CampaignDetailPage` (`/dashboard/email/campaigns/:id`): edita name/template/smtp/scheduledAt solo si status ∈ {DRAFT, SCHEDULED, PAUSED}. CSV paste con detección de header `email,name` o filas planas, normalización lowercase+trim, máx 5000.
+- [x] Botón Enviar con confirm() → POST `/:id/send`. Panel de report con counts (PENDING/SENT/FAILED/BOUNCED/COMPLAINED/SUPPRESSED) + opens/clicks/uniqueOpens/uniqueClicks.
+- [x] Types compartidos en `features/email/campaigns/types.ts`.
+
+**3.C.3.d — Realtime dashboard (✅ completada):**
+- [x] `CampaignsListPage` suscrita a `email.report.updated` via `useTeamSocket()` → re-fetcha lista (debounce 1s ya en backend).
+- [x] `CampaignDetailPage` suscrita filtrando por `campaignId` del payload → re-fetcha report en cada update. Counts + opens/clicks live.
+
+**3.C.3.e — UX polish (✅ completada):**
+- [x] `NotifyProvider` (Snackbar global, hook `useNotify()`, errores 8s vs 4s normal).
+- [x] `ConfirmProvider` (hook `useConfirm()` Promise-based, soporta `destructive`/title/labels custom).
+- [x] Skeletons en listas durante loading inicial.
+- [x] Responsive: tablas ocultan columnas en xs/sm, AppLayout usa Drawer mobile.
+- [x] Provider order en `main.tsx`: `ColorModeProvider > MuiThemeWithMode > ClerkWithTheme > NotifyProvider > ConfirmProvider > TeamProvider > BrowserRouter > App`.
+
+**Extras (no estaban planificados, pero entraron en esta sesión):**
+- [x] **Landing page** (`HomePage.tsx`) estilo SaaS moderno con hero gradient, 6 features, CTA. Patrón SignedIn/SignedOut sibling para auto-redirect a /dashboard.
+- [x] **GitLab-style layout**: topbar full-width fijo (con UserButton top-right) + sidebar colapsable persistente desktop / Drawer mobile. `Sidebar` con NAV_GROUPS (General/Email/WhatsApp/Datos/Cuenta) + items disabled "pronto".
+- [x] **Clerk dark mode**: `ClerkWithTheme` sincroniza `baseTheme` de `@clerk/themes` con el modo MUI + variables custom (colorPrimary, colorBackground, colorText, colorInputBackground).
+- [x] **Clerk en español**: `localization={esES}` de `@clerk/localizations`.
+- [x] **Tablas con shadow visible en dark**: override `MuiTableContainer` + `MuiPaper` con `boxShadow` custom + inner ring `rgba(255,255,255,0.05)`.
+- [x] **Auth redirects**: `forceRedirectUrl`/`fallbackRedirectUrl="/dashboard"` en SignIn/SignUp.
+- [x] **`DashboardHome`** con greeting + ActionCards a Campaigns/Templates.
+- [x] Deps: `@clerk/themes`, `@clerk/localizations`.
+**3.C.4 — Frontend email features restantes (próximo paso):**
+- [x] **3.C.4.a — SMTP accounts UI** ✅ (2026-04-30): Página `/dashboard/email/smtp-accounts` con tabla + dialog crear/editar (provider smtp|ses, host, port, username, password opcional en edit, fromName, fromEmail, sesConfigSet?, isActive switch en edit). Endpoint backend `POST /email/smtp-accounts/:id/test` + `TestSmtpAccountDto` que reusa `EmailSenderService.sendForAccount()`. UI con dialog "Enviar prueba" que pide email destinatario. NavRow en sidebar (icono `DnsIcon`). Tests del service con 4 casos para `testSend` (happy path, NotFound, inactive, sender error). BLOCKER resuelto: ya no hace falta SQL para crear cuentas SMTP.
+- [ ] **3.C.4.b — Per-campaign sends/events drill-down**: vista detalle por campaña con tabla paginada de `EmailReport` (status, error, sentAt, firstOpenedAt, firstClickedAt) + drilldown a `EmailEvent` (OPEN/CLICK con IP/UA/url). Filtros por status.
+- [ ] **3.C.4.c — Suppressions UI** (`/dashboard/email/suppressions`): lista de `EmailUnsubscribe` + `EmailBounce` paginada por cursor. Acciones: borrar entrada, agregar manual.
+- [ ] **3.C.4.d — Métricas globales**: dashboard con widgets (total enviados últimos 7/30 días, tasa apertura, tasa click, top campañas).
+- [ ] **3.C.4.e — Live processing view**: durante `status=PROCESSING`, vista con progress bar + counts en tiempo real + botón pause.
+
+> Sub-tareas legacy del plan original (referencia, ya cubiertas en 3.A/3.B/3.C):
+- [x] Tracking JWT: payload `{ rid: reportId, oid: orgId, tid: teamId, cid: campaignId }` firmado con `EMAIL_TRACKING_JWT_SECRET`. Endpoints `GET /api/track/open.gif` (1×1 transparente, registra `EmailEvent` OPEN) y `GET /api/track/click` (registra CLICK + 302 al destino). Ambos públicos (sin Clerk) pero validan firma JWT y resuelven tenant del payload, no del header.
 - [ ] Webhook SES `POST /webhooks/ses`: valida firma SNS (lib `sns-validator` o equivalente), resuelve tenant via `configurationSet` (lookup por prefijo `massivo-team-`) o vía `messageId` → `EmailReport`. Maneja `Bounce` (hard → upsert `EmailBounce` + `EmailUnsubscribe.GLOBAL`; soft → log), `Complaint` (`EmailUnsubscribe.GLOBAL`), `Delivery`, `Open` y `Click` (idempotente vía `(reportId, type, ts)`). Endpoint público con `@SkipTenantScope()`.
 - [ ] CRUD campañas email (`/api/email/campaigns`): create (DRAFT), update, schedule (validar `scheduledAt > now`), `POST /api/email/campaigns/:id/send` que enquola jobs por contacto desde la lista asociada. Reportes: `GET /api/email/campaigns/:id/report` con conteos agregados (sent/delivered/opened/clicked/bounced/complained/unsubscribed). Stack auth completo y `@CheckPolicies` (`send Campaign`).
 - [ ] Suppression list por team: vista `/api/email/suppressions` (lista `EmailUnsubscribe` + `EmailBounce` activos). Antes de enquolar cada job el worker chequea suppression para `(teamId, email)` y marca el report como `SUPPRESSED` sin enviar.
@@ -427,6 +457,50 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 ---
 
 ## Bitácora de sesiones
+
+### 2026-04-30 — Sesión 13 (Claude Opus 4.7) — Reescritura `MIGRATION_PLAN.md` v2.0
+- **Audit exhaustivo de AMSA Sender** (vía Explore agent): listado feature-por-feature de backend modules, workers, frontend features, Prisma models, crons, capacidades cross-cutting.
+- **Gaps detectados** que el plan v1 no cubría: One-Click unsubscribe RFC 8058, bounce DSN parsing, EmailEvent metadata extendida, manual send, test send/preview, acciones de control campaña (pausar/reanudar/forzar cierre), inbox WAPI full feature (asignar/tomar/resolver/búsqueda/sin asignar/resueltas/media), respuestas rápidas, bajas WAPI, mensaje bienvenida, daily limit per-config, detección rate-limit codes Meta, live dashboard WAPI, scheduler genérico de reportes, contacts unificados con `externalId` + timeline cross-canal, dev simulator, AI provider switcheable.
+- **Decisiones del usuario** sobre features ambiguas:
+  1. **Deudores → Contacts con `externalId` + timeline cross-canal**: SÍ se porta como Fase 5 nueva.
+  2. **Gmail OAuth read**: NO se porta.
+  3. **Dev Simulator**: SÍ se porta como Fase 9.
+  4. **Scheduler genérico**: SÍ — cualquier reporte de la plataforma debe ser agendable y llegar por mail con CSV/XLSX.
+  5. **Configuración por usuario/scope**: simplificada a config por team + valores del plan.
+  6. **AI Gemini + Bedrock**: ambos, switcheables por feature flag + env vars (operador elige, no el usuario).
+  7. **WhatsApp legacy**: NO va.
+- **Reescritura de `MIGRATION_PLAN.md` → v2.0**:
+  - Fases 0/1/2 marcadas ✅ con detalle.
+  - Fase 3 dividida en sub-fases: 3.A ✅, 3.B ✅, **3.B'** (3.B.4 One-Click + 3.B.5 DSN + 3.B.6 metadata) 🆕, 3.C ✅ hasta .3.e, **3.C.4** (.a-.g) 🆕, **3.C.5** acciones de control 🆕, **3.D** reportes consolidados 🆕, 3.E inbound (postergado).
+  - Fase 4 expandida en 11 sub-fases (4.A → 4.K).
+  - **Fase 5 nueva**: Contacts + Timeline cross-canal (reemplaza Deudores).
+  - **Fase 7 nueva** (ex 6): IA con `LlmProvider` switcheable.
+  - **Fase 8 nueva**: Scheduler genérico de reportes.
+  - **Fase 9 nueva**: Dev Simulator.
+  - Tabla "Mapa AMSA Sender → Massivo App" feature-por-feature con estado (✅/🟡/🆕/⛔).
+- **Próximo paso**: 3.C.4.a (SMTP accounts UI + test send) — el BLOCKER actual ya identificado.
+
+### 2026-04-30 — Sesión 12 (Claude Opus 4.7) — Sub-fase 3.C.3.c/.d/.e + landing + GitLab layout + Clerk theming
+- **3.C.3.c — Frontend campaigns**: `CampaignsListPage` (tabla con chips de status, dialog de creación, confirm() destructive en delete) y `CampaignDetailPage` (edit metadata si DRAFT/SCHEDULED/PAUSED, CSV paste con header detection, send con confirm, panel de report con counts + opens/clicks).
+- **3.C.3.d — Realtime dashboard**: ambas páginas suscriptas al socket `email.report.updated` (filtra por campaignId en detail) → re-fetcha el agregado.
+- **3.C.3.e — UX polish**: `NotifyProvider` (Snackbar global con hook `useNotify`), `ConfirmProvider` (Promise-based con destructive), skeletons, responsive tables, AppLayout con Drawer mobile.
+- **Landing page** (`HomePage`) estilo SaaS moderno: hero gradient, 6 features grid, CTA paper, footer. Patrón `<SignedIn><Navigate/></SignedIn><SignedOut>...</SignedOut>` para redirección automática logueado → /dashboard.
+- **GitLab-style layout**: rediseño de `AppLayout` con topbar fijo full-width (UserButton top-right, theme toggle, hamburger mobile) + sidebar colapsable (`SIDEBAR_WIDTH=248`/`COLLAPSED=64`). Estado persistido en `localStorage['massivo:sidebarCollapsed']`. NAV_GROUPS con items disabled "pronto".
+- **Clerk theming**: nuevo `ClerkWithTheme` wrapper que sincroniza `baseTheme=dark` de `@clerk/themes` con el modo MUI vía `useColorMode()`. Variables custom (colorPrimary, colorBackground/Text/InputBackground en dark). Resuelve "OrgSwitcher se ve negro en dark mode".
+- **Clerk en español**: `localization={esES}` de `@clerk/localizations`.
+- **Tablas con shadow en dark mode**: override de `MuiTableContainer` + `MuiPaper` con boxShadow custom + inner ring `rgba(255,255,255,0.05)`. `backgroundImage: 'none'` para evitar el filtro lavado MUI.
+- **Auth redirects**: `forceRedirectUrl`/`fallbackRedirectUrl="/dashboard"` en SignIn/SignUp para que el flujo post-login termine en el dashboard.
+- **`ThemeProvider` split**: `ColorModeProvider` (context-only) + `MuiThemeWithMode` (consumer). Permite que `ClerkWithTheme` consuma el contexto y sincronice baseTheme.
+- **Próximo paso**: 3.C.4.b — Per-campaign sends/events drill-down. Después: suppressions UI, métricas, live processing view.
+
+### 2026-04-30 — Sesión 11 (Claude Opus 4.7) — Sub-fases 3.B + 3.C.1/.2/.3.a/.3.b
+- **🏁 Sub-fase 3.B completa**: tracking saliente + suppression + webhook SES.
+- **3.C.1 — Backend campaigns**: CRUD + send (BullMQ enqueue por contacto) + getReport (groupBy + opens/clicks).
+- **3.C.2 — Realtime**: `EventsService.emitToTeamDebounced` + integración en `EmailWorker` y `SesWebhookService` con event `email.report.updated`.
+- **3.C.3.a — Frontend infra**: `useApi()`, `TeamContext`, `useTeamSocket()`, router placeholders, `socket.io-client`.
+- **3.C.3.b — Templates + Unlayer**: list page + editor con `react-email-editor`.
+- Tests al final de la sesión: backend **194/194 ✅**, permissions 14/14 ✅.
+- **Próximo paso**: 3.C.3.c (frontend campaigns).
 
 ### 2026-04-30 — Sesión 10 (Claude Opus 4.7) — Sub-fase 3.A
 - **Sub-fase 3.A — Infra de envío email completada** ✅.

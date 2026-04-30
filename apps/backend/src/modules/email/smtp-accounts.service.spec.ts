@@ -1,13 +1,15 @@
 import { Test } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SmtpAccountsService } from './smtp-accounts.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { EmailSenderService } from './sender/email-sender.service';
 import { TenantContext } from '../../common/auth/tenant-context';
 import type { RequestContext } from '@massivo/shared-types';
 
 describe('SmtpAccountsService', () => {
   let service: SmtpAccountsService;
   let prismaScopedMock: Record<string, jest.Mock>;
+  let senderMock: { sendForAccount: jest.Mock };
 
   const tenantA: RequestContext = {
     userId: 'user-a',
@@ -26,12 +28,18 @@ describe('SmtpAccountsService', () => {
       delete: jest.fn(),
     };
 
+    senderMock = { sendForAccount: jest.fn() };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         SmtpAccountsService,
         {
           provide: PrismaService,
           useValue: { scoped: { smtpAccount: prismaScopedMock } },
+        },
+        {
+          provide: EmailSenderService,
+          useValue: senderMock,
         },
       ],
     }).compile();
@@ -85,6 +93,65 @@ describe('SmtpAccountsService', () => {
     expect(args.data.organizationId).toBeUndefined();
     expect(args.data.teamId).toBeUndefined();
     expect(args.data.passwordEnc).toBe('pwd');
+  });
+
+  describe('testSend', () => {
+    const account = {
+      id: 'acc-1',
+      teamId: 'team-a1',
+      name: 'Cuenta Test',
+      host: 'smtp.example.com',
+      port: 587,
+      username: 'u',
+      passwordEnc: 'pwd',
+      fromName: 'Massivo',
+      fromEmail: 'no-reply@example.com',
+      provider: 'smtp',
+      sesConfigSet: null,
+      isActive: true,
+    };
+
+    it('envía email de prueba y retorna messageId', async () => {
+      prismaScopedMock['findFirst']!.mockResolvedValue(account);
+      senderMock.sendForAccount.mockResolvedValue({ messageId: 'msg-1', provider: 'smtp' });
+
+      const result = await TenantContext.run(tenantA, () =>
+        service.testSend('acc-1', { to: 'dest@example.com' }),
+      );
+
+      expect(result).toEqual({ ok: true, messageId: 'msg-1' });
+      expect(senderMock.sendForAccount).toHaveBeenCalledTimes(1);
+    });
+
+    it('NotFoundException si la cuenta no existe en el scope', async () => {
+      prismaScopedMock['findFirst']!.mockResolvedValue(null);
+      await expect(
+        TenantContext.run(tenantA, () =>
+          service.testSend('acc-X', { to: 'dest@example.com' }),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(senderMock.sendForAccount).not.toHaveBeenCalled();
+    });
+
+    it('BadRequestException si la cuenta está deshabilitada', async () => {
+      prismaScopedMock['findFirst']!.mockResolvedValue({ ...account, isActive: false });
+      await expect(
+        TenantContext.run(tenantA, () =>
+          service.testSend('acc-1', { to: 'dest@example.com' }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(senderMock.sendForAccount).not.toHaveBeenCalled();
+    });
+
+    it('BadRequestException si el sender falla', async () => {
+      prismaScopedMock['findFirst']!.mockResolvedValue(account);
+      senderMock.sendForAccount.mockRejectedValue(new Error('SMTP timeout'));
+      await expect(
+        TenantContext.run(tenantA, () =>
+          service.testSend('acc-1', { to: 'dest@example.com' }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 
   it('remove valida existencia previa antes de delete', async () => {

@@ -58,6 +58,12 @@ export class CreateSmtpAccountDto {
   sesConfigSet?: string;
 }
 
+export class TestSmtpAccountDto {
+  @IsEmail()
+  @MaxLength(320)
+  to!: string;
+}
+
 export class UpdateSmtpAccountDto {
   @IsOptional()
   @IsString()

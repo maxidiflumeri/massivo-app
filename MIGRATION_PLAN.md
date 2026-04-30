@@ -22,11 +22,16 @@
 
 - SaaS multi-tenant con **shared DB + `organizationId` + `teamId`**.
 - Onboarding self-service con planes, billing y límites por uso.
-- Canales soportados en MVP: **WhatsApp Business API (Meta)** y **Email (SMTP)**.
+- Canales soportados en MVP: **Email (SMTP/SES)** y **WhatsApp Business API (Meta)**.
 - **Excluir del MVP**: WhatsApp Web.js (Baileys/wweb) — no escala bien en SaaS, alto costo operativo.
 - Auth tercerizada con **Clerk**.
 - Permisos finos con **CASL**.
 - SMTP de envío propio del SaaS (**AWS SES**) + cuentas remitentes que cada equipo configura para usar como `From`.
+- **Contacts unificados con timeline cross-canal**: el cliente sube un `externalId` propio en cada CSV; la plataforma resuelve, dado un `externalId` o `email`/`phone`, el historial completo de envíos y eventos del contacto a través de email + WAPI.
+- **Inbox conversacional WAPI** completo (asignación, respuestas rápidas, cierre con nota, búsqueda, cola sin asignar, resueltas).
+- **Scheduler genérico de reportes**: cualquier reporte de la plataforma se puede agendar (cron) y llega por mail con adjunto CSV/XLSX en el día/hora/recurrencia configurada.
+- **IA (Gemini + Bedrock) switcheable** por feature flag + variables de entorno (no se elige al usuario; lo elige el operador).
+- **Dev Simulator**: panel interno que simula mensajes/eventos Meta sin cuenta real (mensaje, status, botón, imagen, documento, audio, sticker, contacto, reacción).
 
 ### 1.4 Stack target
 
@@ -42,7 +47,7 @@
 | Email editor    | Unlayer (react-email-editor)                         | Igual que AMSA                                                               |
 | Email transport | AWS SES (SMTP + SNS para webhooks)                   | SES propio del SaaS                                                          |
 | WhatsApp API    | Meta Graph API v20+                                  | Tokens por tenant                                                            |
-| IA              | Google Gemini 1.5 Flash (o superior)                 | API key por tenant opcional, default del SaaS                                |
+| IA              | Google Gemini 1.5 Flash + AWS Bedrock (Claude/Nova)  | Provider switcheable por feature flag + env vars (`AI_PROVIDER=gemini\|bedrock`); BYO API key por tenant opcional |
 | Billing         | **Stripe** (internacional) + **MercadoPago** (LATAM) | Webhooks de subscription                                                     |
 | Logging         | Winston                                              | + correlation ID por request                                                 |
 | Observabilidad  | OpenTelemetry + Grafana/Loki/Tempo                   | Métricas y trazas por tenant                                                 |
@@ -241,11 +246,13 @@ team            Team         @relation(fields: [teamId], references: [id])
 
 **Modelos afectados** (renombrados sin acentos para portabilidad):
 
-- `WapiConfig`, `WapiTemplate`, `WapiCampaign`, `WapiContact`, `WapiReport`, `WapiConversation`, `WapiMessage`, `WapiOptOut`
+- `WapiConfig`, `WapiTemplate`, `WapiCampaign`, `WapiContact`, `WapiReport`, `WapiConversation`, `WapiMessage`, `WapiOptOut`, `WapiQuickReply`, `WapiConversationClosure`
 - `SmtpAccount` (ex `CuentaSMTP`), `EmailTemplate`, `EmailCampaign`, `EmailContact`, `EmailReport`, `EmailEvent`, `EmailBounce`, `EmailUnsubscribe`
-- `Contact` (unificado), `Tag`, `ContactList`
-- `ScheduledTask`, `TaskExecution`
+- `Contact` (unificado, **con `externalId` único por team** — clave que el cliente sube en cada CSV), `Tag`, `ContactList`, `ContactListMember`, `ContactTag`
+- `ScheduledTask`, `TaskExecution` (scheduler genérico de reportes)
 - `CampaignLog`
+
+> **Sobre `Contact.externalId`**: este campo lo aporta el cliente (CRM externo, ID de cobranza, etc.) y es la clave de agregación para el timeline cross-canal. `@@unique([teamId, externalId])` y `@@index([teamId, externalId])`. Permite que al subir una campaña con CSV que incluya `externalId`, el sistema haga upsert sobre `Contact` y todos los `EmailReport`/`WapiReport`/eventos queden vinculados al mismo `Contact`.
 
 ---
 
@@ -487,131 +494,351 @@ Monorepo con **pnpm workspaces** + **Turborepo**.
 ## 9. Plan de ejecución por fases
 
 > Cada fase termina con: tests verdes, deploy a staging, demo verificada, criterios de aceptación cumplidos.
+>
+> **Estado al 2026-04-30**: Fase 0, 1, 2 completas ✅. Fase 3 en curso (3.A, 3.B, 3.C.1/.2/.3.a-e ✅; falta 3.C.4, 3.C.5, 3.D, 3.E).
+>
+> **Detalle ejecutivo y bitácora viva** en `PROGRESS.md`. Este plan es la fuente arquitectónica; PROGRESS es el estado.
 
-### Fase 0 — Setup base (1 semana)
+---
 
-- [ ] Crear repo `massivo-app` con monorepo (pnpm + Turborepo).
-- [ ] Setup TypeScript strict, ESLint, Prettier, Husky + lint-staged.
-- [ ] Setup Docker Compose dev: Postgres, Redis, MailHog.
-- [ ] Setup CI base (GitHub Actions: lint + typecheck + test).
-- [ ] Setup Sentry, OTEL, Winston scaffolding.
-- [ ] Copiar lógica reutilizable de AMSA Sender (workers, integración Meta, Unlayer, tracking) a `apps/backend` como módulos sin tenant todavía.
-- [ ] Migrar de MySQL a Postgres (ajustar tipos Prisma, índices, JSON → JSONB).
+### Fase 0 — Setup base ✅ (completada)
 
-**Aceptación:** `pnpm dev` levanta todo; un endpoint dummy responde.
+- [x] Crear repo `massivo-app` con monorepo (pnpm + Turborepo).
+- [x] Setup TypeScript strict, ESLint, Prettier, Husky + lint-staged.
+- [x] Setup Docker Compose dev: Postgres, Redis, MailHog.
+- [x] Setup CI base (GitHub Actions: lint + typecheck + test).
+- [x] Setup Winston scaffolding. *(Sentry + OTEL postergado a Fase 12.)*
 
-### Fase 1 — Tenancy core + Auth (2 semanas)
+**Aceptación:** `pnpm dev` levanta todo; un endpoint dummy responde. ✅
 
-- [ ] Schema Prisma con `Organization`, `Team`, `User`, `OrgMembership`, `TeamMembership`, `Plan`, `AuditLog`, `UsageCounter`.
-- [ ] Integración Clerk en frontend (`<ClerkProvider>`, sign-in, organization switcher).
-- [ ] `ClerkAuthGuard` + `TenantContextGuard` + `AsyncLocalStorage` context.
-- [ ] Webhook `/webhooks/clerk` (sincronización users/orgs/memberships).
-- [ ] Endpoint `/me/context` (devuelve user + orgs + teams + permissions).
-- [ ] CASL: `AbilityFactory`, decorator `@CheckPolicies`, `PoliciesGuard`.
-- [ ] Prisma tenant extension (auto-inject `organizationId`/`teamId`).
-- [ ] Onboarding: signup → crear org → crear team "General" → seed plan FREE.
-- [ ] CRUD de teams (con plan-gate).
-- [ ] CRUD de invitaciones a org y assignment a teams.
+### Fase 1 — Tenancy core + Auth ✅ (completada)
 
-**Aceptación:** flujo completo signup → crear org → invitar miembro → asignar a team → loguear como miembro y ver dashboard del team.
+- [x] Schema Prisma con `Organization`, `Team`, `User`, `OrgMembership`, `TeamMembership`, `Plan`, `Subscription`, `UsageCounter`, `AuditLog`.
+- [x] Integración Clerk (frontend + backend + webhook).
+- [x] `ClerkAuthGuard` + `TenantContextGuard` + `AsyncLocalStorage` context.
+- [x] Endpoint `/me/context` con plan flags (Opción A).
+- [x] CASL `AbilityFactory` + `@CheckPolicies` + `PoliciesGuard`.
+- [x] Prisma tenant extension (modo strict).
+- [x] Onboarding idempotente.
+- [x] CRUD teams + members.
+- [x] Suite tenant-isolation cross-tenant.
 
-### Fase 2 — Migración de modelos de dominio (2 semanas)
+### Fase 2 — Migración de modelos de dominio ✅ (completada)
 
-- [ ] Refactor de modelos heredados con `organizationId` + `teamId` + índices.
-- [ ] Refactor de servicios y controllers para usar `TenantContext`.
-- [ ] Refactor de queries Prisma → todas pasan por extension.
-- [ ] Testing exhaustivo de aislamiento (contract tests: user de tenant A no puede leer datos de tenant B).
-- [ ] Sockets: rooms scopeadas.
-- [ ] Tests de integración con dos tenants concurrentes.
+- [x] **2.A — Email**: `SmtpAccount`, `EmailTemplate`, `EmailCampaign`, `EmailContact`, `EmailReport`, `EmailEvent`, `EmailBounce`, `EmailUnsubscribe` tenant-aware. CRUD mínimo de SmtpAccount + EmailTemplate.
+- [x] **2.B — WAPI**: `WapiConfig`, `WapiTemplate`, `WapiCampaign`, `WapiContact`, `WapiReport`, `WapiConversation`, `WapiMessage`, `WapiOptOut`. CRUD mínimo de WapiConfig + WapiTemplate. Tokens marcados como encriptables (`*Enc`), encriptación KMS pospuesta a 4.B.
+- [x] **2.C — Cross-cutting**: `Contact`, `Tag`, `ContactList`, `ContactListMember`, `ContactTag`, `ScheduledTask`, `TaskExecution`, `CampaignLog`. CRUD mínimo de Contacts + Tags. **TODO**: agregar `Contact.externalId` con `@@unique([teamId, externalId])` cuando arranque Fase 5 (Contacts/Timeline).
+- [x] **2.D — Sockets scopeados**: `EventsModule`, `AppGateway` con auth handshake + rooms `org/team/user`, `EventsService.emitToTeam/Org/User`.
 
-**Aceptación:** suite de tests de aislamiento verde; auditoría manual de queries sin filtro.
+---
 
-### Fase 3 — Canal Email (2 semanas)
+### Fase 3 — Canal Email (en curso 🟡)
 
-- [ ] Modelo `SmtpAccount` por team (cuentas remitentes que el cliente da de alta).
-- [ ] Configurar AWS SES propio del SaaS (configuration set por tenant, SNS topics).
-- [ ] Worker email (heredado AMSA) refactorizado a multi-tenant.
-- [ ] Tracking pixel + click rewriter con JWT que incluye tenant.
-- [ ] Webhook SES → resuelve tenant por `configurationSet` o `messageId`.
-- [ ] Editor Unlayer integrado.
-- [ ] CRUD de templates email por team.
-- [ ] CRUD de campañas email + ejecución + reporte.
-- [ ] Suppression list (bounces, complaints, unsubscribes) por team.
-- [ ] Endpoint público de unsubscribe (token JWT).
+> Subdividida por sub-fases ejecutables. Detalle completo en `PROGRESS.md`.
 
-**Aceptación:** crear campaña en team A, enviar a 50 contactos via SES, ver reporte y eventos correctamente atribuidos.
+#### 3.A — Infra de envío ✅
+- [x] Driver-based (`EmailSender` interface, `SmtpSender` + `SesSender`), `SmtpAccount.provider`+`sesConfigSet`, `EmailQueueService` (BullMQ jobId=reportId), `EmailWorkerService` (TenantContext + Handlebars).
 
-### Fase 4 — Canal WhatsApp Business API (Meta) (2-3 semanas)
+#### 3.B — Tracking + Suppression + Webhook SES ✅
+- [x] **3.B.1** — Tracking saliente (pixel + click rewriter + JWT con `{r,o,t,c}`).
+- [x] **3.B.2** — Suppression (`SuppressionService.check/addUnsubscribe`, status `SUPPRESSED`, endpoint público `/api/unsubscribe`).
+- [x] **3.B.3** — Webhook SES (SNS validation, tenant resolution por configSet/messageId, Bounce/Complaint/Open/Click/Delivery).
 
-- [ ] Modelo `WapiConfig` por team (phone_number_id, waba_id, token, app_secret, webhook_verify_token).
-- [ ] Encriptación de tokens con KMS.
-- [ ] Webhooks Meta por config: `/webhooks/wapi/:configId` con verify token único.
-- [ ] Sync de templates Meta por config.
-- [ ] Worker WAPI refactorizado a multi-tenant.
-- [ ] Inbox conversacional por team (conversaciones, mensajes, asignación a agentes, ventana 24h).
-- [ ] Botones de templates (INBOX/BAJA/IGNORAR).
-- [ ] Opt-out registry por team.
-- [ ] Analítica WAPI por team y por agente.
+#### 3.B' — Mejoras de tracking/bounce (pendiente 🆕)
+- [ ] **3.B.4** — **One-Click unsubscribe RFC 8058**: header `List-Unsubscribe: <mailto:...>, <https://.../unsubscribe?one-click>` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. Endpoint `POST /api/unsubscribe?t=&one-click=true` que procesa sin click humano (Gmail/Apple Mail).
+- [ ] **3.B.5** — **Bounce DSN parsing detallado**: extraer DSN code (5.1.1, 5.7.1, etc.) del SES `bouncedRecipients[].diagnosticCode`, mapear a categoría legible, persistir en `EmailBounce.dsnCode` + `EmailBounce.category`.
+- [ ] **3.B.6** — **EmailEvent metadata extendida**: parser de `User-Agent` → `device`, `os`, `browser`. Persistir en `EmailEvent.deviceType`, `osName`, `browserName`. Incluye refactor del modelo (migración aditiva).
 
-**Aceptación:** dos tenants con cuentas Meta distintas envían campañas en paralelo sin interferencia; webhooks llegan al tenant correcto.
+#### 3.C — Campañas + Frontend (en curso 🟡)
+- [x] **3.C.1** — Backend campaigns CRUD + send + report.
+- [x] **3.C.2** — Realtime events `email.report.updated` (debounced 1s).
+- [x] **3.C.3** — Frontend (a infra, b templates+Unlayer, c campaigns list+detail+CSV+send, d realtime dashboard, e UX polish: Notify+Confirm+skeletons+responsive+landing+GitLab layout+Clerk theming/ES).
+- [ ] **3.C.4 — Frontend features email restantes** (próximo):
+  - [ ] **.a** SMTP accounts UI: lista + form (provider smtp|ses, host, port, user, pass, fromEmail, fromName, sesConfigSet?). **Test send** (botón "probar" envía un email de prueba a la cuenta del usuario logueado).
+  - [ ] **.b** Suppressions UI (`/dashboard/email/suppressions`): paginada con cursor, filtro por scope GLOBAL/CAMPAIGN, acción "agregar manual" y "eliminar entrada".
+  - [ ] **.c** Per-campaign drill-down: tabla paginada de `EmailReport` (status, error, sentAt, firstOpenedAt, firstClickedAt) → drilldown a `EmailEvent` (OPEN/CLICK con IP/UA/url).
+  - [ ] **.d** Métricas globales: dashboard con widgets (total enviados últimos 7/30 días, tasa apertura/click, top campañas).
+  - [ ] **.e** Live processing view: durante `status=PROCESSING`, progress bar + counts en tiempo real + botón pause.
+  - [ ] **.f** Manual send (sin campaña, ad-hoc): vista "Envío rápido" con `to: emails[]` + template-or-html + smtp account → enquola jobs como campaña efímera (`name: "Manual <fecha>"`).
+  - [ ] **.g** Test send / preview en editor de templates: botón "Enviar prueba" en `TemplateEditorPage` → envía a email del usuario o a uno indicado.
+- [ ] **3.C.5 — Acciones de control campaña** (pendiente 🆕): pausar / reanudar / forzar cierre. Endpoints `POST /api/email/campaigns/:id/pause|resume|force-close`. El worker chequea `EmailCampaign.status` antes de procesar cada job; en `PAUSED` deja el job en delay+retry; en `COMPLETED` por force-close marca todos los `PENDING` restantes como `CANCELED` (status nuevo en el enum).
 
-### Fase 5 — Billing + Plan enforcement (2 semanas)
+#### 3.D — Reportes consolidados con export 🆕
+- [ ] **3.D.1** — Generadores `ReportGenerator` para email: campaign summary (CSV/XLSX), per-contact activity, bounces/complaints, suppressions snapshot.
+- [ ] **3.D.2** — Endpoint `POST /api/email/reports/generate` (sync para datasets chicos, async vía BullMQ + S3 link para grandes).
+- [ ] **3.D.3** — UI: botones "Exportar CSV" / "Exportar XLSX" en cada reporte.
+- [ ] Integración con scheduler (Fase 8): estos generators son consumibles por `ScheduledTask`.
 
-- [ ] Integración Stripe: customer, subscriptions, customer portal, webhooks.
-- [ ] Integración MercadoPago: preapproval, webhook.
-- [ ] CRUD de planes (super-admin).
-- [ ] `UsageGuard` en endpoints + checks en workers.
-- [ ] Counters de uso (incremento atómico Redis + persistencia periódica a `UsageCounter`).
-- [ ] Notificaciones de cuota (80%, 100%).
-- [ ] Suspensión por impago.
-- [ ] Página de pricing pública.
-- [ ] Página de billing en cuenta (cambiar plan, ver facturas, método de pago).
+#### 3.E — Inbound automation (postergado, no MVP) 🟤
+- [ ] Gmail OAuth read (sincroniza respuestas de inbox Gmail) — **no se porta**. En SaaS reemplazado por reply-to a mailbox del cliente (fuera de Massivo) + opcional integración por IMAP en una fase muy posterior.
 
-**Aceptación:** upgrade/downgrade entre planes, webhook de pago fallido suspende org, cuota se resetea al inicio de período.
+**Aceptación Fase 3:**
+- Crear campaña en team A, enviar 50 contactos via SES, reporte muestra ≥45 SENT y eventos OPEN/CLICK con device/OS/browser parseados.
+- Cross-tenant 404. Webhook SES procesa team B sin filtración.
+- One-Click unsubscribe pasa el test de Gmail Postmaster.
+- Cualquier reporte de email es exportable a CSV/XLSX y agendable (vía Fase 8).
 
-### Fase 6 — IA + features avanzadas (1-2 semanas)
+---
 
-- [ ] Integración Gemini con API key default del SaaS + opción de BYO API key por tenant.
-- [ ] Resumen de conversaciones (heredado AMSA).
-- [ ] Sugerencia de respuestas (heredado AMSA).
-- [ ] Plan-gating de features de IA.
-- [ ] Counter `AI_TOKENS` para enforcement.
+### Fase 4 — Canal WhatsApp Business API (Meta)
 
-**Aceptación:** features de IA operan con cuotas correctas; tenant sin plan IA recibe 403.
+> Schema y CRUD mínimo ya hecho en 2.B. Faltan envío real, inbox, webhooks, sync, UI.
 
-### Fase 7 — Compliance + Admin panel (1-2 semanas)
+#### 4.A — Infra de envío WAPI
+- [ ] **4.A.1** — `WapiSender` (`@nestjs/axios` o `undici`) que llama a Graph API v20+ `/messages`. Manejo de respuestas + errores Meta.
+- [ ] **4.A.2** — `WapiQueueService` (BullMQ queue `wapi-send`, jobId=reportId).
+- [ ] **4.A.3** — `WapiWorkerService`: rate limiting por `WapiConfig` (campos `dailyLimit` default 200, `delayMinMs`/`delayMaxMs` default 30000/60000 — random jitter entre cada send). Reconstruye TenantContext.
+- [ ] **4.A.4** — Detección de rate-limit codes Meta (131056, 130429, 131048): backoff exponencial + circuit breaker per-config.
 
-- [ ] Endpoint data export (GDPR).
-- [ ] Endpoint delete account / delete org (right to be forgotten).
-- [ ] Audit log viewer en UI.
-- [ ] Páginas legales: TOS, Privacy, DPA.
-- [ ] Aceptación de TOS en signup.
-- [ ] Admin panel super-admin: lista de tenants, métricas globales, suspender/reactivar, impersonate (con audit).
-- [ ] Documentación pública de subprocesores.
+#### 4.B — Encriptación de tokens
+- [ ] KMS-backed encryption para `WapiConfig.accessTokenEnc`, `webhookVerifyTokenEnc`, `appSecretEnc`. Helper `EncryptionService.encrypt/decrypt` con cache. Migración de los `*Enc: string` actuales (quedan placeholders en claro).
 
-**Aceptación:** auditor puede revisar logs de cualquier acción sensible; super-admin puede operar sin acceder a datos de tenant sin loggearlo.
+#### 4.C — Webhook Meta
+- [ ] **4.C.1** — `POST /webhooks/wapi/:configId` (público, `@SkipTenantScope`). `GET` con verify_token único por config. Validación firma con `appSecret`.
+- [ ] **4.C.2** — Procesamiento de eventos: `messages` (entrante texto/imagen/audio/doc/sticker/contacto/reacción/botón), `statuses` (sent/delivered/read/failed), `template_status_update`, `account_alerts`.
+- [ ] **4.C.3** — Resuelve tenant por `configId` → `WapiConfig` → `(orgId, teamId)` con cliente raíz, corre todo dentro de `TenantContext.run`.
 
-### Fase 8 — Hardening + Producción (2 semanas)
+#### 4.D — Sync de templates Meta
+- [ ] `POST /api/wapi/templates/sync` por config: pull de templates aprobados desde Graph API, persiste `metaName`, `language`, `category`, `status`, `components` (header/body/footer/buttons como JSON). Cron opcional semanal vía Fase 8.
 
-- [ ] Terraform para infra AWS: VPC, ECS Fargate, RDS Postgres Multi-AZ, ElastiCache Redis, ALB, CloudFront, S3, KMS, Secrets Manager.
-- [ ] Pipeline CI/CD completo: build → test → deploy staging → smoke tests → deploy prod (con approval).
-- [ ] Backups automáticos Postgres con retention 30d.
-- [ ] Disaster recovery runbook.
-- [ ] Load testing (k6 o Artillery): 10k mensajes/min sostenidos.
-- [ ] Pen-test interno: aislamiento de tenants, OWASP Top 10.
-- [ ] WAF rules.
-- [ ] Status page pública.
+#### 4.E — Campañas WAPI
+- [ ] **4.E.1** — CRUD `/api/wapi/campaigns` (DRAFT/SCHEDULED/PROCESSING/PAUSED/COMPLETED/FAILED).
+- [ ] **4.E.2** — `addContacts` con CSV (E.164 + variables del template).
+- [ ] **4.E.3** — `send` enquola jobs (uno por contacto) respetando `WapiConfig.dailyLimit` global del día.
+- [ ] **4.E.4** — `getReport`: counts (PENDING/SENT/DELIVERED/READ/FAILED) + breakdown por error code Meta.
+- [ ] **4.E.5** — Acciones de control: pausar / reanudar / forzar cierre (mismo patrón que 3.C.5).
+- [ ] **4.E.6** — Realtime: emit `wapi.report.updated` debounced 1s.
 
-**Aceptación:** sistema soporta 100 tenants concurrentes con 10k msgs/min sin degradación; tests de seguridad pasan.
+#### 4.F — Inbox conversacional (full)
+- [ ] **4.F.1** — Modelos: `WapiConversation` (asignedTo, status `OPEN|ASSIGNED|RESOLVED`, unreadCount, lastMessageAt) ya existe. Agregar `WapiConversationClosure` (resolvedAt, resolvedById, note). Agregar índice por status para cola de "sin asignar".
+- [ ] **4.F.2** — Endpoints:
+  - `GET /api/wapi/inbox` (mías o todas si admin) + `GET /api/wapi/inbox/unassigned` (cola admin) + `GET /api/wapi/inbox/resolved` (paginado) + `GET /api/wapi/inbox/search?q=`.
+  - `GET /api/wapi/inbox/:id` (conversación + mensajes).
+  - `POST /:id/take` (asesor toma) / `POST /:id/assign` (admin asigna a userId) / `POST /:id/resolve` (con nota) / `POST /:id/mark-read` / `POST /:id/mark-unread`.
+  - `POST /:id/send` (texto/template/respuesta a mensaje específico — ventana 24h).
+  - `POST /:id/media` (upload S3) + `GET /:id/media/:mediaId` (download URL firmada).
+- [ ] **4.F.3** — Realtime: socket events `wapi.inbox.message.new`, `wapi.inbox.assigned`, `wapi.inbox.resolved`, `wapi.inbox.read`. Rooms `team:{id}` + `user:{id}` para asignaciones personales.
+- [ ] **4.F.4** — Frontend `/dashboard/wapi/inbox`: layout chat (lista convs izq + chat centro + ficha contacto der). Filtros (mías/sin asignar/resueltas), búsqueda, asignar, resolver con nota, scroll infinito, marca de leído auto al abrir, indicador de typing (postergado).
 
-### Fase 9 — Lanzamiento (1 semana)
+#### 4.G — Respuestas rápidas (snippets)
+- [ ] Modelo `WapiQuickReply` (id, teamId, shortcut, body, vars). CRUD `/api/wapi/quick-replies`. UI en inbox: tipear `/atajo` → autocomplete + insert con interpolación de vars del contacto.
 
-- [ ] Landing page de marketing.
+#### 4.H — Bajas / opt-out
+- [ ] Modelo `WapiOptOut` (existe). Endpoint `POST /api/wapi/opt-outs` (manual + auto desde palabras clave en mensaje entrante: "BAJA", "STOP", etc.). Worker chequea opt-out antes de send → marca `WapiReport.status='SUPPRESSED'`. UI `/dashboard/wapi/opt-outs` (lista, agregar, eliminar).
+
+#### 4.I — Mensaje de bienvenida automático
+- [ ] `WapiConfig.welcomeMessage` (texto + delaySec). Cuando llega un mensaje entrante de un número que NO tiene `WapiConversation` previa, crear conversación + enviar welcome message tras `delaySec`.
+
+#### 4.J — Live dashboard WAPI
+- [ ] `/dashboard/wapi/live`: campañas en curso con progreso live, throughput por config, alertas de daily-limit cerca del 80%/100%, conversaciones nuevas/sin asignar.
+
+#### 4.K — Botones de templates (INBOX/BAJA/IGNORAR)
+- [ ] Templates aprobados con quick-reply buttons. Webhook procesa `interactive.button_reply` → matching del payload → acción: agregar a inbox priorizado / opt-out / ignorar (log).
+
+**Aceptación Fase 4:**
+- Dos tenants con cuentas Meta distintas envían campañas en paralelo sin interferencia, webhooks llegan al tenant correcto.
+- Inbox: asesor ve solo conversaciones del team, admin ve cola sin asignar, asignar+resolver funciona, media sube/baja con URL firmada.
+- Opt-out automático por palabra clave funciona.
+- Daily limit por config no se excede ni siquiera bajo carga (test con campaña de 1000 contactos y limit=50 → 50 envíos al día 0, resto los próximos días).
+
+---
+
+### Fase 5 — Contacts unificados + Timeline cross-canal 🆕
+
+> Reemplaza el módulo `Deudores` de AMSA con una versión genérica multi-tenant.
+
+#### 5.A — Modelo Contact con `externalId`
+- [ ] Migración aditiva: `Contact.externalId String?` con `@@unique([teamId, externalId])` y `@@index([teamId, externalId])`.
+- [ ] CSV import (email + WAPI) actualizado: si la fila trae `externalId`, hace upsert sobre `Contact` y vincula `EmailContact`/`WapiContact` por `contactId`. Fallback: dedupe por email/phone.
+- [ ] Backfill: vincular `EmailContact`/`WapiContact` históricos al `Contact` correspondiente (job batch idempotente).
+
+#### 5.B — Timeline aggregator
+- [ ] Service `ContactTimelineService.getTimeline({contactId|externalId, from?, to?, channel?})`: agrega cronológicamente:
+  - `EmailReport` (sent/failed/bounced/complained/suppressed) + `EmailEvent` (open/click).
+  - `WapiReport` + `WapiMessage` (in/out con tipo).
+  - Acciones manuales (`AuditLog` filtrado por `resourceType='Contact'`).
+- [ ] Endpoint `GET /api/contacts/:id/timeline?cursor=&limit=` paginado por timestamp.
+
+#### 5.C — Búsqueda y filtros avanzados
+- [ ] Endpoint `GET /api/contacts/search` con filtros: `q` (full-text en email/phone/name/externalId/attributes), `tags[]`, `lastActivityFrom/To`, `channel`, `hasOpened/Clicked/Bounced`. Postgres `tsvector` o `ILIKE` según volumen.
+- [ ] Cursor pagination + sort configurable (lastActivity desc default).
+
+#### 5.D — Frontend Contacts
+- [ ] **5.D.1** — Lista `/dashboard/contacts`: tabla con name/email/phone/externalId/tags/lastActivity + búsqueda + filtros + bulk actions (tag, untag, delete, export).
+- [ ] **5.D.2** — Ficha `/dashboard/contacts/:id`: datos + attributes JSON + tags + suppressions + **timeline cross-canal** (email opens/clicks/bounces + WAPI in/out + acciones manuales) en línea de tiempo unificada.
+- [ ] **5.D.3** — Bulk import (CSV paste o upload) con mapeo de columnas → fields/attributes/externalId, preview de 10 filas + dedupe report.
+
+#### 5.E — Reportes consolidados
+- [ ] Reportes agregados: por tag, por segmento de attributes, por externalId pattern (ej: "todos los contactos cuyo `externalId` empiece con `EMP-`"). Export CSV/XLSX (vía 3.D / 8).
+- [ ] Reporte "actividad por contacto" (fila por mensaje/evento, ideal para auditoría).
+
+**Aceptación Fase 5:**
+- Cliente sube CSV con columna `externalId`. Las próximas N campañas que incluyan ese mismo `externalId` se agregan al mismo `Contact`.
+- `GET /api/contacts/by-external/:externalId/timeline` devuelve historial completo cross-canal.
+- Cross-tenant: dos teams con el mismo `externalId='EMP-001'` ven contactos distintos aislados.
+
+---
+
+### Fase 6 — Billing + Plan enforcement
+
+> Sin cambios estructurales vs plan original. Detalles:
+
+- [ ] **6.A** — Stripe (customer + subscriptions + portal + webhooks `subscription.*`, `invoice.*`).
+- [ ] **6.B** — MercadoPago (preapproval + webhook).
+- [ ] **6.C** — `UsageGuard` + counters atómicos Redis con persistencia periódica a `UsageCounter`.
+- [ ] **6.D** — Notificaciones de cuota (80%/100%) por email + UI banner.
+- [ ] **6.E** — Suspensión por impago: `Organization.status=SUSPENDED` → workers rechazan jobs + endpoints devuelven 402.
+- [ ] **6.F** — Pricing público + página billing en cuenta (cambio plan, facturas, método pago).
+- [ ] **6.G** — CRUD planes en admin panel (Fase 10).
+
+---
+
+### Fase 7 — IA con provider switcheable (Gemini + Bedrock)
+
+#### 7.A — Provider abstraction
+- [ ] Interface `LlmProvider` con `complete({prompt, system, maxTokens, temperature}) → {text, usage}` y `chatStream(...)`.
+- [ ] `GeminiProvider` (`@google/generative-ai`) — Gemini 1.5 Flash default.
+- [ ] `BedrockProvider` (`@aws-sdk/client-bedrock-runtime`) — Claude 3.5 Sonnet o Nova Pro según config.
+- [ ] **`AiProviderFactory`** elige según `process.env.AI_PROVIDER` (`gemini`/`bedrock`) o feature flag por org. **No es elección de usuario final** — es del operador.
+
+#### 7.B — Features de IA (heredadas de AMSA)
+- [ ] Resumen de conversaciones WAPI (botón en ficha de conversación → genera resumen y lo guarda).
+- [ ] Sugerencia de respuestas en inbox (panel lateral con 3 sugerencias contextuales).
+- [ ] (Opcional) Generación de copy para campañas email/WAPI.
+
+#### 7.C — Plan-gating + counter
+- [ ] CASL `cannot('use', 'AiFeature')` si `!plan.features.ai`.
+- [ ] Counter `AI_TOKENS` per-org (incremento por usage retornado).
+- [ ] BYO API key opcional: tenant puede pasar su Gemini API key o credenciales AWS para no consumir cuota del SaaS.
+
+**Aceptación Fase 7:**
+- Cambiar `AI_PROVIDER` de `gemini` a `bedrock` en env vars y reiniciar → todas las features de IA siguen funcionando idénticas.
+- Tenant FREE recibe 403 al llamar feature de IA. Tenant STARTER consume cuota y recibe 429 al excederla.
+
+---
+
+### Fase 8 — Scheduler genérico de reportes 🆕
+
+> "Cualquier reporte de la plataforma se puede agendar y llegar por mail en horario/día/recurrencia configurada."
+
+#### 8.A — Modelo
+- [ ] `ScheduledTask` (existe — extender): `kind` enum `REPORT_EMAIL_SUMMARY|REPORT_WAPI_SUMMARY|REPORT_CONTACT_ACTIVITY|REPORT_BOUNCES|REPORT_SUPPRESSIONS|REPORT_CUSTOM`, `cronExpression`, `timezone`, `nextRunAt`, `enabled`, `config: Json` (params del reporte: filtros, formato CSV/XLSX), `recipients: string[]` (emails destinatarios), `attachToEmail: bool`.
+- [ ] `TaskExecution` (existe): `status`, `startedAt`, `finishedAt`, `outputS3Key?`, `errorMessage?`, `logs?`.
+
+#### 8.B — Engine
+- [ ] BullMQ scheduled jobs (`Queue.add` con `delay` o `repeat.cron`). Resync de `ScheduledTask` enabled al boot.
+- [ ] Worker consume job → resuelve `ReportGenerator` por `kind` → genera CSV/XLSX → sube a S3 (`tenants/{orgId}/{teamId}/reports/{taskId}/{execId}.{ext}`) → envía email a `recipients` con adjunto (o link firmado para datasets > 5MB).
+- [ ] Reintentos: max 3, backoff exponencial. Falla persiste `TaskExecution.status='FAILED'` + alerta a `org:owner`.
+
+#### 8.C — Generadores (`ReportGenerator` interface)
+- [ ] `EmailSummaryReport`, `WapiSummaryReport`, `ContactActivityReport`, `BouncesReport`, `SuppressionsReport`, `ContactExportReport`. Cada uno implementa `generate({teamId, filters, format}) → Buffer`.
+
+#### 8.D — UI
+- [ ] `/dashboard/scheduler/tasks`: lista con `name/kind/cron/nextRun/lastRun/enabled`. CRUD. Botón "Ejecutar ahora".
+- [ ] Detalle: historial de `TaskExecution` con status + descarga del output.
+- [ ] Form de creación: paso 1 elegir reporte, paso 2 filtros, paso 3 cron (UI helper tipo "todos los lunes a las 8 AM" → cron expr), paso 4 destinatarios.
+
+#### 8.E — Detector de tareas huérfanas
+- [ ] Job periódico cada 5min que verifica que cada `ScheduledTask.enabled=true` tenga su BullMQ schedule activo. Si no, lo reagenda.
+
+**Aceptación Fase 8:**
+- Crear cron "Reporte de email todos los lunes 8 AM, formato XLSX, recipients [a@x, b@x]" → al lunes siguiente llega email con adjunto correcto, `TaskExecution` en SUCCESS.
+- Cualquier reporte que la UI permita generar ad-hoc también está disponible para schedule.
+
+---
+
+### Fase 9 — Dev Simulator 🆕
+
+> Panel interno para simular eventos Meta sin cuenta real. Crítico para QA y onboarding de devs.
+
+- [ ] **9.A** — Endpoints `/api/dev/simulator/*` (gated por `ENABLE_DEV_SIMULATOR=true` o flag por org `dev:simulator`):
+  - `POST /message` (texto entrante).
+  - `POST /button` (respuesta de botón template).
+  - `POST /status` (sent/delivered/read/failed para un `wamid`).
+  - `POST /image` / `/document` / `/audio` / `/sticker` / `/contact` / `/reaction`.
+- [ ] Cada endpoint construye el payload SNS/Meta correspondiente y lo inyecta en el handler de webhook (sin firma — por eso solo se habilita con flag).
+- [ ] **9.B** — UI `/dashboard/dev/simulator` (visible solo con flag): formularios por tipo de evento + selector de `WapiConfig` destino + selector de contacto.
+- [ ] **9.C** — Audit log de cada simulación (quién, cuándo, qué).
+
+**Aceptación Fase 9:**
+- Con `ENABLE_DEV_SIMULATOR=true`, simular un mensaje entrante → aparece en inbox WAPI del team correspondiente. Simular un status `delivered` → `WapiReport` se actualiza.
+- Con flag off, los endpoints devuelven 404.
+
+---
+
+### Fase 10 — Compliance + Admin panel
+
+- [ ] **10.A** — Data export GDPR (`POST /me/data-export` → ZIP por email).
+- [ ] **10.B** — Right to be forgotten (`DELETE /me`, `DELETE /organizations/:id` cascada).
+- [ ] **10.C** — `AuditLog` viewer en UI (filtros por action/actor/resource).
+- [ ] **10.D** — Páginas legales (TOS/Privacy/DPA versionadas) + aceptación tracked en signup.
+- [ ] **10.E** — Admin panel super-admin (`apps/admin`): lista tenants, métricas globales, suspender/reactivar, impersonate (con audit), CRUD planes.
+- [ ] **10.F** — Documentación pública de subprocesores.
+
+---
+
+### Fase 11 — Hardening + Producción
+
+- [ ] **11.A** — Terraform AWS (VPC, ECS Fargate, RDS Postgres Multi-AZ, ElastiCache Redis, ALB, CloudFront, S3, KMS, Secrets Manager, SES, SNS).
+- [ ] **11.B** — CI/CD completo (build → test → deploy staging → smoke → prod con approval).
+- [ ] **11.C** — Backups Postgres retention 30d + DR runbook.
+- [ ] **11.D** — Sentry + OpenTelemetry SDK (deferido desde Fase 0) con tags `orgId/teamId`.
+- [ ] **11.E** — Load testing (k6/Artillery): 10k mensajes/min sostenidos.
+- [ ] **11.F** — Pen-test interno: aislamiento + OWASP Top 10.
+- [ ] **11.G** — WAF rules + status page pública.
+
+---
+
+### Fase 12 — Lanzamiento
+
+- [ ] Landing page de marketing (ya esbozado en Fase 3.C.3.e).
 - [ ] Onboarding emails.
-- [ ] Documentación de usuario (Mintlify o Docusaurus).
+- [ ] Documentación pública (Mintlify/Docusaurus): API OpenAPI/Swagger + guías de usuario.
 - [ ] Soporte: integrar Intercom o Crisp.
-- [ ] Programa beta cerrado.
-- [ ] GA.
+- [ ] Programa beta cerrado → GA.
+
+---
+
+### Mapa AMSA Sender → Massivo App (referencia exhaustiva)
+
+| AMSA (origen)                          | Massivo (destino)                                   | Fase    | Estado |
+| -------------------------------------- | --------------------------------------------------- | ------- | ------ |
+| `modules/usuarios` + `roles`           | Clerk + CASL + roles fijos por team                 | 1       | ✅     |
+| `modules/email/smtp`                   | `EmailModule` SmtpAccount CRUD + Test send (3.C.4.a)| 2.A/3.C | 🟡     |
+| `modules/email/templates-email`        | `EmailModule` TemplateEditorPage Unlayer            | 2.A/3.C | ✅     |
+| `modules/email/campanias-email`        | `EmailCampaignsModule` + Campaigns UI               | 3.C     | ✅     |
+| `modules/email/envio-email` (preview)  | Test send / preview en editor                       | 3.C.4.g | 🆕     |
+| `modules/email/manual-email`           | Manual send ad-hoc                                  | 3.C.4.f | 🆕     |
+| `modules/email/tracking-email`         | TrackingModule (pixel + click + JWT)                | 3.B.1   | ✅     |
+| `modules/email/desuscribir-email`      | UnsubscribeController + One-Click RFC 8058          | 3.B.2/4 | 🟡     |
+| `modules/email/ses-webhook`            | SesWebhookModule                                    | 3.B.3   | ✅     |
+| `modules/email/reportes-email`         | Reportes consolidados + drill-down + export         | 3.C.4.c/d, 3.D | 🆕 |
+| `modules/email/public-email`           | Páginas públicas unsubscribe/preview                | 3.B.2   | ✅     |
+| `modules/email/gmail` (OAuth read)     | **NO se porta** — reply-to a mailbox del cliente    | —       | ⛔     |
+| `EmailEvento` con device/OS/browser    | `EmailEvent` extendido                              | 3.B.6   | 🆕     |
+| `EmailRebote` con DSN code             | `EmailBounce.dsnCode` + category                    | 3.B.5   | 🆕     |
+| Pausar/reanudar/forzar cierre campaña  | Acciones de control                                 | 3.C.5/4.E.5 | 🆕 |
+| `modules/wapi/config`                  | `WapiConfigModule` + KMS encryption                 | 2.B/4.B | 🟡     |
+| `modules/wapi/templates` + sync Meta   | WapiTemplatesModule + sync                          | 4.D     | 🟡     |
+| `modules/wapi/campanias`               | WapiCampaignsModule + send + acciones control       | 4.E     | 🆕     |
+| `modules/wapi/inbox`                   | WapiInboxModule (full feature)                      | 4.F     | 🆕     |
+| `modules/wapi/respuestas-rapidas`      | WapiQuickReplyModule                                | 4.G     | 🆕     |
+| `modules/wapi/bajas`                   | WapiOptOutModule                                    | 4.H     | 🆕     |
+| `modules/wapi/analitica` + dashboard   | Live dashboard WAPI                                 | 4.J     | 🆕     |
+| `modules/wapi/webhook`                 | WapiWebhookController                               | 4.C     | 🆕     |
+| Mensaje de bienvenida automático       | `WapiConfig.welcomeMessage`                         | 4.I     | 🆕     |
+| `modules/whatsapp/*` (Web.js legacy)   | **NO se porta** — excluido del MVP                  | —       | ⛔     |
+| `modules/deudores`                     | **`Contacts` con `externalId` + Timeline cross-canal** | 5    | 🆕     |
+| `modules/scheduler` (TareasProgramadas)| Scheduler genérico de reportes (cualquier reporte)  | 8       | 🆕     |
+| `modules/configuracion` (per-user)     | **Simplificado**: config por team + valores del plan| 1/6     | ✅/🟡  |
+| `modules/dev/simulador`                | Dev Simulator gated por flag                        | 9       | 🆕     |
+| `modules/campania-logs` (Redis)        | `CampaignLog` (modelo Prisma) + UI logs en vivo     | 3.C.4.e/4.J | 🆕 |
+| `modules/ai` (Gemini + Bedrock)        | LlmProvider switcheable por feature flag            | 7       | 🆕     |
+| Realtime sockets (`join_campaña`/inbox)| `EventsService` + rooms scopeadas                   | 2.D     | ✅     |
+| Export CSV/XLSX                        | `ReportGenerator` + button en UI + scheduled        | 3.D/8   | 🆕     |
+| Audit logs (Winston)                   | `AuditLog` modelo + viewer UI                       | 10.C    | 🆕     |
+
+> **Leyenda:** ✅ hecho · 🟡 parcial · 🆕 nuevo (no estaba antes en el plan o en estado inicial) · ⛔ excluido del MVP
 
 ---
 
@@ -684,9 +911,20 @@ Antes de declarar Massivo App listo para vender:
 
 ## 14. Estado del documento
 
-- **Versión:** 1.0
-- **Fecha:** 2026-04-28
-- **Autor:** plan generado en conversación con el dueño del producto.
-- **Próxima revisión:** al iniciar Fase 1.
+- **Versión:** 2.0 — reescritura tras audit exhaustivo de AMSA Sender.
+- **Fecha:** 2026-04-30
+- **Autor:** plan generado en conversación con el dueño del producto, revisado feature-por-feature contra AMSA.
+- **Cambios v2.0**:
+  - Fases 0/1/2 marcadas ✅ con detalle.
+  - Fase 3 reorganizada en sub-fases granulares (3.A/3.B/3.B'/3.C/3.D/3.E) con estado real.
+  - Fase 4 expandida con 11 sub-fases (4.A → 4.K) cubriendo envío, KMS, webhook, sync, campañas, inbox full, quick replies, opt-out, welcome msg, dashboard, buttons.
+  - Fase 5 nueva: **Contacts unificados con `externalId` + Timeline cross-canal** (reemplaza módulo `Deudores` de AMSA).
+  - Fase 7 nueva (ex Fase 6): IA con `LlmProvider` switcheable Gemini/Bedrock por feature flag + env.
+  - Fase 8 nueva: **Scheduler genérico de reportes** (cualquier reporte, agendable, llega por mail con CSV/XLSX).
+  - Fase 9 nueva: Dev Simulator (panel interno gated por flag).
+  - Fases 10/11/12: ex 7/8/9.
+  - Sección nueva "Mapa AMSA Sender → Massivo App" feature-por-feature con estado.
+  - Excluidos del MVP confirmados: WhatsApp Web.js (legacy), Gmail OAuth read.
+- **Próxima revisión:** al cerrar Fase 3.
 
 > Este plan es un punto de partida ejecutable, no un contrato cerrado. Ajustar según aprendizajes de cada fase. Lo importante no se mueve: aislamiento de tenants, observabilidad, billing y compliance son no-negociables.

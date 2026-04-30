@@ -17,7 +17,11 @@ import { TenantContextInterceptor } from '../../common/auth/tenant-context.inter
 import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { SmtpAccountsService } from './smtp-accounts.service';
-import { CreateSmtpAccountDto, UpdateSmtpAccountDto } from './smtp-accounts.dto';
+import {
+  CreateSmtpAccountDto,
+  TestSmtpAccountDto,
+  UpdateSmtpAccountDto,
+} from './smtp-accounts.dto';
 import type { AppAbility } from '@massivo/permissions';
 
 @Controller('email/smtp-accounts')
@@ -42,6 +46,13 @@ export class SmtpAccountsController {
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'SmtpAccount'))
   create(@Body() dto: CreateSmtpAccountDto) {
     return this.service.create(dto);
+  }
+
+  @Post(':id/test')
+  @HttpCode(HttpStatus.OK)
+  @CheckPolicies((ability: AppAbility) => ability.can('update', 'SmtpAccount'))
+  testSend(@Param('id') id: string, @Body() dto: TestSmtpAccountDto) {
+    return this.service.testSend(id, dto);
   }
 
   @Patch(':id')
