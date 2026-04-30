@@ -23,7 +23,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SendIcon from '@mui/icons-material/Send';
 import MarkEmailReadIcon from '@mui/icons-material/MarkEmailRead';
 import TouchAppIcon from '@mui/icons-material/TouchApp';
-import ReportGmailerrorredIcon from '@mui/icons-material/ReportGmailerrored';
+import ReportGmailerrorredIcon from '@mui/icons-material/ReportGmailerrorred';
 import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import type { MetricsOverview } from './types';

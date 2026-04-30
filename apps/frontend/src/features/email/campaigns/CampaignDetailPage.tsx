@@ -32,6 +32,7 @@ import type {
   SmtpAccountListItem,
 } from './types';
 import { CampaignSendsSection } from './CampaignSendsSection';
+import { CampaignProcessingBanner } from './CampaignProcessingBanner';
 
 const REPORT_STATUSES: Array<{ key: string; label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error' }> = [
   { key: 'PENDING', label: 'Pendientes', color: 'default' },
@@ -275,6 +276,14 @@ export function CampaignDetailPage() {
       </Box>
 
       {error && <Alert severity="error">{error}</Alert>}
+
+      {campaign.status === 'PROCESSING' && (
+        <CampaignProcessingBanner
+          totalReports={campaign._count.reports}
+          report={report}
+          socketConnected={!!socket?.connected}
+        />
+      )}
 
       {report && (campaign.status === 'PROCESSING' || campaign.status === 'COMPLETED' || campaign._count.reports > 0) && (
         <Paper sx={{ p: 3 }}>

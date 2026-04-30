@@ -21,6 +21,16 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 3.C.4.e — Live processing view
+- **Frontend**: nuevo componente `CampaignProcessingBanner` que se muestra en `CampaignDetailPage` cuando `campaign.status === 'PROCESSING'`. Incluye:
+  - Headline "Enviando campaña…" + indicador socket connected (`● en vivo`).
+  - `LinearProgress` determinate calculado como `(totalReports - PENDING) / totalReports * 100`. Refresh en vivo al recibir `email.report.updated`.
+  - Counter `processed / total` con porcentaje.
+  - Throughput estimado (envíos/min) sobre los últimos 60s de progreso real, vía hook `useThroughput` con buffer de muestras. Sólo se muestra con ≥5s de datos y delta positivo (evita ruido al arranque).
+  - Chips con breakdown live: Pendientes / Enviados / Fallidos / Bounced / Complaints / Suprimidos.
+- El banner queda arriba del card "Resultados" (que sigue mostrando aperturas/clicks únicos en su lugar) — banner = headline operativo, Resultados = breakdown analítico.
+- **Pause/resume** queda fuera de scope para 3.C.4.e — se aborda en 3.C.5.
+
 ### 3.C.4.d — Métricas globales de email
 - **Backend**: nuevo `EmailMetricsService.getOverview(days)` (window 7|30) con queries agregadas via `prisma.scoped.emailReport.groupBy`. Calcula totales por status (sent, failed, bounced, complained, suppressed, pending), aperturas/clicks únicos (reports cuyo `firstOpenedAt`/`firstClickedAt` cae en ventana) y rates: openRate / clickRate / bounceRate / complaintRate. Top 5 campañas (por enviados) con sent + opens + clicks únicos por campaña.
 - **Endpoint** `GET /api/email/metrics/overview?days=7|30` con `@CheckPolicies('read', 'Analytics')`. 400 si days no es 7 ni 30.
