@@ -39,7 +39,11 @@
       "Read(//c/c/Users/MDIFLUME/Documents/Proyectos/Propios/massivo-app/packages/shared-types/dist/**)",
       "Bash(curl -sS http://localhost:3000/api/health)",
       "Bash(curl *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('\\\\n'.join\\(f'{k}: {v}' for k,v in d.get\\('scripts',{}\\).items\\(\\)\\)\\)\")",
+      "Bash(xargs wc *)",
+      "Bash(xargs -I {} bash -c 'echo \"=== {} ===\" && head -50 \"{}\"')",
+      "Bash(xargs grep *)"
     ]
   }
 }
