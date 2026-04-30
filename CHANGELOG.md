@@ -21,6 +21,17 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 3.C.4.f — Log en vivo por campaña + fix throttle de socket
+- **Backend**: `EmailWorkerService` ahora emite un evento `email.report.log` por cada transición de report (`SENT` / `FAILED` / `SUPPRESSED`) con payload `{ campaignId, reportId, email, status, messageId?, error?, ts }`. **No** está throttleado — el frontend se encarga del filtrado y ring buffer. Tests del worker actualizados (7/7 ✅) cubriendo asserts de `email.report.log` en cada transición.
+- **Backend**: `EventsService.emitToTeamDebounced` reescrito de debounce puro a **throttle leading+trailing** (1s window): el primer emit del burst sale inmediato + máximo 1 emit/seg con el payload más reciente. El debounce puro nunca disparaba durante un envío activo (cada nueva transición reseteaba el timer), dejando la barra de progreso pegada en 0%. Tests events: 11/11 ✅.
+- **Frontend**: `CampaignProcessingBanner` ahora recibe `socket` + `campaignId` y agrega panel **Log en vivo** colapsable, estilo consola dark (monospace, scroll automático), con:
+  - Filtro por status (Todos / Enviados / Fallidos / Suprimidos).
+  - Ring buffer de los últimos 200 entries.
+  - Botón "Limpiar".
+  - Cada línea: `[hh:mm:ss] ✓ SENT user@domain.com · msgId=…` (verde / rojo / violeta según status).
+- **Multi-campaña**: cada banner filtra los logs por su `campaignId` antes de pushearlos al buffer, así que con varias campañas en simultáneo (hasta 5) cada una sólo ve sus propios eventos. El reset del buffer está atado al cambio de `campaignId`.
+- **Fix relacionado**: `handleSend` ahora dispara `loadReport()` además de `load()`, y el banner muestra `LinearProgress` indeterminate + "Iniciando envío…" cuando todos los counts vienen en 0 — evitaba que la barra se viera en 100% durante el primer segundo del envío.
+
 ### 3.C.4.e — Live processing view
 - **Frontend**: nuevo componente `CampaignProcessingBanner` que se muestra en `CampaignDetailPage` cuando `campaign.status === 'PROCESSING'`. Incluye:
   - Headline "Enviando campaña…" + indicador socket connected (`● en vivo`).

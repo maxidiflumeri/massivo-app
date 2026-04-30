@@ -20,7 +20,7 @@ describe('EmailWorkerService.process', () => {
   let senders: { sendForAccount: jest.Mock };
   let tokens: { sign: jest.Mock; publicUrl: jest.Mock };
   let suppression: { check: jest.Mock };
-  let events: { emitToTeamDebounced: jest.Mock };
+  let events: { emitToTeamDebounced: jest.Mock; emitToTeam: jest.Mock };
   let worker: EmailWorkerService;
 
   beforeEach(() => {
@@ -42,7 +42,7 @@ describe('EmailWorkerService.process', () => {
     suppression = {
       check: jest.fn().mockResolvedValue({ suppressed: false }),
     };
-    events = { emitToTeamDebounced: jest.fn() };
+    events = { emitToTeamDebounced: jest.fn(), emitToTeam: jest.fn() };
     worker = new EmailWorkerService(
       new ConfigService({}),
       { scoped: prismaScoped, ...prismaRoot } as never,
@@ -115,6 +115,18 @@ describe('EmailWorkerService.process', () => {
     expect(events.emitToTeamDebounced).toHaveBeenCalledWith(
       'team-a', 'email.report.updated', 'camp-1', { campaignId: 'camp-1' },
     );
+    expect(events.emitToTeam).toHaveBeenCalledWith(
+      'team-a',
+      'email.report.log',
+      expect.objectContaining({
+        campaignId: 'camp-1',
+        reportId: 'rep-1',
+        email: 'user@example.com',
+        status: 'SENT',
+        messageId: 'msg-x',
+        ts: expect.any(String),
+      }),
+    );
   });
 
   it('sender tira → update FAILED + rethrow', async () => {
@@ -129,6 +141,15 @@ describe('EmailWorkerService.process', () => {
       where: { id: 'rep-1' },
       data: { status: 'FAILED', error: 'SES throttle' },
     });
+    expect(events.emitToTeam).toHaveBeenCalledWith(
+      'team-a',
+      'email.report.log',
+      expect.objectContaining({
+        campaignId: 'camp-1',
+        status: 'FAILED',
+        error: 'SES throttle',
+      }),
+    );
   });
 
   it('report no encontrado (cross-tenant via prisma.scoped) → tira sin tocar sender', async () => {
@@ -156,6 +177,15 @@ describe('EmailWorkerService.process', () => {
       where: { id: 'rep-1' },
       data: { status: 'SUPPRESSED', error: 'unsubscribe-global' },
     });
+    expect(events.emitToTeam).toHaveBeenCalledWith(
+      'team-a',
+      'email.report.log',
+      expect.objectContaining({
+        campaignId: 'camp-1',
+        status: 'SUPPRESSED',
+        error: 'unsubscribe-global',
+      }),
+    );
   });
 
   it('último report SENT → transiciona campaign PROCESSING → COMPLETED', async () => {

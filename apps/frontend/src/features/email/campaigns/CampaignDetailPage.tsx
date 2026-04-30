@@ -279,9 +279,10 @@ export function CampaignDetailPage() {
 
       {campaign.status === 'PROCESSING' && (
         <CampaignProcessingBanner
+          campaignId={campaign.id}
           totalReports={campaign._count.reports}
           report={report}
-          socketConnected={!!socket?.connected}
+          socket={socket}
         />
       )}
 

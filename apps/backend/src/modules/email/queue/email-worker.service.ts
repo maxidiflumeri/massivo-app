@@ -45,6 +45,27 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Emite un log line por transición de report (no throttleado). El frontend
+   * filtra por campaignId para soportar múltiples campañas en simultáneo.
+   */
+  private notifyReportLog(
+    teamId: string,
+    entry: {
+      campaignId: string;
+      reportId: string;
+      email: string;
+      status: 'SENT' | 'FAILED' | 'SUPPRESSED';
+      messageId?: string;
+      error?: string;
+    },
+  ): void {
+    this.events.emitToTeam(teamId, 'email.report.log', {
+      ...entry,
+      ts: new Date().toISOString(),
+    });
+  }
+
+  /**
    * Si la campaign está PROCESSING y no quedan reports PENDING, la transiciona
    * a COMPLETED. Idempotente vía guard de status: dos workers que terminen en
    * paralelo no provocan doble update.
@@ -130,6 +151,13 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           data: { status: 'SUPPRESSED', error: supp.reason ?? 'suppressed' },
         });
         this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportLog(teamId, {
+          campaignId: report.campaignId,
+          reportId,
+          email: report.contact.email,
+          status: 'SUPPRESSED',
+          error: supp.reason ?? 'suppressed',
+        });
         await this.maybeCompleteCampaign(report.campaignId, teamId);
         this.logger.log(`Report ${reportId} suprimido (${supp.reason}) — skip send`);
         return { suppressed: true, reason: supp.reason };
@@ -181,6 +209,13 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           },
         });
         this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportLog(teamId, {
+          campaignId: report.campaignId,
+          reportId,
+          email: report.contact.email,
+          status: 'SENT',
+          messageId: result.messageId,
+        });
         await this.maybeCompleteCampaign(report.campaignId, teamId);
         return { messageId: result.messageId };
       } catch (err) {
@@ -190,6 +225,13 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           data: { status: 'FAILED', error: msg.slice(0, 500) },
         });
         this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportLog(teamId, {
+          campaignId: report.campaignId,
+          reportId,
+          email: report.contact.email,
+          status: 'FAILED',
+          error: msg.slice(0, 500),
+        });
         await this.maybeCompleteCampaign(report.campaignId, teamId);
         throw err;
       }
