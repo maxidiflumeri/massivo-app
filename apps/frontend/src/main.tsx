@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 import { ThemeProvider } from './theme/ThemeProvider';
+import { TeamProvider } from './team/TeamContext';
 
 import { ClerkProvider } from '@clerk/clerk-react';
 
@@ -18,9 +19,11 @@ createRoot(rootEl).render(
   <StrictMode>
     <ClerkProvider publishableKey={clerkPubKey} appearance={{ elements: { rootBox: { display: 'flex', justifyContent: 'center', width: '100%' } } }}>
       <ThemeProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <TeamProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </TeamProvider>
       </ThemeProvider>
     </ClerkProvider>
   </StrictMode>,

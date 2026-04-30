@@ -4,6 +4,9 @@ import { HomePage } from './pages/HomePage';
 import { SignInPage } from './pages/auth/SignInPage';
 import { SignUpPage } from './pages/auth/SignUpPage';
 import { AppLayout } from './layouts/AppLayout';
+import { TemplatesListPage } from './features/email/templates/TemplatesListPage';
+import { CampaignsListPage } from './features/email/campaigns/CampaignsListPage';
+import { CampaignDetailPage } from './features/email/campaigns/CampaignDetailPage';
 
 export function App() {
   return (
@@ -28,6 +31,9 @@ export function App() {
         }
       >
         <Route index element={<div>Dashboard Principal (Selecciona u opera tu equipo)</div>} />
+        <Route path="email/templates" element={<TemplatesListPage />} />
+        <Route path="email/campaigns" element={<CampaignsListPage />} />
+        <Route path="email/campaigns/:id" element={<CampaignDetailPage />} />
       </Route>
 
       {/* Fallback */}

@@ -196,7 +196,16 @@ Criterios de aceptación 3.A:
 - [x] `EmailModule` importa `EventsModule`.
 - [x] Tests: 5 nuevos — `events.service.spec.ts` (4: coalesce burst, keys distintas no coalescing, onModuleDestroy limpia, sin server no rompe), `ses-webhook.service.spec.ts` (1: emit en Open). Worker spec extendido con asserción de emit en happy path. Backend total: **194/194 ✅**.
 
-**3.C.3 — Frontend Unlayer + dashboard** (pendiente):
+**3.C.3 — Frontend Unlayer + dashboard** (en progreso):
+
+**3.C.3.a — Infra frontend (✅ completada):**
+- [x] `useApi()` hook (`apps/frontend/src/api/client.ts`): wrapper sobre fetch con base URL `VITE_API_URL`, adjunta `Authorization: Bearer <clerk-token>` y `x-team-id` (del TeamContext) automáticamente. Métodos `get/post/patch/delete`. Throw `ApiError(status, message, body)` en 4xx/5xx.
+- [x] `TeamContext` (`apps/frontend/src/team/TeamContext.tsx`): provider + `useActiveTeam()` con persistencia en `localStorage` y sync entre tabs vía `storage` event.
+- [x] `useTeamSocket()` hook (`apps/frontend/src/realtime/useTeamSocket.ts`): conecta socket.io con `auth: { token, teamId }`, reconnect cuando cambia team o user, cleanup en unmount.
+- [x] Router wiring: `/dashboard/email/templates`, `/dashboard/email/campaigns`, `/dashboard/email/campaigns/:id` (placeholders por ahora). `TeamProvider` envuelve la app antes del router.
+- [x] Dep nueva: `socket.io-client@^4.8.3`.
+
+**3.C.3.b — Templates + Unlayer** (pendiente):
 - [ ] Editor Unlayer: portar embed desde AMSA (`apps/frontend/src/features/email/templates/`). Persiste `design` JSON + `html` en `EmailTemplate`.
 - [ ] Eventos en tiempo real: `EventsService.emitToTeam(teamId, 'email.report.updated', { campaignId, counts })` debounced 1s.
 - [ ] Tests integración + extensión `tenant-isolation.spec.ts` con `EmailCampaign`/`EmailReport`/`EmailEvent`.
