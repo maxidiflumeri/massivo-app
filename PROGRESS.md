@@ -129,8 +129,8 @@ Ver `MIGRATION_PLAN.md` sección **9. Plan de ejecución por fases → Fase 1**.
 - [x] CASL `AbilityFactory` en `@massivo/permissions` + `PoliciesGuard` + decorator `@CheckPolicies`. Plan flags (Opción A) en `/me/context` con `computePlanFlags`. Tests: 6 (AbilityFactory) + 5 (PoliciesGuard) + 4 (MeService actualizado) ✅.
 - [x] Prisma client extension que auto-inyecta `organizationId` + `teamId` (modo strict, rechaza queries sin contexto en modelos tenant-aware).
 - [x] Decorator `@SkipTenantScope()` para casos legítimos (admin, jobs de billing).
-- [ ] Onboarding: signup → crear org → crear team "General" → asignar plan FREE.
-- [ ] CRUD básico de teams (con plan-gate `multiTeam`).
+- [x] Onboarding: signup → crear org → crear team "General" → asignar plan FREE. Mejorado: upsert idempotente, OWNER para creator, auto-assign al team General.
+- [x] CRUD básico de teams (`TeamsModule`): list/get/create/update/delete con `@CheckPolicies` (primer consumer del auth chain completo). Plan-gate `create Team` via CASL. Tests: 8 ✅.
 - [ ] CRUD de invitaciones a org y assignment a teams.
 - [ ] Tests de integración: dos tenants concurrentes, no pueden leer datos del otro.
 
@@ -253,3 +253,10 @@ Un usuario nuevo puede:
 - Fix pre-existente: `@massivo/permissions/tsconfig.json` excluye `*.spec.ts` del build.
 - Fix: `@massivo/backend/package.json` ahora declara dependencia `@massivo/permissions`.
 - Verificación: typecheck 8/8 ✅, build 5/5 ✅, tests backend 25/25 ✅, tests permissions 11/11 ✅.
+
+### 2026-04-29 — Sesión 6b (Antigravity — Opus 4.6)
+- **Webhook Clerk hardening**: eliminados todos los `any`, tipado con `ClerkWebhookEvent`. Org creation ahora idempotente (upsert). Creator se asigna como OWNER + ADMIN del team General. Role mapping mejorado con `mapClerkRoleToOrgRole` y protección contra degradación de OWNER.
+- **CRUD de Teams** (`TeamsModule`): primer consumer completo del auth chain `ClerkAuthGuard → TenantContextGuard → PoliciesGuard + @CheckPolicies`. Endpoints: `GET /api/teams`, `GET /api/teams/:id`, `POST /api/teams`, `PATCH /api/teams/:id`, `DELETE /api/teams/:id`. Plan-gate `create Team` via CASL ability. Default team no se puede eliminar.
+- DTOs con `class-validator` (`CreateTeamDto`, `UpdateTeamDto`).
+- Tests `TeamsService`: 8 tests (sin contexto → 403, OWNER vs MEMBER visibility, slug duplicado, auto-assign creator, default protection, cross-org isolation).
+- Verificación: typecheck 8/8 ✅, build 5/5 ✅, tests backend 33/33 ✅, tests permissions 11/11 ✅.

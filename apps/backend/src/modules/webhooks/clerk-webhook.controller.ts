@@ -37,14 +37,14 @@ export class ClerkWebhookController {
     }
 
     const wh = new Webhook(secret);
-    let evt: any;
+    let evt: { type: string; data: Record<string, unknown> };
 
     try {
       evt = wh.verify(payload, {
         'svix-id': svixId,
         'svix-timestamp': svixTimestamp,
         'svix-signature': svixSignature,
-      });
+      }) as { type: string; data: Record<string, unknown> };
     } catch (err) {
       this.logger.error('Error verificando el webhook', err);
       return res.status(400).json({ error: 'Firma inválida' });

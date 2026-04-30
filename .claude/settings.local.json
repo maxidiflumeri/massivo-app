@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m 'chore: centralizar carga de .env en raiz del monorepo *)",
+      "Bash(docker compose *)",
+      "Bash(wsl *)",
+      "Bash(powershell.exe *)",
+      "Bash(pnpm --filter @massivo/prisma exec prisma migrate deploy)",
+      "Bash(pnpm --filter @massivo/prisma exec prisma db seed)",
+      "Bash(pnpm --filter @massivo/prisma exec tsx prisma/seed.ts)",
+      "Bash(pnpm exec *)",
+      "Bash(pnpm --filter @massivo/prisma exec ts-node prisma/seed.ts)",
+      "Bash(pnpm --filter @massivo/prisma exec node -e \"const c = require\\('@prisma/client'\\); console.log\\(Object.keys\\(c\\)\\)\")",
+      "Bash(pnpm install *)",
+      "Bash(pnpm --filter @massivo/prisma exec prisma generate)",
+      "Bash(pnpm dev *)",
+      "Bash(pnpm run *)",
+      "Bash(git commit -m ' *)",
+      "Bash(pnpm --filter @massivo/backend run typecheck)",
+      "Bash(pnpm --filter @massivo/backend run test -- tenant-extension)",
+      "Bash(git commit *)",
+      "Bash(pnpm --filter @massivo/backend run test -- me.service)",
+      "Bash(pnpm --filter @massivo/permissions typecheck)",
+      "Bash(pnpm --filter @massivo/permissions test)"
+    ]
+  }
+}

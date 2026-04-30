@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { OrgRole } from '@massivo/prisma';
+import type { OrgRole, TeamRole } from '@massivo/prisma';
+
+/** Payload genérico de Clerk webhook — tipado mínimo para evitar `any`. */
+interface ClerkWebhookEvent {
+  data: Record<string, unknown>;
+  type: string;
+}
 
 @Injectable()
 export class ClerkWebhookService {
@@ -8,34 +14,35 @@ export class ClerkWebhookService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async handleUserCreated(evt: any) {
-    const { id, email_addresses, first_name, last_name, image_url } = evt.data;
-    const email = email_addresses?.[0]?.email_address;
+  async handleUserCreated(evt: ClerkWebhookEvent): Promise<void> {
+    const { id, email_addresses, first_name, last_name, image_url } = evt.data as Record<string, unknown>;
+    const emails = email_addresses as Array<{ email_address: string }> | undefined;
+    const email = emails?.[0]?.email_address;
     if (!email) return;
 
     await this.prisma.user.upsert({
-      where: { clerkUserId: id },
+      where: { clerkUserId: id as string },
       update: {
         email,
-        name: `${first_name || ''} ${last_name || ''}`.trim(),
-        avatarUrl: image_url,
+        name: `${(first_name as string) || ''} ${(last_name as string) || ''}`.trim() || null,
+        avatarUrl: (image_url as string) ?? null,
       },
       create: {
-        clerkUserId: id,
+        clerkUserId: id as string,
         email,
-        name: `${first_name || ''} ${last_name || ''}`.trim(),
-        avatarUrl: image_url,
+        name: `${(first_name as string) || ''} ${(last_name as string) || ''}`.trim() || null,
+        avatarUrl: (image_url as string) ?? null,
       },
     });
-    this.logger.log(`User created/updated: ${id}`);
+    this.logger.log(`User created/updated: ${id as string}`);
   }
 
-  async handleUserUpdated(evt: any) {
+  async handleUserUpdated(evt: ClerkWebhookEvent): Promise<void> {
     return this.handleUserCreated(evt);
   }
 
-  async handleUserDeleted(evt: any) {
-    const { id } = evt.data;
+  async handleUserDeleted(evt: ClerkWebhookEvent): Promise<void> {
+    const id = evt.data['id'] as string | undefined;
     if (!id) return;
     await this.prisma.user.deleteMany({
       where: { clerkUserId: id },
@@ -43,8 +50,8 @@ export class ClerkWebhookService {
     this.logger.log(`User deleted: ${id}`);
   }
 
-  async handleOrganizationCreated(evt: any) {
-    const { id, name, slug, created_by } = evt.data;
+  async handleOrganizationCreated(evt: ClerkWebhookEvent): Promise<void> {
+    const { id, name, slug, created_by } = evt.data as Record<string, unknown>;
 
     // Obtener plan FREE por defecto
     const freePlan = await this.prisma.plan.findUnique({ where: { code: 'FREE' } });
@@ -52,39 +59,94 @@ export class ClerkWebhookService {
       throw new Error('No se encontró el plan FREE en la base de datos');
     }
 
-    const org = await this.prisma.organization.create({
-      data: {
-        clerkOrgId: id,
-        name,
-        slug: slug || id,
+    // Upsert idempotente (Clerk puede re-enviar webhooks)
+    const org = await this.prisma.organization.upsert({
+      where: { clerkOrgId: id as string },
+      update: {
+        name: name as string,
+        slug: (slug as string) || (id as string),
+      },
+      create: {
+        clerkOrgId: id as string,
+        name: name as string,
+        slug: (slug as string) || (id as string),
         planId: freePlan.id,
       },
     });
 
-    // Crear team General
-    await this.prisma.team.create({
-      data: {
-        organizationId: org.id,
-        name: 'General',
-        slug: 'general',
-        isDefault: true,
-      },
+    // Crear team "General" si no existe (idempotente)
+    const existingDefault = await this.prisma.team.findFirst({
+      where: { organizationId: org.id, isDefault: true },
     });
+    if (!existingDefault) {
+      await this.prisma.team.create({
+        data: {
+          organizationId: org.id,
+          name: 'General',
+          slug: 'general',
+          isDefault: true,
+        },
+      });
+    }
 
-    this.logger.log(`Organization created: ${id} with General team`);
+    // Si created_by está presente, asegurar que el creador sea OWNER en la org
+    if (created_by) {
+      const creator = await this.prisma.user.findUnique({
+        where: { clerkUserId: created_by as string },
+      });
+      if (creator) {
+        await this.prisma.orgMembership.upsert({
+          where: {
+            userId_organizationId: {
+              userId: creator.id,
+              organizationId: org.id,
+            },
+          },
+          update: { role: 'OWNER' },
+          create: {
+            userId: creator.id,
+            organizationId: org.id,
+            role: 'OWNER',
+          },
+        });
+
+        // Auto-asignar al team General como ADMIN
+        const generalTeam = await this.prisma.team.findFirst({
+          where: { organizationId: org.id, isDefault: true },
+        });
+        if (generalTeam) {
+          await this.prisma.teamMembership.upsert({
+            where: {
+              userId_teamId: {
+                userId: creator.id,
+                teamId: generalTeam.id,
+              },
+            },
+            update: { role: 'ADMIN' },
+            create: {
+              userId: creator.id,
+              teamId: generalTeam.id,
+              role: 'ADMIN',
+            },
+          });
+        }
+      }
+    }
+
+    this.logger.log(`Organization created: ${id as string} with General team`);
   }
 
-  async handleOrganizationUpdated(evt: any) {
-    const { id, name, slug } = evt.data;
+  async handleOrganizationUpdated(evt: ClerkWebhookEvent): Promise<void> {
+    const { id, name, slug } = evt.data as Record<string, unknown>;
     await this.prisma.organization.updateMany({
-      where: { clerkOrgId: id },
-      data: { name, slug: slug || id },
+      where: { clerkOrgId: id as string },
+      data: { name: name as string, slug: (slug as string) || (id as string) },
     });
-    this.logger.log(`Organization updated: ${id}`);
+    this.logger.log(`Organization updated: ${id as string}`);
   }
 
-  async handleOrganizationDeleted(evt: any) {
-    const { id } = evt.data;
+  async handleOrganizationDeleted(evt: ClerkWebhookEvent): Promise<void> {
+    const id = evt.data['id'] as string | undefined;
     if (!id) return;
     await this.prisma.organization.deleteMany({
       where: { clerkOrgId: id },
@@ -92,25 +154,50 @@ export class ClerkWebhookService {
     this.logger.log(`Organization deleted: ${id}`);
   }
 
-  async handleOrganizationMembershipCreated(evt: any) {
-    const { organization, public_user_data, role } = evt.data;
-    
-    // Clerk roles: org:admin, org:member, etc. (ajustar a OrgRole)
-    let mappedRole: OrgRole = 'MEMBER';
-    if (role === 'org:admin' || role === 'org:owner') mappedRole = 'ADMIN';
+  /**
+   * Mapea roles de Clerk a OrgRole de Massivo.
+   * Clerk usa: org:admin, org:member. No tiene org:owner ni org:billing built-in.
+   * El OWNER se asigna al creator en handleOrganizationCreated.
+   */
+  private mapClerkRoleToOrgRole(clerkRole: string): OrgRole {
+    switch (clerkRole) {
+      case 'org:admin': return 'ADMIN';
+      case 'org:billing': return 'BILLING';
+      default: return 'MEMBER';
+    }
+  }
+
+  private mapOrgRoleToTeamRole(orgRole: OrgRole): TeamRole {
+    return orgRole === 'ADMIN' || orgRole === 'OWNER' ? 'ADMIN' : 'MEMBER';
+  }
+
+  async handleOrganizationMembershipCreated(evt: ClerkWebhookEvent): Promise<void> {
+    const { organization, public_user_data, role } = evt.data as Record<string, unknown>;
+    const orgData = organization as { id: string };
+    const userData = public_user_data as { user_id: string };
+    const clerkRole = role as string;
 
     const org = await this.prisma.organization.findUnique({
-      where: { clerkOrgId: organization.id },
+      where: { clerkOrgId: orgData.id },
     });
 
     const user = await this.prisma.user.findUnique({
-      where: { clerkUserId: public_user_data.user_id },
+      where: { clerkUserId: userData.user_id },
     });
 
     if (!org || !user) {
-      this.logger.warn(`Membership created pero org o user no existe localmente todavia: ${organization.id} - ${public_user_data.user_id}`);
+      this.logger.warn(
+        `Membership created pero org o user no existe localmente todavía: ${orgData.id} - ${userData.user_id}`,
+      );
       return;
     }
+
+    // Si el user ya es OWNER, no degradar su rol por un webhook de membership
+    const existingMembership = await this.prisma.orgMembership.findUnique({
+      where: { userId_organizationId: { userId: user.id, organizationId: org.id } },
+    });
+    const mappedRole = this.mapClerkRoleToOrgRole(clerkRole);
+    const finalRole: OrgRole = existingMembership?.role === 'OWNER' ? 'OWNER' : mappedRole;
 
     await this.prisma.orgMembership.upsert({
       where: {
@@ -119,20 +206,21 @@ export class ClerkWebhookService {
           organizationId: org.id,
         },
       },
-      update: { role: mappedRole },
+      update: { role: finalRole },
       create: {
         userId: user.id,
         organizationId: org.id,
-        role: mappedRole,
+        role: finalRole,
       },
     });
 
-    // Además asignar al team General por defecto como MEMBER
+    // Auto-asignar al team General por defecto
     const generalTeam = await this.prisma.team.findFirst({
       where: { organizationId: org.id, isDefault: true },
     });
 
     if (generalTeam) {
+      const teamRole = this.mapOrgRoleToTeamRole(finalRole);
       await this.prisma.teamMembership.upsert({
         where: {
           userId_teamId: {
@@ -144,39 +232,42 @@ export class ClerkWebhookService {
         create: {
           userId: user.id,
           teamId: generalTeam.id,
-          role: mappedRole === 'ADMIN' ? 'ADMIN' : 'MEMBER',
+          role: teamRole,
         },
       });
     }
 
-    this.logger.log(`Membership created for user ${user.id} in org ${org.id}`);
+    this.logger.log(`Membership created for user ${user.id} in org ${org.id} as ${finalRole}`);
   }
 
-  async handleOrganizationMembershipUpdated(evt: any) {
+  async handleOrganizationMembershipUpdated(evt: ClerkWebhookEvent): Promise<void> {
     return this.handleOrganizationMembershipCreated(evt);
   }
 
-  async handleOrganizationMembershipDeleted(evt: any) {
-    const { organization, public_user_data } = evt.data;
+  async handleOrganizationMembershipDeleted(evt: ClerkWebhookEvent): Promise<void> {
+    const { organization, public_user_data } = evt.data as Record<string, unknown>;
+    const orgData = organization as { id: string };
+    const userData = public_user_data as { user_id: string };
 
     const org = await this.prisma.organization.findUnique({
-      where: { clerkOrgId: organization.id },
+      where: { clerkOrgId: orgData.id },
     });
     const user = await this.prisma.user.findUnique({
-      where: { clerkUserId: public_user_data.user_id },
+      where: { clerkUserId: userData.user_id },
     });
 
     if (org && user) {
-      await this.prisma.orgMembership.deleteMany({
-        where: { userId: user.id, organizationId: org.id },
-      });
-      // Eliminar también del team membership
+      // Eliminar de todos los teams de esta org
       const teams = await this.prisma.team.findMany({ where: { organizationId: org.id } });
       for (const team of teams) {
         await this.prisma.teamMembership.deleteMany({
           where: { userId: user.id, teamId: team.id },
         });
       }
+      // Luego eliminar membership de la org
+      await this.prisma.orgMembership.deleteMany({
+        where: { userId: user.id, organizationId: org.id },
+      });
       this.logger.log(`Membership deleted for user ${user.id} in org ${org.id}`);
     }
   }

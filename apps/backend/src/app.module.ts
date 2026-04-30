@@ -8,6 +8,7 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './common/auth/auth.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { MeModule } from './modules/me/me.module';
+import { TeamsModule } from './modules/teams/teams.module';
 
 @Module({
   imports: [
@@ -21,8 +22,10 @@ import { MeModule } from './modules/me/me.module';
     AuthModule,
     WebhooksModule,
     MeModule,
+    TeamsModule,
   ],
   controllers: [HealthController],
   providers: [],
 })
 export class AppModule {}
+
