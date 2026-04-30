@@ -12,6 +12,7 @@ import { TeamsModule } from './modules/teams/teams.module';
 import { EmailModule } from './modules/email/email.module';
 import { WapiModule } from './modules/wapi/wapi.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
+import { EventsModule } from './modules/events/events.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { ContactsModule } from './modules/contacts/contacts.module';
     EmailModule,
     WapiModule,
     ContactsModule,
+    EventsModule,
   ],
   controllers: [HealthController],
   providers: [],

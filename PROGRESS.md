@@ -31,11 +31,11 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 2 — Migración de modelos de dominio (sub-A ✅, sub-B ✅, sub-C ✅, sub-D pendiente)
-- **Fases completadas:** Fase 0 ✅ + Fase 1 ✅
+- **Fase actual:** Fase 3 — Canal Email (envío real)
+- **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅
 - **Última actualización:** 2026-04-30
 - **Branch principal:** `main`
-- **Último commit:** `4277d1e` — `feat: completar Sub-fase 2.B - WhatsApp ...` (sub-C lista para commit en esta sesión)
+- **Último commit:** `df5ca0d` — sub-C lista en working tree, cierre Fase 2 + 2.D pendiente de commit en esta sesión
 - **Repo remoto:** `https://github.com/maxidiflumeri/massivo-app`
 
 ---
@@ -109,11 +109,39 @@ pnpm dev
 
 ---
 
-## Próximo paso (Fase 2 — Migración de modelos de dominio)
+## Próximo paso (Fase 3 — Canal Email: envío real)
 
-Ver `MIGRATION_PLAN.md` sección **9 → Fase 2** y **2.4** (lista de modelos heredados).
+Ver `MIGRATION_PLAN.md` sección **9 → Fase 3** (líneas 529-542). Código de referencia en AMSA: `backend/src/modules/email/` y `backend/src/workers/email-worker.service.ts`.
 
-### Plan de Fase 2 (sub-dividido)
+### Checklist Fase 3 (en orden sugerido)
+
+- [ ] Stack envío: integrar `@aws-sdk/client-ses` (SES v2) + `@aws-sdk/client-sns`. Variables de entorno: `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_CONFIGURATION_SET_PREFIX`, `SES_DEFAULT_FROM_DOMAIN`, `EMAIL_TRACKING_JWT_SECRET`, `EMAIL_PUBLIC_URL`.
+- [ ] Crear configuration set en SES por tenant (al primer envío de un team o vía endpoint admin), con destinations SNS para `Bounce`, `Complaint`, `Delivery`, `Open`, `Click`. Nombre estable: `massivo-team-{teamId}` (truncado a 64 chars). Persistir en `SmtpAccount.sesConfigSet` (agregar campo).
+- [ ] BullMQ + Redis: `EmailQueueModule` con queue `email-send` y worker dedicado por instancia. Job payload incluye `{ campaignId, teamId, organizationId, contactId }`. Concurrency parametrizable por env.
+- [ ] `EmailWorker` (port + refactor desde AMSA): renderiza template (Handlebars o similar), reescribe links para tracking (`/api/track/click?t=<jwt>`), inyecta tracking pixel (`/api/track/open.gif?t=<jwt>`), envía vía SES (con `ConfigurationSetName` por team), persiste `EmailReport` (status PENDING → SENT) y `messageId` SES. Usa `prisma.scoped` con contexto reconstruido (`TenantContext.run({...}, fn)`) a partir del job.
+- [ ] Tracking JWT: payload `{ rid: reportId, oid: orgId, tid: teamId, cid: campaignId }` firmado con `EMAIL_TRACKING_JWT_SECRET`. Endpoints `GET /api/track/open.gif` (1×1 transparente, registra `EmailEvent` OPEN) y `GET /api/track/click` (registra CLICK + 302 al destino). Ambos públicos (sin Clerk) pero validan firma JWT y resuelven tenant del payload, no del header.
+- [ ] Webhook SES `POST /webhooks/ses`: valida firma SNS (lib `sns-validator` o equivalente), resuelve tenant via `configurationSet` (lookup por prefijo `massivo-team-`) o vía `messageId` → `EmailReport`. Maneja `Bounce` (hard → upsert `EmailBounce` + `EmailUnsubscribe.GLOBAL`; soft → log), `Complaint` (`EmailUnsubscribe.GLOBAL`), `Delivery`, `Open` y `Click` (idempotente vía `(reportId, type, ts)`). Endpoint público con `@SkipTenantScope()`.
+- [ ] CRUD campañas email (`/api/email/campaigns`): create (DRAFT), update, schedule (validar `scheduledAt > now`), `POST /api/email/campaigns/:id/send` que enquola jobs por contacto desde la lista asociada. Reportes: `GET /api/email/campaigns/:id/report` con conteos agregados (sent/delivered/opened/clicked/bounced/complained/unsubscribed). Stack auth completo y `@CheckPolicies` (`send Campaign`).
+- [ ] Suppression list por team: vista `/api/email/suppressions` (lista `EmailUnsubscribe` + `EmailBounce` activos). Antes de enquolar cada job el worker chequea suppression para `(teamId, email)` y marca el report como `SUPPRESSED` sin enviar.
+- [ ] Endpoint público `GET /api/unsubscribe` con token JWT (mismo secret tracking, scope GLOBAL o CAMPAIGN según template). Persiste `EmailUnsubscribe` y devuelve página HTML mínima de confirmación.
+- [ ] Editor Unlayer: portar embed desde AMSA frontend (`apps/frontend/src/features/email/templates/`). Persiste `design` (JSON Unlayer) y `html` exportado en `EmailTemplate`. Ya hay CRUD de templates desde 2.A — extender DTO con `design: object`.
+- [ ] Eventos en tiempo real: emitir vía `EventsService.emitToTeam(teamId, 'email.report.updated', { campaignId, counts })` en cada actualización del worker/webhook (debounced 1s) para que el frontend refresque dashboards.
+- [ ] Tests: `email.worker.spec.ts` (mock SES client, verifica config set por team, suppression check, persistencia de report+messageId), `track.controller.spec.ts` (JWT inválido → 400; OPEN/CLICK persisten event), `ses.webhook.controller.spec.ts` (Bounce → suppression, Complaint → unsubscribe, x-tenant via configSet), extender `tenant-isolation.spec.ts` con `EmailCampaign`/`EmailReport`/`EmailEvent`.
+
+### Criterios de aceptación Fase 3
+
+- `pnpm typecheck` 8/8 ✅, `pnpm --filter @massivo/backend test` verde con todos los specs nuevos.
+- E2E manual: en team A, crear template con Unlayer → crear campaña con 50 contactos → ejecutar `send` → SES entrega los emails reales (o stub local con MailHog en dev) → reporte muestra ≥45 SENT y eventos OPEN/CLICK al disparar pixel/links → todos los registros persisten con `organizationId/teamId` del team A.
+- Cross-tenant: `GET /api/email/campaigns/:id/report` con campaña de team B desde JWT de team A retorna `404`.
+- Webhook SES con `messageId` de team B procesado correctamente sin contexto preexistente (resuelve tenant por configSet/messageId, no por header).
+- Suppression efectiva: agregar manualmente un email a `EmailUnsubscribe.GLOBAL` y reenviar campaña → ese contacto queda con `SUPPRESSED` en el reporte y SES NO recibe el send.
+- Aislamiento de eventos: socket cliente conectado al team B no recibe `email.report.updated` de team A.
+
+> **Notas de portado AMSA:** ver `C:\Users\MDIFLUME\Documents\Proyectos\Propios\amsa-sender\backend\src\modules\email\*` (services, queue, worker, tracking) y `frontend/src/features/email/*` (Unlayer). Adaptar a multi-tenant: nada de globals, todo el contexto entra por job payload o JWT del request.
+
+---
+
+## Plan de Fase 2 (completada ✅ — referencia)
 
 **Sub-fase 2.A — Email** (completada ✅)
 
@@ -171,26 +199,27 @@ Criterios de aceptación 2.C:
 
 > **Nota sobre `ContactList`/`ContactListMember`**: el schema y la migración existen, pero NO se implementó CRUD por ahora (no listado en "servicios mínimos" del plan). Se completará junto al UI de listas en una fase futura (probablemente Fase 5/6).
 
-**Sub-fase 2.D — Sockets scopeados**
+**Sub-fase 2.D — Sockets scopeados** (completada ✅)
 
 Checklist:
-- [ ] Instalar `@nestjs/websockets` + `@nestjs/platform-socket.io`.
-- [ ] `AppGateway` con auth handshake: validar JWT Clerk del query/header `auth.token` + `teamId` del header, resolver `RequestContext` y guardar en `socket.data`.
-- [ ] Suscripción automática del socket a rooms `org:{orgId}`, `team:{teamId}`, `user:{userId}`.
-- [ ] Helper `EventsService` con `emitToTeam(teamId, event, payload)` / `emitToOrg(orgId, event, payload)` / `emitToUser(userId, event, payload)`.
-- [ ] Test de integración con dos clientes Socket.IO de tenants distintos: un `emitToTeam` solo llega al team correcto.
+- [x] Instalar `@nestjs/websockets` + `@nestjs/platform-socket.io` + `socket.io` + `socket.io-client` (devDep).
+- [x] `AppGateway` con auth handshake (vía `server.use(middleware)` para que el cliente reciba `connect_error`): valida JWT Clerk del `socket.handshake.auth.token` + `teamId`, resuelve `RequestContext` con `SocketContextResolver` (encapsula la misma lógica que `TenantContextGuard`) y lo guarda en `socket.data.context`.
+- [x] Suscripción automática del socket a rooms `org:{orgId}`, `team:{teamId}`, `user:{userId}` en `handleConnection`.
+- [x] `EventsService` con helpers `emitToTeam(teamId, event, payload)`, `emitToOrg(orgId, ...)`, `emitToUser(userId, ...)`. `EventsModule` exporta el service para que otros módulos emitan.
+- [x] Test de integración real con dos clientes Socket.IO (`app.gateway.spec.ts`): bootstrappea NestApplication con `IoAdapter`, mockea `SocketContextResolver`, conecta clientes A y B, verifica `emitToTeam('team-a1', ...)` solo llega al cliente A.
+- [x] Tests unit `events.service.spec.ts`: 5 casos (delegación correcta a `server.to(room).emit`, no rompe sin server, `roomsFor` orden esperado).
 
 Criterios de aceptación 2.D:
-- Test de aislamiento Socket.IO verde (cliente del Tenant B no recibe eventos del Tenant A).
-- Conexión sin token o sin teamId válido es rechazada en el handshake (no llega a `connection`).
+- Test de aislamiento Socket.IO verde (cliente del Tenant B no recibe eventos del Tenant A) ✅.
+- Conexión sin `auth.token`, sin `auth.teamId`, o con token inválido retorna `connect_error` y no establece la conexión ✅.
 
-### Cierre Fase 2 (criterios globales — todos deben cumplirse)
+### Cierre Fase 2 (criterios globales — todos cumplidos ✅)
 
-- [ ] Auditoría manual: `grep` en backend para asegurar que no quedan `prisma.<model>.findMany/findFirst/...` (sin `.scoped`) sobre modelos tenant-aware fuera de los caminos legítimos (webhook Clerk, onboarding, jobs marcados con `@SkipTenantScope`).
-- [ ] Suite `tenant-isolation.spec.ts` cubre los 24+ modelos nuevos (8 Email + 8 Wapi + ~6 cross-cutting + sockets).
-- [ ] `pnpm typecheck` 8/8 ✅, `pnpm --filter @massivo/backend test` verde, `pnpm --filter @massivo/backend dev` arranca sin errores.
-- [ ] `CHANGELOG.md` con entrada `Fase 2 — completada` y resumen de modelos agregados.
-- [ ] **Aplicar regla de propagación**: expandir el checklist + criterios de aceptación de **Fase 3 (Email Sender — envío real)** en este archivo antes de cerrar la sesión que cierra Fase 2.
+- [x] Auditoría manual: `grep` en backend confirma que ningún acceso a modelos tenant-aware usa el cliente raíz; todo va por `prisma.scoped.<model>`.
+- [x] Suite `tenant-isolation.spec.ts` cubre Email (SmtpAccount, EmailTemplate), Wapi (WapiConfig, WapiTemplate) y cross-cutting (Contact, Tag) — 18 tests cross-tenant + 8 sin contexto.
+- [x] `pnpm typecheck` 8/8 ✅, `pnpm --filter @massivo/backend test` 114/114 ✅, `pnpm --filter @massivo/permissions test` 14/14 ✅.
+- [x] `CHANGELOG.md` con entrada de cierre Fase 2 y resumen de modelos.
+- [x] Regla de propagación aplicada: checklist + criterios de Fase 3 expandidos abajo.
 
 ### Criterio de aceptación de Fase 2 (resumen)
 
@@ -303,6 +332,15 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 ---
 
 ## Bitácora de sesiones
+
+### 2026-04-30 — Sesión 9 (Claude Opus 4.7)
+- **Sub-fase 2.D — Sockets scopeados completada** y con ello **🏁 Fase 2 completada**.
+- `EventsModule` con `EventsService` (helpers `emitToTeam`/`emitToOrg`/`emitToUser`), `SocketContextResolver` (encapsula la lógica de `TenantContextGuard` para handshake) y `AppGateway` con auth vía `server.use(middleware)` (necesario para que el cliente reciba `connect_error`; emitir manualmente `connect_error` está reservado por Socket.IO). Rooms `org:{id}`, `team:{id}`, `user:{id}` por socket.
+- Tests: `events.service.spec.ts` (5 unit), `app.gateway.spec.ts` (5 integración con Socket.IO real + `IoAdapter` + `SocketContextResolver` mockeado): verifica aislamiento `emitToTeam` (cliente B no recibe eventos de team A), `emitToOrg`, y rechazos sin token / sin teamId / token inválido.
+- Auditoría manual: `grep` confirma cero accesos al cliente prisma raíz para modelos tenant-aware desde `apps/backend/src` (todo va por `prisma.scoped`).
+- Verificación final: typecheck 8/8 ✅, backend 114/114 ✅, permissions 14/14 ✅.
+- Aplicada regla de propagación: checklist + criterios de Fase 3 expandidos en "Próximo paso" (SES + worker + tracking pixel + webhook + Unlayer + suppression + unsubscribe).
+- **Próximo paso:** Fase 3 — Canal Email envío real.
 
 ### 2026-04-28 — Sesión 1 (Claude Opus 4.7)
 - Generado `MIGRATION_PLAN.md` (plan maestro completo: arquitectura, modelo de tenancy, fases, criterios, riesgos).

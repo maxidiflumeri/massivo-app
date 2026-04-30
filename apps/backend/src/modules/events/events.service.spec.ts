@@ -1,0 +1,39 @@
+import { EventsService } from './events.service';
+
+describe('EventsService', () => {
+  let service: EventsService;
+  let toMock: jest.Mock;
+  let emitMock: jest.Mock;
+
+  beforeEach(() => {
+    service = new EventsService();
+    emitMock = jest.fn();
+    toMock = jest.fn().mockReturnValue({ emit: emitMock });
+    service.setServer({ to: toMock } as never);
+  });
+
+  it('emitToTeam delega a server.to(team:id).emit', () => {
+    service.emitToTeam('team-1', 'campaign.updated', { x: 1 });
+    expect(toMock).toHaveBeenCalledWith('team:team-1');
+    expect(emitMock).toHaveBeenCalledWith('campaign.updated', { x: 1 });
+  });
+
+  it('emitToOrg delega a server.to(org:id).emit', () => {
+    service.emitToOrg('org-1', 'evt', null);
+    expect(toMock).toHaveBeenCalledWith('org:org-1');
+  });
+
+  it('emitToUser delega a server.to(user:id).emit', () => {
+    service.emitToUser('user-1', 'evt', null);
+    expect(toMock).toHaveBeenCalledWith('user:user-1');
+  });
+
+  it('sin server seteado: no rompe', () => {
+    const fresh = new EventsService();
+    expect(() => fresh.emitToTeam('t', 'e', null)).not.toThrow();
+  });
+
+  it('roomsFor devuelve los 3 rooms en el orden esperado', () => {
+    expect(EventsService.roomsFor('o', 't', 'u')).toEqual(['org:o', 'team:t', 'user:u']);
+  });
+});
