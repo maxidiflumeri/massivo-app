@@ -298,6 +298,10 @@ model SmtpAccount {
   fromName       String
   fromEmail      String
   isActive       Boolean  @default(true)
+  // "smtp" (default) usa host/port/username/passwordEnc (Mailpit en dev, SMTP de cliente).
+  // "ses" usa AWS SES con configuration set sesConfigSet.
+  provider       String   @default("smtp")
+  sesConfigSet   String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

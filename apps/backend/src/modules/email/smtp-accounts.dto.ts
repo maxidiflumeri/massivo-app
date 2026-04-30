@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsEmail,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -9,6 +10,9 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+
+export const SMTP_PROVIDERS = ['smtp', 'ses'] as const;
+export type SmtpProvider = (typeof SMTP_PROVIDERS)[number];
 
 export class CreateSmtpAccountDto {
   @IsString()
@@ -43,6 +47,15 @@ export class CreateSmtpAccountDto {
   @IsEmail()
   @MaxLength(320)
   fromEmail!: string;
+
+  @IsOptional()
+  @IsIn(SMTP_PROVIDERS)
+  provider?: SmtpProvider;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  sesConfigSet?: string;
 }
 
 export class UpdateSmtpAccountDto {
@@ -89,4 +102,13 @@ export class UpdateSmtpAccountDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsIn(SMTP_PROVIDERS)
+  provider?: SmtpProvider;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  sesConfigSet?: string;
 }

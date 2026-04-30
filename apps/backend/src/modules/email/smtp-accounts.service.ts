@@ -18,6 +18,8 @@ export interface SmtpAccountListItem {
   fromName: string;
   fromEmail: string;
   isActive: boolean;
+  provider: string;
+  sesConfigSet: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +33,8 @@ function toListItem(row: {
   fromName: string;
   fromEmail: string;
   isActive: boolean;
+  provider: string;
+  sesConfigSet: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): SmtpAccountListItem {
@@ -43,6 +47,8 @@ function toListItem(row: {
     fromName: row.fromName,
     fromEmail: row.fromEmail,
     isActive: row.isActive,
+    provider: row.provider,
+    sesConfigSet: row.sesConfigSet,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -83,6 +89,8 @@ export class SmtpAccountsService {
         passwordEnc: dto.password,
         fromName: dto.fromName,
         fromEmail: dto.fromEmail,
+        ...(dto.provider !== undefined && { provider: dto.provider }),
+        ...(dto.sesConfigSet !== undefined && { sesConfigSet: dto.sesConfigSet }),
       } as Prisma.SmtpAccountUncheckedCreateInput,
     });
     this.logger.log(`SmtpAccount created: ${row.id} in org ${ctx.organizationId} team ${ctx.teamId}`);
@@ -107,6 +115,8 @@ export class SmtpAccountsService {
         ...(dto.fromName !== undefined && { fromName: dto.fromName }),
         ...(dto.fromEmail !== undefined && { fromEmail: dto.fromEmail }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        ...(dto.provider !== undefined && { provider: dto.provider }),
+        ...(dto.sesConfigSet !== undefined && { sesConfigSet: dto.sesConfigSet }),
       },
     });
     return toListItem(row);

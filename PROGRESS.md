@@ -31,11 +31,11 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 3 — Canal Email (envío real)
+- **Fase actual:** Fase 3 — Canal Email (sub-A ✅, sub-B pendiente, sub-C pendiente)
 - **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅
 - **Última actualización:** 2026-04-30
 - **Branch principal:** `main`
-- **Último commit:** `df5ca0d` — sub-C lista en working tree, cierre Fase 2 + 2.D pendiente de commit en esta sesión
+- **Último commit:** `153c5a1` — cierre Fase 2 + 2.D pusheado; sub-fase 3.A en working tree
 - **Repo remoto:** `https://github.com/maxidiflumeri/massivo-app`
 
 ---
@@ -107,18 +107,64 @@ cp .env.example .env  # si no existe
 pnpm dev
 ```
 
+### Setup dev local sin Docker (WSL nativo)
+
+En máquinas sin Docker (PC del trabajo), instalar Postgres / Redis / Mailpit nativo en WSL:
+
+```bash
+# Postgres (ya hecho — puerto 5432)
+# Redis (Fase 3.A)
+sudo apt install -y redis-server
+sudo service redis-server start
+redis-cli ping  # → PONG
+
+# Mailpit (Fase 3.A — captura SMTP local con UI web)
+curl -sL https://github.com/axllent/mailpit/releases/latest/download/mailpit-linux-amd64.tar.gz | tar -xz
+sudo mv mailpit /usr/local/bin/
+mailpit &  # SMTP en :1025, UI en http://localhost:8025
+```
+
+Para que el backend use Mailpit, crear una `SmtpAccount` con `host=127.0.0.1`, `port=1025`, `provider="smtp"`, `username=""`, `password=""`.
+
 ---
 
 ## Próximo paso (Fase 3 — Canal Email: envío real)
 
 Ver `MIGRATION_PLAN.md` sección **9 → Fase 3** (líneas 529-542). Código de referencia en AMSA: `backend/src/modules/email/` y `backend/src/workers/email-worker.service.ts`.
 
-### Checklist Fase 3 (en orden sugerido)
+### Sub-fase 3.A — Infra de envío (completada ✅)
 
-- [ ] Stack envío: integrar `@aws-sdk/client-ses` (SES v2) + `@aws-sdk/client-sns`. Variables de entorno: `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_CONFIGURATION_SET_PREFIX`, `SES_DEFAULT_FROM_DOMAIN`, `EMAIL_TRACKING_JWT_SECRET`, `EMAIL_PUBLIC_URL`.
-- [ ] Crear configuration set en SES por tenant (al primer envío de un team o vía endpoint admin), con destinations SNS para `Bounce`, `Complaint`, `Delivery`, `Open`, `Click`. Nombre estable: `massivo-team-{teamId}` (truncado a 64 chars). Persistir en `SmtpAccount.sesConfigSet` (agregar campo).
-- [ ] BullMQ + Redis: `EmailQueueModule` con queue `email-send` y worker dedicado por instancia. Job payload incluye `{ campaignId, teamId, organizationId, contactId }`. Concurrency parametrizable por env.
-- [ ] `EmailWorker` (port + refactor desde AMSA): renderiza template (Handlebars o similar), reescribe links para tracking (`/api/track/click?t=<jwt>`), inyecta tracking pixel (`/api/track/open.gif?t=<jwt>`), envía vía SES (con `ConfigurationSetName` por team), persiste `EmailReport` (status PENDING → SENT) y `messageId` SES. Usa `prisma.scoped` con contexto reconstruido (`TenantContext.run({...}, fn)`) a partir del job.
+Checklist:
+- [x] Decisión: arquitectura **driver-based** con interface `EmailSender` y dos implementaciones: `SmtpSender` (nodemailer, default — Mailpit en dev / SMTP de cliente en prod) y `SesSender` (`@aws-sdk/client-sesv2`). Selección por `SmtpAccount.provider` (campo nuevo `provider: "smtp"|"ses"` + `sesConfigSet?: string`).
+- [x] Migración `add_smtp_provider_field` aplicada.
+- [x] Deps: `nodemailer`, `@aws-sdk/client-sesv2`, `bullmq`, `ioredis`, `handlebars` + `@types/nodemailer`. Variables `EMAIL_QUEUE_NAME`, `EMAIL_WORKER_CONCURRENCY`, `EMAIL_WORKER_ENABLED`, `SES_CONFIG_SET_PREFIX` en `.env.example`.
+- [x] `SesSender.ensureConfigurationSet(teamId)` idempotente con cache in-memory: GetConfigurationSet → si NotFoundException, CreateConfigurationSet. Truncado a 64 chars. **Pendiente para 3.B**: agregar SNS destinations para Bounce/Complaint/Delivery/Open/Click.
+- [x] `EmailSenderService` resuelve sender por account (cache de `SmtpSender` por accountId, `SesSender` compartido).
+- [x] `EmailQueueService` (BullMQ queue `email-send`) con `enqueue({reportId, organizationId, teamId})`. JobId = reportId para idempotencia. Reintentos con backoff exponencial (3 attempts, delay 5s).
+- [x] `EmailWorkerService`: reconstruye `TenantContext.run` con role sintético OWNER/ADMIN (background sin user real, authz ya pasó al enquolar), carga `EmailReport`+contact+campaign+template+smtpAccount via `prisma.scoped`, renderiza con Handlebars (`contact.data` como vars), llama `EmailSenderService.sendForAccount`, marca SENT con `smtpMessageId` o FAILED.
+- [x] Tests: `ses-sender.spec.ts` (6 — config-set idempotente, NotFoundException → create, truncado 64 chars, send messageId) + `email-worker.service.spec.ts` (4 — happy path render+send+SENT, sender error → FAILED+rethrow, cross-tenant report not found, campaign sin template).
+
+Criterios de aceptación 3.A:
+- `pnpm typecheck` 8/8 ✅, `pnpm --filter @massivo/backend test` 124/124 ✅ (+10 vs Fase 2).
+- Worker reconstruye contexto desde el job y todas las queries son tenant-scoped (no leak cross-tenant — verificado por test).
+- ⚙️ **Pendiente de verificación dev local** (depende de instalar Mailpit + Redis en WSL): enquolar un job real → recibir el email en Mailpit UI → ver `EmailReport.status=SENT` con `smtpMessageId` poblado.
+
+### Checklist Fase 3 (sub-fases pendientes)
+
+**Sub-fase 3.B — Tracking + Webhook SES**:
+- [ ] Tracking JWT: payload `{ rid, oid, tid, cid }` firmado con `EMAIL_TRACKING_JWT_SECRET`. Endpoints `GET /api/track/open.gif` (1×1 transparente, registra `EmailEvent` OPEN) y `GET /api/track/click` (registra CLICK + 302). Públicos pero validan firma + resuelven tenant del payload.
+- [ ] Reescribir links + inyectar pixel en el `EmailWorker` antes de enviar (mover render dentro de un helper `prepareHtmlForTracking`).
+- [ ] Webhook SES `POST /webhooks/ses`: valida firma SNS (`sns-validator`), resuelve tenant via `configurationSet` o `messageId`. Maneja Bounce/Complaint/Delivery/Open/Click (idempotente). `@SkipTenantScope()`.
+- [ ] Suppression list por team: vista `/api/email/suppressions`. Antes de enviar el worker chequea suppression para `(teamId, email)` → marca `SUPPRESSED`.
+- [ ] Endpoint público `GET /api/unsubscribe` con JWT (mismo secret tracking). Persiste `EmailUnsubscribe`.
+- [ ] Configurar SNS destinations en `SesSender.ensureConfigurationSet` (Bounce/Complaint/Delivery/Open/Click → topic ARN).
+
+**Sub-fase 3.C — Campañas + Unlayer + Frontend**:
+- [ ] CRUD `EmailCampaign` (`/api/email/campaigns`): create DRAFT, update, schedule. `POST /:id/send` enquola jobs por contacto.
+- [ ] Reporte agregado `GET /api/email/campaigns/:id/report` (counts sent/delivered/opened/clicked/bounced/complained/unsubscribed).
+- [ ] Editor Unlayer: portar embed desde AMSA (`apps/frontend/src/features/email/templates/`). Persiste `design` JSON + `html` en `EmailTemplate`.
+- [ ] Eventos en tiempo real: `EventsService.emitToTeam(teamId, 'email.report.updated', { campaignId, counts })` debounced 1s.
+- [ ] Tests integración + extensión `tenant-isolation.spec.ts` con `EmailCampaign`/`EmailReport`/`EmailEvent`.
 - [ ] Tracking JWT: payload `{ rid: reportId, oid: orgId, tid: teamId, cid: campaignId }` firmado con `EMAIL_TRACKING_JWT_SECRET`. Endpoints `GET /api/track/open.gif` (1×1 transparente, registra `EmailEvent` OPEN) y `GET /api/track/click` (registra CLICK + 302 al destino). Ambos públicos (sin Clerk) pero validan firma JWT y resuelven tenant del payload, no del header.
 - [ ] Webhook SES `POST /webhooks/ses`: valida firma SNS (lib `sns-validator` o equivalente), resuelve tenant via `configurationSet` (lookup por prefijo `massivo-team-`) o vía `messageId` → `EmailReport`. Maneja `Bounce` (hard → upsert `EmailBounce` + `EmailUnsubscribe.GLOBAL`; soft → log), `Complaint` (`EmailUnsubscribe.GLOBAL`), `Delivery`, `Open` y `Click` (idempotente vía `(reportId, type, ts)`). Endpoint público con `@SkipTenantScope()`.
 - [ ] CRUD campañas email (`/api/email/campaigns`): create (DRAFT), update, schedule (validar `scheduledAt > now`), `POST /api/email/campaigns/:id/send` que enquola jobs por contacto desde la lista asociada. Reportes: `GET /api/email/campaigns/:id/report` con conteos agregados (sent/delivered/opened/clicked/bounced/complained/unsubscribed). Stack auth completo y `@CheckPolicies` (`send Campaign`).
@@ -333,7 +379,16 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 
 ## Bitácora de sesiones
 
-### 2026-04-30 — Sesión 9 (Claude Opus 4.7)
+### 2026-04-30 — Sesión 10 (Claude Opus 4.7) — Sub-fase 3.A
+- **Sub-fase 3.A — Infra de envío email completada** ✅.
+- Decisión arquitectónica: driver-based (`EmailSender` interface). `SmtpSender` (nodemailer, default — Mailpit en dev / SMTP de cliente en prod) y `SesSender` (`@aws-sdk/client-sesv2`, prod). Selección por `SmtpAccount.provider`. Migración `add_smtp_provider_field` (campos `provider`, `sesConfigSet`).
+- `EmailQueueService` (BullMQ, queue `email-send`, jobId=reportId para idempotencia). `EmailWorkerService` reconstruye `TenantContext.run` con role sintético OWNER/ADMIN, render Handlebars desde `contact.data`, persiste SENT/FAILED.
+- Tests: 6 SesSender (mock SESv2Client: ensureConfigurationSet idempotente + NotFoundException→create + truncado 64) + 4 EmailWorker (happy path, sender error→FAILED, cross-tenant not found, sin template).
+- Verificación: typecheck 8/8 ✅, backend 124/124 ✅ (+10 vs Fase 2), permissions 14/14 ✅.
+- **Pendiente dev local** (no en CI): instalar Mailpit + Redis en WSL para test E2E manual. Comandos en sección "Setup dev local".
+- **Próximo paso**: 3.B (tracking pixel + webhook SES + suppression + unsubscribe).
+
+
 - **Sub-fase 2.D — Sockets scopeados completada** y con ello **🏁 Fase 2 completada**.
 - `EventsModule` con `EventsService` (helpers `emitToTeam`/`emitToOrg`/`emitToUser`), `SocketContextResolver` (encapsula la lógica de `TenantContextGuard` para handshake) y `AppGateway` con auth vía `server.use(middleware)` (necesario para que el cliente reciba `connect_error`; emitir manualmente `connect_error` está reservado por Socket.IO). Rooms `org:{id}`, `team:{id}`, `user:{id}` por socket.
 - Tests: `events.service.spec.ts` (5 unit), `app.gateway.spec.ts` (5 integración con Socket.IO real + `IoAdapter` + `SocketContextResolver` mockeado): verifica aislamiento `emitToTeam` (cliente B no recibe eventos de team A), `emitToOrg`, y rechazos sin token / sin teamId / token inválido.
