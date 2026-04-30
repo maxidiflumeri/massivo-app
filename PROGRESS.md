@@ -31,11 +31,11 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 2 — Migración de modelos de dominio (sub-A: Email **en curso**)
+- **Fase actual:** Fase 2 — Migración de modelos de dominio (sub-A ✅, sub-B ✅, sub-C ✅, sub-D pendiente)
 - **Fases completadas:** Fase 0 ✅ + Fase 1 ✅
 - **Última actualización:** 2026-04-30
 - **Branch principal:** `main`
-- **Último commit:** `4e1442a` — `feat: sub-fase 2.A Email completada — schema, CRUD SmtpAccount/EmailTemplate, tests CASL + aislamiento tenant`
+- **Último commit:** `4277d1e` — `feat: completar Sub-fase 2.B - WhatsApp ...` (sub-C lista para commit en esta sesión)
 - **Repo remoto:** `https://github.com/maxidiflumeri/massivo-app`
 
 ---
@@ -150,19 +150,26 @@ Criterios de aceptación 2.B:
 - `POST /api/wapi/configs` autenticado guarda `accessToken` en `accessTokenEnc` (placeholder en claro hasta Fase 4) — verificado por test.
 - Cross-tenant access a `WapiConfig`/`WapiTemplate` retorna `404`.
 
-**Sub-fase 2.C — Cross-cutting**
+**Sub-fase 2.C — Cross-cutting** (completada ✅)
 
 Checklist:
-- [ ] Schema Prisma: `Contact` (unificado email+wapi con `email`, `phone`, `attributes` JSONB), `Tag`, `ContactTag` (M:N), `ContactList`, `ContactListMember`, `ScheduledTask` (cron, payload, nextRunAt), `TaskExecution`, `CampaignLog`.
-- [ ] Registrar tenant-aware en `TENANT_SCOPED_MODELS`.
-- [ ] Migración Prisma `add_crosscutting_models`.
-- [ ] Servicios mínimos `ContactsService` (create/list/findByEmail/findByPhone con dedupe por `(orgId, teamId, email|phone)`) y `TagsService`.
-- [ ] Tests unitarios + isolation.
+- [x] Schema Prisma: `Contact` (unificado email+wapi con `email`, `phone`, `attributes` JSONB), `Tag`, `ContactTag` (M:N), `ContactList`, `ContactListMember`, `ScheduledTask` (cron, config, nextRunAt), `TaskExecution`, `CampaignLog`. Enums nuevos: `ChannelKind`, `ScheduledTaskKind`, `TaskExecutionStatus`, `CampaignLogLevel`.
+- [x] Registrar tenant-aware en `TENANT_SCOPED_MODELS` (Contact, Tag, ContactList, ScheduledTask, TaskExecution, CampaignLog). `ContactTag` y `ContactListMember` son tablas de unión sin orgId/teamId — heredan scope vía relaciones.
+- [x] Migración Prisma `add_crosscutting_models` aplicada contra DB local.
+- [x] Servicios mínimos: `ContactsService` (create/list/findByEmail/findByPhone con dedupe por `(teamId, email)` y `(teamId, phone)` vía índices `@@unique` — Postgres permite múltiples NULLs) y `TagsService` (CRUD con dedupe por `(teamId, name)`).
+- [x] Subjects CASL: `Tag` y `ContactList` agregados a `subjects.ts`. Rules MEMBER extendidas con `Contact/ContactList/Tag` (CRUD + delete). `Contact` ya estaba.
+- [x] Controllers `ContactsController` (`/contacts`) y `TagsController` (`/tags`) con stack `ClerkAuthGuard → TenantContextGuard → PoliciesGuard` y `@CheckPolicies`. `ContactsModule` registrado en `AppModule`.
+- [x] DTOs `class-validator`: email/phone validados (E.164 para phone, IsEmail para email, al menos uno requerido en create vía `@ValidateIf`).
+- [x] Tests unitarios `contacts.service.spec.ts` (7 tests) y `tags.service.spec.ts` (6 tests) — Forbidden sin contexto, NotFound cross-tenant, ConflictException en duplicados (P2002), create no inyecta orgId/teamId manual.
+- [x] Extender `tenant-isolation.spec.ts` con casos para `Contact` y `Tag`: 6 tests cross-tenant + 2 sin contexto.
 
 Criterios de aceptación 2.C:
-- `pnpm --filter @massivo/backend test` verde.
-- Crear dos contacts con mismo email en distintos teams del mismo org **es válido** (lo distingue `(orgId, teamId, email)`); en el mismo team es duplicado.
-- Cross-tenant aislado.
+- `pnpm --filter @massivo/backend test` verde (104/104 ✅).
+- `pnpm typecheck` 8/8 ✅, `pnpm --filter @massivo/permissions test` 14/14 ✅.
+- Crear dos contacts con mismo email en distintos teams del mismo org **es válido** (`@@unique([teamId, email])` lo permite); en el mismo team retorna `409 Conflict`.
+- Cross-tenant aislado: cualquier `findOne/update/remove` cross-tenant retorna `404`.
+
+> **Nota sobre `ContactList`/`ContactListMember`**: el schema y la migración existen, pero NO se implementó CRUD por ahora (no listado en "servicios mínimos" del plan). Se completará junto al UI de listas en una fase futura (probablemente Fase 5/6).
 
 **Sub-fase 2.D — Sockets scopeados**
 
@@ -351,6 +358,16 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - DTOs con `class-validator` (`CreateTeamDto`, `UpdateTeamDto`).
 - Tests `TeamsService`: 8 tests (sin contexto → 403, OWNER vs MEMBER visibility, slug duplicado, auto-assign creator, default protection, cross-org isolation).
 - Verificación: typecheck 8/8 ✅, build 5/5 ✅, tests backend 33/33 ✅, tests permissions 11/11 ✅.
+
+### 2026-04-30 — Sesión 8 (Claude Opus 4.7)
+- **Sub-fase 2.C — Cross-cutting completada**. 6 modelos tenant-aware (`Contact`, `Tag`, `ContactList`, `ScheduledTask`, `TaskExecution`, `CampaignLog`) + 2 tablas de unión (`ContactTag`, `ContactListMember`) + 4 enums (`ChannelKind`, `ScheduledTaskKind`, `TaskExecutionStatus`, `CampaignLogLevel`).
+- Migración `add_crosscutting_models` aplicada. Modelos registrados en `TENANT_SCOPED_MODELS`.
+- Subjects CASL: agregados `Tag` y `ContactList`. Rules MEMBER ahora cubren `Contact/ContactList/Tag` (CRUD + delete).
+- Nuevo módulo `ContactsModule` con `ContactsController` (`/contacts`) y `TagsController` (`/tags`): DTOs class-validator (E.164 + IsEmail, `@ValidateIf` para exigir email-o-phone), services con dedupe por team (Postgres permite múltiples NULL → contacts sin email no chocan), traducción de `P2002` a `ConflictException`.
+- Tests: `contacts.service.spec.ts` (7) + `tags.service.spec.ts` (6) + extensión de `tenant-isolation.spec.ts` (6 cross-tenant + 2 sin contexto).
+- Verificación: typecheck 8/8 ✅, backend 104/104 ✅, permissions 14/14 ✅.
+- **Pendiente para cerrar Fase 2**: sub-fase 2.D (Sockets scopeados con Socket.IO + auth handshake + rooms `org/team/user` + `EventsService`).
+- **Nota**: `ContactList`/`ContactListMember` quedaron en schema sin CRUD — no estaba en "servicios mínimos" del plan, se completará junto con el UI de listas en Fase 5/6.
 
 ### 2026-04-30 — Sesión 7 (Claude Opus 4.7)
 - **Inicio Fase 2 — sub-A: Email**. Schema Prisma con 8 modelos nuevos (`SmtpAccount`, `EmailTemplate`, `EmailCampaign`, `EmailContact`, `EmailReport`, `EmailEvent`, `EmailBounce`, `EmailUnsubscribe`) tenant-scoped (`organizationId` + `teamId` + índices). 4 enums nuevos (`EmailCampaignStatus`, `EmailReportStatus`, `EmailEventType`, `EmailUnsubscribeScope`). Migración `add_email_models` aplicada contra DB local.

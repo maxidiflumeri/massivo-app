@@ -11,6 +11,7 @@ import { MeModule } from './modules/me/me.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { EmailModule } from './modules/email/email.module';
 import { WapiModule } from './modules/wapi/wapi.module';
+import { ContactsModule } from './modules/contacts/contacts.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { WapiModule } from './modules/wapi/wapi.module';
     TeamsModule,
     EmailModule,
     WapiModule,
+    ContactsModule,
   ],
   controllers: [HealthController],
   providers: [],

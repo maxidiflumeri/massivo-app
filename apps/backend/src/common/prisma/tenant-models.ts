@@ -18,6 +18,13 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'WapiConversation',
   'WapiMessage',
   'WapiOptOut',
+  // Cross-cutting (Fase 2.C)
+  'Contact',
+  'Tag',
+  'ContactList',
+  'ScheduledTask',
+  'TaskExecution',
+  'CampaignLog',
 ]);
 
 export const ORG_SCOPED_MODELS = new Set<string>(['Subscription', 'UsageCounter', 'AuditLog']);

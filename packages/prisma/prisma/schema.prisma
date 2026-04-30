@@ -72,6 +72,31 @@ enum EmailUnsubscribeScope {
   CAMPAIGN
 }
 
+enum ChannelKind {
+  EMAIL
+  WAPI
+}
+
+enum ScheduledTaskKind {
+  EMAIL_DAILY_REPORT
+  CAMPAIGN_DISPATCH
+  CUSTOM
+}
+
+enum TaskExecutionStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+enum CampaignLogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
 model Organization {
   id               String    @id @default(cuid())
   clerkOrgId       String    @unique
@@ -107,6 +132,13 @@ model Organization {
   wapiMessages      WapiMessage[]
   wapiOptOuts       WapiOptOut[]
 
+  contacts       Contact[]
+  tags           Tag[]
+  contactLists   ContactList[]
+  scheduledTasks ScheduledTask[]
+  taskExecutions TaskExecution[]
+  campaignLogs   CampaignLog[]
+
   @@index([status])
 }
 
@@ -137,6 +169,13 @@ model Team {
   wapiConversations WapiConversation[]
   wapiMessages      WapiMessage[]
   wapiOptOuts       WapiOptOut[]
+
+  contacts       Contact[]
+  tags           Tag[]
+  contactLists   ContactList[]
+  scheduledTasks ScheduledTask[]
+  taskExecutions TaskExecution[]
+  campaignLogs   CampaignLog[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -673,4 +712,162 @@ model WapiOptOut {
   @@unique([teamId, phoneHash, scope, campaignId])
   @@index([organizationId])
   @@index([teamId, phoneHash])
+}
+
+// ============================================================
+// Cross-cutting (Fase 2 — sub-C): Contact, Tag, ContactList,
+// ScheduledTask, TaskExecution, CampaignLog
+// ============================================================
+
+model Contact {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  email          String?
+  phone          String?
+  firstName      String?
+  lastName       String?
+  attributes     Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team                @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  tags         ContactTag[]
+  listMembers  ContactListMember[]
+
+  // Postgres permite múltiples NULL en columnas con UNIQUE: dos contacts del mismo team
+  // sin email no chocan, pero dos con el mismo email sí. Lo mismo para phone.
+  @@unique([teamId, email])
+  @@unique([teamId, phone])
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model Tag {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  name           String
+  color          String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  contacts     ContactTag[]
+
+  @@unique([teamId, name])
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@index([tagId])
+}
+
+model ContactList {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  name           String
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team                @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  members      ContactListMember[]
+
+  @@unique([teamId, name])
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model ContactListMember {
+  listId    String
+  contactId String
+  addedAt   DateTime @default(now())
+
+  list    ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([listId, contactId])
+  @@index([contactId])
+}
+
+model ScheduledTask {
+  id              String            @id @default(cuid())
+  organizationId  String
+  teamId          String
+  name            String
+  kind            ScheduledTaskKind
+  enabled         Boolean           @default(true)
+  cronExpression  String
+  timezone        String            @default("America/Argentina/Buenos_Aires")
+  config          Json
+  recipients      Json?
+  maxRetries      Int               @default(3)
+  backoffMs       Int               @default(60000)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  createdByUserId String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  executions   TaskExecution[]
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([nextRunAt])
+}
+
+model TaskExecution {
+  id             String              @id @default(cuid())
+  organizationId String
+  teamId         String
+  taskId         String
+  startedAt      DateTime
+  finishedAt     DateTime?
+  status         TaskExecutionStatus
+  error          String?
+  artifacts      Json?
+  logs           Json?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  task         ScheduledTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([taskId])
+  @@index([startedAt])
+}
+
+model CampaignLog {
+  id             String           @id @default(cuid())
+  organizationId String
+  teamId         String
+  channel        ChannelKind
+  campaignId     String
+  level          CampaignLogLevel @default(INFO)
+  message        String
+  metadata       Json?
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([channel, campaignId, createdAt])
 }
