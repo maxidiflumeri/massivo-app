@@ -4,117 +4,92 @@ import {
   AppBar,
   Toolbar,
   Typography,
-  Container,
-  Button,
   IconButton,
   Drawer,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
+  useMediaQuery,
   useTheme,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
-import { OrganizationSwitcher, UserButton } from '@clerk/clerk-react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-
-const NAV_ITEMS = [
-  { label: 'Campañas', to: '/dashboard/email/campaigns' },
-  { label: 'Templates', to: '/dashboard/email/templates' },
-];
+import { Outlet } from 'react-router-dom';
+import { Sidebar, SIDEBAR_WIDTH } from './Sidebar';
 
 export function AppLayout() {
   const theme = useTheme();
-  const navigate = useNavigate();
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>
-      <AppBar
-        position="static"
-        color="transparent"
-        elevation={1}
-        sx={{ backgroundColor: theme.palette.background.paper }}
-      >
-        <Toolbar sx={{ justifyContent: 'space-between', gap: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 3 } }}>
-            <IconButton
-              edge="start"
-              onClick={() => setDrawerOpen(true)}
-              sx={{ display: { xs: 'inline-flex', md: 'none' } }}
-              aria-label="Abrir menú"
-            >
-              <MenuIcon />
-            </IconButton>
-            <Typography variant="h6" component="div" sx={{ fontWeight: 'bold' }}>
-              Massivo App
-            </Typography>
-            <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
-              {NAV_ITEMS.map((item) => (
-                <Button
-                  key={item.to}
-                  component={NavLink}
-                  to={item.to}
-                  color="inherit"
-                  sx={{
-                    '&.active': {
-                      color: 'primary.main',
-                      fontWeight: 600,
-                    },
-                  }}
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </Box>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 } }}>
-            <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-              <OrganizationSwitcher
-                hidePersonal={false}
-                afterCreateOrganizationUrl="/dashboard"
-                afterLeaveOrganizationUrl="/dashboard"
-                afterSelectOrganizationUrl="/dashboard"
-              />
-            </Box>
-            <UserButton afterSignOutUrl="/sign-in" />
-          </Box>
-        </Toolbar>
-      </AppBar>
-
-      <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
-        <Box sx={{ width: 240, pt: 2 }} role="presentation">
-          <Typography variant="h6" sx={{ px: 2, pb: 2, fontWeight: 'bold' }}>
-            Massivo App
-          </Typography>
-          <Box sx={{ px: 2, pb: 2 }}>
-            <OrganizationSwitcher
-              hidePersonal={false}
-              afterCreateOrganizationUrl="/dashboard"
-              afterLeaveOrganizationUrl="/dashboard"
-              afterSelectOrganizationUrl="/dashboard"
-            />
-          </Box>
-          <List>
-            {NAV_ITEMS.map((item) => (
-              <ListItem key={item.to} disablePadding>
-                <ListItemButton
-                  onClick={() => {
-                    navigate(item.to);
-                    setDrawerOpen(false);
-                  }}
-                >
-                  <ListItemText primary={item.label} />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
+    <Box sx={{ display: 'flex', minHeight: '100vh', width: '100%' }}>
+      {/* Desktop permanent sidebar */}
+      {isDesktop && (
+        <Box
+          component="nav"
+          sx={{
+            width: SIDEBAR_WIDTH,
+            flexShrink: 0,
+            borderRight: 1,
+            borderColor: 'divider',
+            position: 'sticky',
+            top: 0,
+            height: '100vh',
+          }}
+        >
+          <Sidebar />
         </Box>
-      </Drawer>
+      )}
 
-      <Container component="main" sx={{ flexGrow: 1, py: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}>
-        <Outlet />
-      </Container>
+      {/* Mobile drawer */}
+      {!isDesktop && (
+        <Drawer
+          anchor="left"
+          open={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          ModalProps={{ keepMounted: true }}
+          PaperProps={{ sx: { width: SIDEBAR_WIDTH } }}
+        >
+          <Sidebar onNavigate={() => setMobileOpen(false)} />
+        </Drawer>
+      )}
+
+      {/* Main column */}
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {/* Mobile top bar (only) */}
+        {!isDesktop && (
+          <AppBar
+            position="sticky"
+            color="transparent"
+            elevation={0}
+            sx={{
+              backgroundColor: theme.palette.background.paper,
+              borderBottom: 1,
+              borderColor: 'divider',
+            }}
+          >
+            <Toolbar>
+              <IconButton edge="start" onClick={() => setMobileOpen(true)} aria-label="Abrir menú">
+                <MenuIcon />
+              </IconButton>
+              <Typography variant="h6" sx={{ ml: 1, fontWeight: 700 }}>
+                Massivo
+              </Typography>
+            </Toolbar>
+          </AppBar>
+        )}
+
+        <Box
+          component="main"
+          sx={{
+            flexGrow: 1,
+            py: { xs: 2, sm: 4 },
+            px: { xs: 2, sm: 4 },
+            maxWidth: 1400,
+            width: '100%',
+            mx: 'auto',
+          }}
+        >
+          <Outlet />
+        </Box>
+      </Box>
     </Box>
   );
 }

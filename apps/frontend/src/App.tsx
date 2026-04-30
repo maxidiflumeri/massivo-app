@@ -1,6 +1,7 @@
 import { Route, Routes, Navigate } from 'react-router-dom';
 import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
 import { HomePage } from './pages/HomePage';
+import { DashboardHome } from './pages/DashboardHome';
 import { SignInPage } from './pages/auth/SignInPage';
 import { SignUpPage } from './pages/auth/SignUpPage';
 import { AppLayout } from './layouts/AppLayout';
@@ -31,7 +32,7 @@ export function App() {
           </>
         }
       >
-        <Route index element={<div>Dashboard Principal (Selecciona u opera tu equipo)</div>} />
+        <Route index element={<DashboardHome />} />
         <Route path="email/templates" element={<TemplatesListPage />} />
         <Route path="email/templates/new" element={<TemplateEditorPage />} />
         <Route path="email/templates/:id" element={<TemplateEditorPage />} />
