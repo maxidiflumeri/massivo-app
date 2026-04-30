@@ -15,6 +15,8 @@ import type { EmailSendJob } from './email-queue.types';
 describe('EmailWorkerService.process', () => {
   let prismaScoped: { emailReport: { findFirst: jest.Mock; update: jest.Mock } };
   let senders: { sendForAccount: jest.Mock };
+  let tokens: { sign: jest.Mock; publicUrl: jest.Mock };
+  let suppression: { check: jest.Mock };
   let worker: EmailWorkerService;
 
   beforeEach(() => {
@@ -25,10 +27,19 @@ describe('EmailWorkerService.process', () => {
       },
     };
     senders = { sendForAccount: jest.fn() };
+    tokens = {
+      sign: jest.fn().mockReturnValue('tok-fake'),
+      publicUrl: jest.fn().mockReturnValue('http://localhost:3001'),
+    };
+    suppression = {
+      check: jest.fn().mockResolvedValue({ suppressed: false }),
+    };
     worker = new EmailWorkerService(
       new ConfigService({}),
       { scoped: prismaScoped } as never,
       senders as never,
+      tokens as never,
+      suppression as never,
     );
   });
 
@@ -75,7 +86,11 @@ describe('EmailWorkerService.process', () => {
     const sendArgs = senders.sendForAccount.mock.calls[0]![1];
     expect(sendArgs.to).toBe('user@example.com');
     expect(sendArgs.subject).toBe('Hola Ana');
-    expect(sendArgs.html).toBe('<p>Hi Ana</p>');
+    expect(sendArgs.html).toContain('<p>Hi Ana</p>');
+    expect(sendArgs.html).toContain('track/open.gif?t=tok-fake');
+    expect(tokens.sign).toHaveBeenCalledWith({
+      r: 'rep-1', o: 'org-a', t: 'team-a', c: 'camp-1',
+    });
 
     expect(prismaScoped.emailReport.update).toHaveBeenCalledWith({
       where: { id: 'rep-1' },
@@ -83,7 +98,7 @@ describe('EmailWorkerService.process', () => {
         status: 'SENT',
         smtpMessageId: 'msg-x',
         subject: 'Hola Ana',
-        html: '<p>Hi Ana</p>',
+        trackingToken: 'tok-fake',
         error: null,
       }),
     });
@@ -112,6 +127,22 @@ describe('EmailWorkerService.process', () => {
 
     expect(senders.sendForAccount).not.toHaveBeenCalled();
     expect(prismaScoped.emailReport.update).not.toHaveBeenCalled();
+  });
+
+  it('email suprimido (unsubscribe) → SUPPRESSED, no llama sender', async () => {
+    prismaScoped.emailReport.findFirst.mockResolvedValueOnce(reportFixture());
+    suppression.check.mockResolvedValueOnce({ suppressed: true, reason: 'unsubscribe-global' });
+
+    const out = await worker.process(
+      jobOf({ reportId: 'rep-1', organizationId: 'org-a', teamId: 'team-a' }),
+    );
+
+    expect(out).toEqual({ suppressed: true, reason: 'unsubscribe-global' });
+    expect(senders.sendForAccount).not.toHaveBeenCalled();
+    expect(prismaScoped.emailReport.update).toHaveBeenCalledWith({
+      where: { id: 'rep-1' },
+      data: { status: 'SUPPRESSED', error: 'unsubscribe-global' },
+    });
   });
 
   it('campaign sin template → tira sin enviar', async () => {

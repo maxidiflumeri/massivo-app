@@ -152,11 +152,27 @@ Criterios de aceptación 3.A:
 ### Checklist Fase 3 (sub-fases pendientes)
 
 **Sub-fase 3.B — Tracking + Webhook SES**:
-- [ ] Tracking JWT: payload `{ rid, oid, tid, cid }` firmado con `EMAIL_TRACKING_JWT_SECRET`. Endpoints `GET /api/track/open.gif` (1×1 transparente, registra `EmailEvent` OPEN) y `GET /api/track/click` (registra CLICK + 302). Públicos pero validan firma + resuelven tenant del payload.
-- [ ] Reescribir links + inyectar pixel en el `EmailWorker` antes de enviar (mover render dentro de un helper `prepareHtmlForTracking`).
+
+**3.B.1 — Tracking saliente (✅ completada):**
+- [x] `TrackingTokenService.sign/verify` con HS256 + payload corto `{r,o,t,c}`. Secret en `EMAIL_TRACKING_JWT_SECRET`, base URL en `EMAIL_PUBLIC_URL`.
+- [x] Helper `prepareHtmlForTracking({html,token,publicUrl})`: reescribe href http(s) a `/api/track/click?t&u`, inyecta pixel 1×1 antes de `</body>` (o al final si no existe). Skip de href que ya apuntan al `publicUrl` propio.
+- [x] `TrackController` público (`/track/open.gif`, `/track/click`): NUNCA leakea validación — token inválido = 200+pixel / 302+redirect igual.
+- [x] `TrackService.record` idempotente (dedupe ventana 2s) + actualiza `firstOpenedAt`/`firstClickedAt` solo si `null`. Reconstruye `TenantContext` con role sintético del payload JWT.
+- [x] `EmailWorker` integra: render handlebars → `prepareHtmlForTracking` → persiste `trackingToken` en `EmailReport` al SENT.
+- [x] Tests: 18 nuevos (token, prepare-html, controller, worker actualizado) — full suite 142/142 ✅.
+
+**3.B.2 — Suppression + unsubscribe (✅ completada):**
+- [x] Schema: `SUPPRESSED` agregado a enum `EmailReportStatus` (migración `add_suppressed_status`).
+- [x] Permissions: subject `EmailSuppression` agregado, MEMBER tiene `read`.
+- [x] `SuppressionService.check({email, campaignId})`: chequea `EmailUnsubscribe` GLOBAL/CAMPAIGN matching + `EmailBounce` con `code='hard'`. Retorna `{suppressed, reason}`.
+- [x] `SuppressionService.addUnsubscribe({email, scope, campaignId, ...})`: idempotente vía findFirst+create (no upsert por unique con NULL en compound key).
+- [x] `EmailWorker` integrado: chequea suppression antes de render → marca report `SUPPRESSED` + reason, NO llama sender, NO throw.
+- [x] `UnsubscribeController` público (`GET /api/unsubscribe?t=jwt&scope=global|campaign`): mismo patrón seguro que `/track/*` — token inválido devuelve 200 con HTML genérico, no leakea validación.
+- [x] `SuppressionsController` (`GET /api/email/suppressions`): stack auth completo + `@CheckPolicies('read', 'EmailSuppression')`, paginado por cursor (clamp 200).
+- [x] Tests: 17 nuevos (suppression service, unsubscribe controller, suppressions list, worker SUPPRESSED branch). Backend total: **159/159 ✅**.
+
+**3.B.3 — Webhook SES (pendiente):**
 - [ ] Webhook SES `POST /webhooks/ses`: valida firma SNS (`sns-validator`), resuelve tenant via `configurationSet` o `messageId`. Maneja Bounce/Complaint/Delivery/Open/Click (idempotente). `@SkipTenantScope()`.
-- [ ] Suppression list por team: vista `/api/email/suppressions`. Antes de enviar el worker chequea suppression para `(teamId, email)` → marca `SUPPRESSED`.
-- [ ] Endpoint público `GET /api/unsubscribe` con JWT (mismo secret tracking). Persiste `EmailUnsubscribe`.
 - [ ] Configurar SNS destinations en `SesSender.ensureConfigurationSet` (Bounce/Complaint/Delivery/Open/Click → topic ARN).
 
 **Sub-fase 3.C — Campañas + Unlayer + Frontend**:

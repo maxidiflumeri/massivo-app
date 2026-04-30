@@ -38,7 +38,8 @@
       "Read(//c/c/Users/MDIFLUME/Documents/Proyectos/Propios/massivo-app/packages/permissions/dist/**)",
       "Read(//c/c/Users/MDIFLUME/Documents/Proyectos/Propios/massivo-app/packages/shared-types/dist/**)",
       "Bash(curl -sS http://localhost:3000/api/health)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(git *)"
     ]
   }
 }

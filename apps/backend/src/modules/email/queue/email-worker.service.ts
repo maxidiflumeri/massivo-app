@@ -6,6 +6,9 @@ import type { RequestContext } from '@massivo/shared-types';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EmailSenderService } from '../sender/email-sender.service';
+import { SuppressionService } from '../suppression/suppression.service';
+import { prepareHtmlForTracking } from '../tracking/prepare-html';
+import { TrackingTokenService } from '../tracking/tracking-token.service';
 import { EMAIL_QUEUE_NAME, type EmailSendJob } from './email-queue.types';
 
 /**
@@ -26,6 +29,8 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly senders: EmailSenderService,
+    private readonly tokens: TrackingTokenService,
+    private readonly suppression: SuppressionService,
   ) {}
 
   onModuleInit(): void {
@@ -58,7 +63,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
     await this.worker?.close();
   }
 
-  async process(job: Job<EmailSendJob>): Promise<{ messageId: string }> {
+  async process(job: Job<EmailSendJob>): Promise<{ messageId?: string; suppressed?: true; reason?: string }> {
     const { reportId, organizationId, teamId } = job.data;
     const ctx: RequestContext = {
       userId: 'system:email-worker',
@@ -83,9 +88,34 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
       if (!template) throw new Error(`Campaign ${report.campaignId} has no template`);
       if (!account) throw new Error(`Campaign ${report.campaignId} has no smtpAccount`);
 
+      const supp = await this.suppression.check({
+        email: report.contact.email,
+        campaignId: report.campaignId,
+      });
+      if (supp.suppressed) {
+        await this.prisma.scoped.emailReport.update({
+          where: { id: reportId },
+          data: { status: 'SUPPRESSED', error: supp.reason ?? 'suppressed' },
+        });
+        this.logger.log(`Report ${reportId} suprimido (${supp.reason}) — skip send`);
+        return { suppressed: true, reason: supp.reason };
+      }
+
       const vars = (report.contact.data as Record<string, unknown> | null) ?? {};
       const subject = Handlebars.compile(template.subject, { noEscape: false })(vars);
-      const html = Handlebars.compile(template.html, { noEscape: true })(vars);
+      const renderedHtml = Handlebars.compile(template.html, { noEscape: true })(vars);
+
+      const trackingToken = this.tokens.sign({
+        r: report.id,
+        o: report.organizationId,
+        t: report.teamId,
+        c: report.campaignId,
+      });
+      const html = prepareHtmlForTracking({
+        html: renderedHtml,
+        token: trackingToken,
+        publicUrl: this.tokens.publicUrl(),
+      });
 
       try {
         const result = await this.senders.sendForAccount(
@@ -112,6 +142,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
             subject,
             html,
             smtpMessageId: result.messageId,
+            trackingToken,
             error: null,
           },
         });
