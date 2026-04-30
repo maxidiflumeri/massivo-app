@@ -20,13 +20,24 @@ import SaveIcon from '@mui/icons-material/Save';
 import SendIcon from '@mui/icons-material/Send';
 import UploadIcon from '@mui/icons-material/Upload';
 import { useApi } from '../../../api/client';
+import { useTeamSocket } from '../../../realtime/useTeamSocket';
 import type { EmailTemplate } from '../templates/types';
 import type {
   CampaignContactInput,
   CampaignDetail,
+  CampaignReport,
   CampaignStatus,
   SmtpAccountListItem,
 } from './types';
+
+const REPORT_STATUSES: Array<{ key: string; label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error' }> = [
+  { key: 'PENDING', label: 'Pendientes', color: 'default' },
+  { key: 'SENT', label: 'Enviados', color: 'success' },
+  { key: 'FAILED', label: 'Fallidos', color: 'error' },
+  { key: 'BOUNCED', label: 'Bounced', color: 'error' },
+  { key: 'COMPLAINED', label: 'Complaints', color: 'warning' },
+  { key: 'SUPPRESSED', label: 'Suprimidos', color: 'default' },
+];
 
 const STATUS_COLOR: Record<CampaignStatus, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
   DRAFT: 'default',
@@ -92,10 +103,13 @@ export function CampaignDetailPage() {
   const navigate = useNavigate();
 
   const [campaign, setCampaign] = useState<CampaignDetail | null>(null);
+  const [report, setReport] = useState<CampaignReport | null>(null);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [smtpAccounts, setSmtpAccounts] = useState<SmtpAccountListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [liveTick, setLiveTick] = useState(0);
+  const socket = useTeamSocket();
 
   const [name, setName] = useState('');
   const [templateId, setTemplateId] = useState('');
@@ -131,9 +145,39 @@ export function CampaignDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  const loadReport = useCallback(async () => {
+    if (!id) return;
+    try {
+      const r = await api.get<CampaignReport>(`/api/email/campaigns/${id}/report`);
+      setReport(r);
+    } catch {
+      // silencioso: el report puede no existir aún
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadReport();
+  }, [loadReport, liveTick]);
+
+  // Auto-refresh por socket: cuando llega email.report.updated del campaignId actual,
+  // re-fetch report (y campaign para status si pasó a COMPLETED).
+  useEffect(() => {
+    if (!socket || !id) return;
+    const handler = (payload: { campaignId?: string }) => {
+      if (payload?.campaignId !== id) return;
+      setLiveTick((t) => t + 1);
+      void load();
+    };
+    socket.on('email.report.updated', handler);
+    return () => {
+      socket.off('email.report.updated', handler);
+    };
+  }, [socket, id, load]);
 
   const parsed = useMemo(() => parseContactsCsv(contactsText), [contactsText]);
 
@@ -229,6 +273,64 @@ export function CampaignDetailPage() {
 
       {error && <Alert severity="error">{error}</Alert>}
       {info && <Alert severity="success">{info}</Alert>}
+
+      {report && (campaign.status === 'PROCESSING' || campaign.status === 'COMPLETED' || campaign._count.reports > 0) && (
+        <Paper sx={{ p: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <Typography variant="h6">Resultados</Typography>
+            {socket?.connected ? (
+              <Chip size="small" label="● en vivo" color="success" variant="outlined" />
+            ) : (
+              <Chip size="small" label="○ desconectado" variant="outlined" />
+            )}
+          </Box>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            {REPORT_STATUSES.map((s) => (
+              <Box
+                key={s.key}
+                sx={{
+                  flex: '1 1 140px',
+                  p: 2,
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  textAlign: 'center',
+                }}
+              >
+                <Typography variant="caption" color="text.secondary">
+                  {s.label}
+                </Typography>
+                <Typography variant="h5">{report.counts[s.key] ?? 0}</Typography>
+              </Box>
+            ))}
+          </Box>
+          <Divider sx={{ my: 2 }} />
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <Box sx={{ flex: '1 1 140px', textAlign: 'center' }}>
+              <Typography variant="caption" color="text.secondary">
+                Aperturas
+              </Typography>
+              <Typography variant="h6">
+                {report.events.opens}{' '}
+                <Typography component="span" variant="caption" color="text.secondary">
+                  ({report.events.uniqueOpens} únicas)
+                </Typography>
+              </Typography>
+            </Box>
+            <Box sx={{ flex: '1 1 140px', textAlign: 'center' }}>
+              <Typography variant="caption" color="text.secondary">
+                Clicks
+              </Typography>
+              <Typography variant="h6">
+                {report.events.clicks}{' '}
+                <Typography component="span" variant="caption" color="text.secondary">
+                  ({report.events.uniqueClicks} únicos)
+                </Typography>
+              </Typography>
+            </Box>
+          </Box>
+        </Paper>
+      )}
 
       <Paper sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom>

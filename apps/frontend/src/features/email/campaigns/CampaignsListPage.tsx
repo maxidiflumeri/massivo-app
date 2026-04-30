@@ -26,6 +26,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { useApi } from '../../../api/client';
+import { useTeamSocket } from '../../../realtime/useTeamSocket';
 import type { CampaignListItem, CampaignStatus } from './types';
 
 const STATUS_COLOR: Record<CampaignStatus, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
@@ -45,6 +46,7 @@ export function CampaignsListPage() {
   const [openNew, setOpenNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
+  const socket = useTeamSocket();
 
   async function load() {
     try {
@@ -60,6 +62,18 @@ export function CampaignsListPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handler = () => {
+      void load();
+    };
+    socket.on('email.report.updated', handler);
+    return () => {
+      socket.off('email.report.updated', handler);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket]);
 
   async function handleCreate() {
     if (!newName.trim()) return;
