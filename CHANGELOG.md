@@ -21,6 +21,16 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### Fixed
+- **Campaign queda en PROCESSING para siempre tras enviar** — el worker marcaba reports `SENT/FAILED/SUPPRESSED` pero nunca transicionaba la campaign a `COMPLETED`. Agregado `EmailWorkerService.maybeCompleteCampaign(campaignId, teamId)` que cuenta reports `PENDING` y, si no quedan, hace `updateMany({ where: { id, status: 'PROCESSING' }, data: { status: 'COMPLETED' } })` (guard de status hace el update idempotente entre workers concurrentes). Se invoca tras cada transición terminal de report y emite `email.report.updated` para refrescar la UI. Tests worker: 7/7 ✅ (sumamos 2 casos).
+- **Loop infinito de `GET /api/email/campaigns/:id/reports`** en `CampaignSendsSection` — `useApi()` devuelve un objeto nuevo por render, así que `loadFirstPage` cambiaba siempre y disparaba el `useEffect`. Sacado de las deps; ahora sólo refetch ante cambio de `campaignId` / `statusFilter` / `refreshKey`.
+
+### 3.C.4.b — Drill-down per-campaign de envíos y eventos
+- **Backend**: `EmailCampaignsService.listReports(campaignId, { cursor, limit, status })` — paginación cursor (default 50, máx 200), filtro opcional por `EmailReportStatus`, incluye `contact: { id, email, name }` y `_count.events`. `EmailCampaignsService.listReportEvents(campaignId, reportId)` con verificación de pertenencia a la campaign + scope tenant; devuelve OPEN/CLICK con `targetUrl/targetDomain`, `ip`, `userAgent`, `deviceFamily`, `osName/osVersion`, `browserName/browserVersion`, ordenados cronológicamente.
+- **Endpoints**: `GET /api/email/campaigns/:id/reports?status=&cursor=&limit=` y `GET /api/email/campaigns/:id/reports/:reportId/events`. Ambos con `@CheckPolicies('read', 'Campaign')`.
+- **Frontend**: nuevo `CampaignSendsSection.tsx` con tabla paginada (botón "Cargar más" cuando hay nextCursor), filtro select por estado (Todos/Pendientes/Enviados/Fallidos/Bounced/Complaints/Suprimidos), columnas con email+nombre del contacto, chip de estado con color, fechas de envío / 1ª apertura / 1er click, count de eventos, ⚠ error en tooltip cuando aplica. Drill-down dialog con timeline cronológico: chip OPEN/CLICK, timestamp, link clickable al `targetUrl` (con icono `OpenInNew`), línea con IP+device+OS+browser, UA completo en pie. Refresh automático ante eventos socket (vía `refreshKey={liveTick}`).
+- **Integración**: la sección aparece en `CampaignDetailPage` solo si `_count.reports > 0`, debajo de Resultados y arriba de Contactos.
+
 ### 3.C.4.a' — Verify automático de cuentas SMTP + reintento manual
 - **Backend**: nuevo `EmailSenderService.verifyAccount(account)` que valida credenciales sin enviar email — para SMTP usa `transporter.verify()` de nodemailer (handshake + AUTH); para SES usa `GetAccountCommand` (cheap call que requiere credenciales válidas). Devuelve `{ ok }` o `{ ok: false, error }` y nunca lanza.
 - **`SmtpAccountsService.create/update` ahora corren verify automáticamente** y setean `isActive` según el resultado: si verifica OK → activa, si falla → se guarda igual pero inactiva (con `error` para mostrar al usuario). `isActive` deja de ser editable manualmente — pasa a ser system-controlled.

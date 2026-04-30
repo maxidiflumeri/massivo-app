@@ -13,7 +13,10 @@ import { EmailWorkerService } from './email-worker.service';
 import type { EmailSendJob } from './email-queue.types';
 
 describe('EmailWorkerService.process', () => {
-  let prismaScoped: { emailReport: { findFirst: jest.Mock; update: jest.Mock } };
+  let prismaScoped: {
+    emailReport: { findFirst: jest.Mock; update: jest.Mock; count: jest.Mock };
+  };
+  let prismaRoot: { emailCampaign: { updateMany: jest.Mock } };
   let senders: { sendForAccount: jest.Mock };
   let tokens: { sign: jest.Mock; publicUrl: jest.Mock };
   let suppression: { check: jest.Mock };
@@ -25,7 +28,11 @@ describe('EmailWorkerService.process', () => {
       emailReport: {
         findFirst: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
+        count: jest.fn().mockResolvedValue(0),
       },
+    };
+    prismaRoot = {
+      emailCampaign: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     };
     senders = { sendForAccount: jest.fn() };
     tokens = {
@@ -38,7 +45,7 @@ describe('EmailWorkerService.process', () => {
     events = { emitToTeamDebounced: jest.fn() };
     worker = new EmailWorkerService(
       new ConfigService({}),
-      { scoped: prismaScoped } as never,
+      { scoped: prismaScoped, ...prismaRoot } as never,
       senders as never,
       tokens as never,
       suppression as never,
@@ -149,6 +156,40 @@ describe('EmailWorkerService.process', () => {
       where: { id: 'rep-1' },
       data: { status: 'SUPPRESSED', error: 'unsubscribe-global' },
     });
+  });
+
+  it('último report SENT → transiciona campaign PROCESSING → COMPLETED', async () => {
+    prismaScoped.emailReport.findFirst.mockResolvedValueOnce(reportFixture());
+    senders.sendForAccount.mockResolvedValueOnce({ messageId: 'msg-x', provider: 'smtp' });
+    // No quedan reports pendientes después de éste
+    prismaScoped.emailReport.count.mockResolvedValueOnce(0);
+    prismaRoot.emailCampaign.updateMany.mockResolvedValueOnce({ count: 1 });
+
+    await worker.process(
+      jobOf({ reportId: 'rep-1', organizationId: 'org-a', teamId: 'team-a' }),
+    );
+
+    expect(prismaScoped.emailReport.count).toHaveBeenCalledWith({
+      where: { campaignId: 'camp-1', status: 'PENDING' },
+    });
+    expect(prismaRoot.emailCampaign.updateMany).toHaveBeenCalledWith({
+      where: { id: 'camp-1', status: 'PROCESSING' },
+      data: { status: 'COMPLETED' },
+    });
+    // Notificación extra al transicionar
+    expect(events.emitToTeamDebounced).toHaveBeenCalledTimes(2);
+  });
+
+  it('quedan reports PENDING → no transiciona campaign', async () => {
+    prismaScoped.emailReport.findFirst.mockResolvedValueOnce(reportFixture());
+    senders.sendForAccount.mockResolvedValueOnce({ messageId: 'msg-x', provider: 'smtp' });
+    prismaScoped.emailReport.count.mockResolvedValueOnce(3);
+
+    await worker.process(
+      jobOf({ reportId: 'rep-1', organizationId: 'org-a', teamId: 'team-a' }),
+    );
+
+    expect(prismaRoot.emailCampaign.updateMany).not.toHaveBeenCalled();
   });
 
   it('campaign sin template → tira sin enviar', async () => {

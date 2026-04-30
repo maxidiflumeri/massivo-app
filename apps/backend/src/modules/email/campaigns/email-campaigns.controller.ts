@@ -6,8 +6,10 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -46,6 +48,26 @@ export class EmailCampaignsController {
   @CheckPolicies((a: AppAbility) => a.can('read', 'Campaign'))
   getReport(@Param('id') id: string) {
     return this.service.getReport(id);
+  }
+
+  @Get(':id/reports')
+  @CheckPolicies((a: AppAbility) => a.can('read', 'Campaign'))
+  listReports(
+    @Param('id') id: string,
+    @Query('status') status?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+  ) {
+    return this.service.listReports(id, { status, cursor, limit });
+  }
+
+  @Get(':id/reports/:reportId/events')
+  @CheckPolicies((a: AppAbility) => a.can('read', 'Campaign'))
+  listReportEvents(
+    @Param('id') id: string,
+    @Param('reportId') reportId: string,
+  ) {
+    return this.service.listReportEvents(id, reportId);
   }
 
   @Post()

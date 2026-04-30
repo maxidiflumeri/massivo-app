@@ -31,6 +31,7 @@ import type {
   CampaignStatus,
   SmtpAccountListItem,
 } from './types';
+import { CampaignSendsSection } from './CampaignSendsSection';
 
 const REPORT_STATUSES: Array<{ key: string; label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error' }> = [
   { key: 'PENDING', label: 'Pendientes', color: 'default' },
@@ -415,6 +416,10 @@ export function CampaignDetailPage() {
           )}
         </Stack>
       </Paper>
+
+      {campaign._count.reports > 0 && (
+        <CampaignSendsSection campaignId={campaign.id} refreshKey={liveTick} />
+      )}
 
       <Paper sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom>

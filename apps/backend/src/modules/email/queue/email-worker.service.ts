@@ -44,6 +44,27 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  /**
+   * Si la campaign está PROCESSING y no quedan reports PENDING, la transiciona
+   * a COMPLETED. Idempotente vía guard de status: dos workers que terminen en
+   * paralelo no provocan doble update.
+   */
+  private async maybeCompleteCampaign(campaignId: string, teamId: string): Promise<void> {
+    const pending = await this.prisma.scoped.emailReport.count({
+      where: { campaignId, status: 'PENDING' },
+    });
+    if (pending > 0) return;
+
+    const result = await this.prisma.emailCampaign.updateMany({
+      where: { id: campaignId, status: 'PROCESSING' },
+      data: { status: 'COMPLETED' },
+    });
+    if (result.count > 0) {
+      this.logger.log(`Campaign ${campaignId} → COMPLETED (no quedan reports PENDING)`);
+      this.notifyReportUpdate(teamId, campaignId);
+    }
+  }
+
   onModuleInit(): void {
     if (this.config.get<string>('EMAIL_WORKER_ENABLED') === 'false') {
       this.logger.warn('Email worker disabled via EMAIL_WORKER_ENABLED=false');
@@ -109,6 +130,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           data: { status: 'SUPPRESSED', error: supp.reason ?? 'suppressed' },
         });
         this.notifyReportUpdate(teamId, report.campaignId);
+        await this.maybeCompleteCampaign(report.campaignId, teamId);
         this.logger.log(`Report ${reportId} suprimido (${supp.reason}) — skip send`);
         return { suppressed: true, reason: supp.reason };
       }
@@ -159,6 +181,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           },
         });
         this.notifyReportUpdate(teamId, report.campaignId);
+        await this.maybeCompleteCampaign(report.campaignId, teamId);
         return { messageId: result.messageId };
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'unknown error';
@@ -167,6 +190,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           data: { status: 'FAILED', error: msg.slice(0, 500) },
         });
         this.notifyReportUpdate(teamId, report.campaignId);
+        await this.maybeCompleteCampaign(report.campaignId, teamId);
         throw err;
       }
     });

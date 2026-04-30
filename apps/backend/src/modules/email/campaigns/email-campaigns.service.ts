@@ -152,6 +152,111 @@ export class EmailCampaignsService {
     return { enqueued: reports.length };
   }
 
+  /**
+   * Lista paginada (cursor) de reports de una campaign. Filtros opcionales por status.
+   * Incluye datos básicos del contact para no hacer N+1 en el frontend.
+   */
+  async listReports(
+    campaignId: string,
+    opts: { cursor?: string; limit?: number; status?: string } = {},
+  ): Promise<{
+    items: Array<{
+      id: string;
+      status: string;
+      sentAt: Date | null;
+      error: string | null;
+      firstOpenedAt: Date | null;
+      firstClickedAt: Date | null;
+      smtpMessageId: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+      contact: { id: string; email: string; name: string | null };
+      _count: { events: number };
+    }>;
+    nextCursor: string | null;
+  }> {
+    await this.findOne(campaignId); // valida tenant + existencia
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    const where: Record<string, unknown> = { campaignId };
+    if (opts.status) where.status = opts.status;
+
+    const rows = await this.prisma.scoped.emailReport.findMany({
+      where: where as never,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),
+      select: {
+        id: true,
+        status: true,
+        sentAt: true,
+        error: true,
+        firstOpenedAt: true,
+        firstClickedAt: true,
+        smtpMessageId: true,
+        createdAt: true,
+        updatedAt: true,
+        contact: { select: { id: true, email: true, name: true } },
+        _count: { select: { events: true } },
+      },
+    });
+
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor = hasMore ? items[items.length - 1]!.id : null;
+    return { items: items as never, nextCursor };
+  }
+
+  /**
+   * Lista cronológica de eventos (OPEN/CLICK) de un report individual.
+   * Verifica que el report pertenezca a la campaign indicada (defensa en profundidad
+   * además del scope de tenant que aplica la extensión Prisma).
+   */
+  async listReportEvents(
+    campaignId: string,
+    reportId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      type: string;
+      occurredAt: Date;
+      targetUrl: string | null;
+      targetDomain: string | null;
+      ip: string | null;
+      userAgent: string | null;
+      deviceFamily: string | null;
+      osName: string | null;
+      osVersion: string | null;
+      browserName: string | null;
+      browserVersion: string | null;
+    }>
+  > {
+    const report = await this.prisma.scoped.emailReport.findFirst({
+      where: { id: reportId, campaignId },
+      select: { id: true },
+    });
+    if (!report) throw new NotFoundException(`Report ${reportId} no encontrado en campaign ${campaignId}`);
+
+    const events = await this.prisma.scoped.emailEvent.findMany({
+      where: { reportId },
+      orderBy: { occurredAt: 'asc' },
+      select: {
+        id: true,
+        type: true,
+        occurredAt: true,
+        targetUrl: true,
+        targetDomain: true,
+        ip: true,
+        userAgent: true,
+        deviceFamily: true,
+        osName: true,
+        osVersion: true,
+        browserName: true,
+        browserVersion: true,
+      },
+    });
+    return events as never;
+  }
+
   async getReport(id: string): Promise<{
     campaignId: string;
     counts: Record<string, number>;

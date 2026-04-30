@@ -31,7 +31,7 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 3 — Canal Email (sub-A ✅, sub-B ✅, sub-C.1/.2/.3.a/.3.b/.3.c/.3.d/.3.e ✅, sub-C.4.a ✅; **falta 3.C.4.b–.g + 3.C.5 control actions + 3.D reports**)
+- **Fase actual:** Fase 3 — Canal Email (sub-A ✅, sub-B ✅, sub-C.1/.2/.3.a/.3.b/.3.c/.3.d/.3.e ✅, sub-C.4.a ✅, sub-C.4.b ✅; **falta 3.C.4.c–.g + 3.C.5 control actions + 3.D reports**)
 - **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅
 - **Última actualización:** 2026-04-30
 - **Branch principal:** `main`
@@ -239,7 +239,9 @@ Criterios de aceptación 3.A:
 **3.C.4 — Frontend email features restantes (próximo paso):**
 - [x] **3.C.4.a — SMTP accounts UI** ✅ (2026-04-30): Página `/dashboard/email/smtp-accounts` con tabla + dialog crear/editar (provider smtp|ses, host, port, username, password opcional en edit, fromName, fromEmail, sesConfigSet?). Endpoint backend `POST /email/smtp-accounts/:id/test` + `TestSmtpAccountDto` que reusa `EmailSenderService.sendForAccount()`. UI con dialog "Enviar prueba" que pide email destinatario. NavRow en sidebar (icono `DnsIcon`). BLOCKER resuelto: ya no hace falta SQL para crear cuentas SMTP.
 - [x] **3.C.4.a' — Verify de credenciales SMTP** ✅ (2026-04-30): `EmailSenderService.verifyAccount()` (SMTP: `transporter.verify` de nodemailer; SES: `GetAccountCommand`). `SmtpAccountsService.create/update` corren verify y setean `isActive` automáticamente (true si OK, false si falla). `isActive` pasa a ser system-controlled (se sacó el switch manual del editor). Endpoint nuevo `POST /email/smtp-accounts/:id/verify` para reintentar bajo demanda + botón "Verificar conexión" en cada fila. Si está inactiva, el chip muestra el motivo del último fallo en tooltip. Tests del service: 14/14 ✅ (4 nuevos: create OK / create FAIL / verify OK / verify FAIL).
-- [ ] **3.C.4.b — Per-campaign sends/events drill-down**: vista detalle por campaña con tabla paginada de `EmailReport` (status, error, sentAt, firstOpenedAt, firstClickedAt) + drilldown a `EmailEvent` (OPEN/CLICK con IP/UA/url). Filtros por status.
+- [x] **Fix: campaign queda en PROCESSING** ✅ (2026-04-30): el worker no transicionaba la campaign a `COMPLETED` cuando terminaba el último report. Agregado `EmailWorkerService.maybeCompleteCampaign()` (count PENDING → updateMany guarded por status) llamado tras cada transición terminal. Tests worker: 7/7 ✅ (sumamos 2 casos: "transiciona OK" y "no transiciona si quedan PENDING").
+- [x] **Fix: loop de fetch en CampaignSendsSection** ✅ (2026-04-30): `useApi()` no estaba memoizada → `loadFirstPage` cambiaba en cada render → `useEffect` se disparaba en loop. Sacado de las deps; sólo refetch ante cambio de filtro / campaign / refreshKey externo.
+- [x] **3.C.4.b — Per-campaign sends/events drill-down** ✅ (2026-04-30): nuevos endpoints `GET /api/email/campaigns/:id/reports` (paginado por cursor, filtro `?status=`, incluye contact + count de events) y `GET /api/email/campaigns/:id/reports/:reportId/events` (lista cronológica de OPEN/CLICK con metadata: targetUrl, ip, ua, device/os/browser). Frontend: nuevo componente `CampaignSendsSection` con tabla paginada (50/pág, "Cargar más"), filtro select por status, columnas con sentAt/1ª apertura/1er click/count events, error de envío en tooltip cuando aplica. Drill-down dialog con timeline de eventos (chip OPEN/CLICK, timestamp, link clickable al targetUrl, IP+device+OS+browser, UA completo). Auto-refresh por socket (refreshKey con `liveTick`).
 - [ ] **3.C.4.c — Suppressions UI** (`/dashboard/email/suppressions`): lista de `EmailUnsubscribe` + `EmailBounce` paginada por cursor. Acciones: borrar entrada, agregar manual.
 - [ ] **3.C.4.d — Métricas globales**: dashboard con widgets (total enviados últimos 7/30 días, tasa apertura, tasa click, top campañas).
 - [ ] **3.C.4.e — Live processing view**: durante `status=PROCESSING`, vista con progress bar + counts en tiempo real + botón pause.
@@ -492,7 +494,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Tablas con shadow en dark mode**: override de `MuiTableContainer` + `MuiPaper` con boxShadow custom + inner ring `rgba(255,255,255,0.05)`. `backgroundImage: 'none'` para evitar el filtro lavado MUI.
 - **Auth redirects**: `forceRedirectUrl`/`fallbackRedirectUrl="/dashboard"` en SignIn/SignUp para que el flujo post-login termine en el dashboard.
 - **`ThemeProvider` split**: `ColorModeProvider` (context-only) + `MuiThemeWithMode` (consumer). Permite que `ClerkWithTheme` consuma el contexto y sincronice baseTheme.
-- **Próximo paso**: 3.C.4.b — Per-campaign sends/events drill-down. Después: suppressions UI, métricas, live processing view.
+- **Próximo paso**: 3.C.4.c — Suppressions UI (`/dashboard/email/suppressions` con `EmailUnsubscribe` + `EmailBounce` paginados). Después: métricas globales, live processing view, manual send, preview test send.
 
 ### 2026-04-30 — Sesión 11 (Claude Opus 4.7) — Sub-fases 3.B + 3.C.1/.2/.3.a/.3.b
 - **🏁 Sub-fase 3.B completa**: tracking saliente + suppression + webhook SES.

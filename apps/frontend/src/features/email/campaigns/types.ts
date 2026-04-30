@@ -69,3 +69,47 @@ export interface SmtpAccountListItem {
   fromEmail: string;
   fromName: string | null;
 }
+
+export type EmailReportStatus =
+  | 'PENDING'
+  | 'SENT'
+  | 'FAILED'
+  | 'BOUNCED'
+  | 'COMPLAINED'
+  | 'SUPPRESSED';
+
+export interface CampaignReportRow {
+  id: string;
+  status: EmailReportStatus;
+  sentAt: string | null;
+  error: string | null;
+  firstOpenedAt: string | null;
+  firstClickedAt: string | null;
+  smtpMessageId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  contact: { id: string; email: string; name: string | null };
+  _count: { events: number };
+}
+
+export interface CampaignReportListResponse {
+  items: CampaignReportRow[];
+  nextCursor: string | null;
+}
+
+export type EmailEventType = 'OPEN' | 'CLICK';
+
+export interface CampaignReportEvent {
+  id: string;
+  type: EmailEventType;
+  occurredAt: string;
+  targetUrl: string | null;
+  targetDomain: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  deviceFamily: string | null;
+  osName: string | null;
+  osVersion: string | null;
+  browserName: string | null;
+  browserVersion: string | null;
+}
