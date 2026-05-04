@@ -20,6 +20,8 @@ import { EmailCampaignsController } from './campaigns/email-campaigns.controller
 import { EmailCampaignsService } from './campaigns/email-campaigns.service';
 import { EmailMetricsController } from './metrics/email-metrics.controller';
 import { EmailMetricsService } from './metrics/email-metrics.service';
+import { ReportsController } from './reports/reports.controller';
+import { ReportGeneratorService } from './reports/report-generator.service';
 
 @Module({
   imports: [EventsModule],
@@ -32,6 +34,7 @@ import { EmailMetricsService } from './metrics/email-metrics.service';
     SesWebhookController,
     EmailCampaignsController,
     EmailMetricsController,
+    ReportsController,
   ],
   providers: [
     SmtpAccountsService,
@@ -46,6 +49,7 @@ import { EmailMetricsService } from './metrics/email-metrics.service';
     SnsValidatorAdapter,
     EmailCampaignsService,
     EmailMetricsService,
+    ReportGeneratorService,
   ],
   exports: [EmailQueueService, EmailSenderService, TrackingTokenService, SuppressionService],
 })

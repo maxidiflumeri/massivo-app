@@ -97,19 +97,19 @@ export class EmailCampaignsController {
 
   @Post(':id/pause')
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
-  pause(@Param('id') id: string) {
+  pause(@Param('id') id: string): Promise<unknown> {
     return this.service.pause(id);
   }
 
   @Post(':id/resume')
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
-  resume(@Param('id') id: string) {
+  resume(@Param('id') id: string): Promise<{ resumed: true; reEnqueued: number }> {
     return this.service.resume(id);
   }
 
   @Post(':id/force-close')
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
-  forceClose(@Param('id') id: string) {
+  forceClose(@Param('id') id: string): Promise<{ closed: true; canceled: number }> {
     return this.service.forceClose(id);
   }
 

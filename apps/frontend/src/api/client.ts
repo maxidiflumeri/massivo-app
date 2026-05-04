@@ -11,12 +11,28 @@ export class ApiError extends Error {
   }
 }
 
+export interface DownloadedFile {
+  blob: Blob;
+  filename: string;
+}
+
 export interface ApiClient {
   get<T>(path: string, init?: RequestInit): Promise<T>;
   post<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
   patch<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
   delete<T>(path: string, init?: RequestInit): Promise<T>;
+  /**
+   * POST que devuelve un archivo binario (CSV, XLSX, PDF…). Lee el filename
+   * del header `Content-Disposition` si está presente, si no usa el fallback.
+   */
+  download(path: string, body?: unknown, fallbackFilename?: string): Promise<DownloadedFile>;
   baseUrl: string;
+}
+
+function parseFilename(disposition: string | null, fallback: string): string {
+  if (!disposition) return fallback;
+  const match = /filename="?([^"]+)"?/i.exec(disposition);
+  return match?.[1] ?? fallback;
 }
 
 /**
@@ -53,6 +69,40 @@ export function useApi(): ApiClient {
     [getToken, activeTeamId],
   );
 
+  const download = useCallback(
+    async (path: string, body?: unknown, fallbackFilename = 'download'): Promise<DownloadedFile> => {
+      const token = await getToken();
+      const headers = new Headers();
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      if (activeTeamId) headers.set('x-team-id', activeTeamId);
+      if (body !== undefined) headers.set('Content-Type', 'application/json');
+      const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        let parsed: unknown = null;
+        try {
+          parsed = text ? JSON.parse(text) : null;
+        } catch {
+          parsed = text;
+        }
+        const msg =
+          (parsed && typeof parsed === 'object' && 'message' in parsed
+            ? String((parsed as { message: unknown }).message)
+            : null) ?? res.statusText ?? `HTTP ${res.status}`;
+        throw new ApiError(res.status, msg, parsed);
+      }
+      const blob = await res.blob();
+      const filename = parseFilename(res.headers.get('content-disposition'), fallbackFilename);
+      return { blob, filename };
+    },
+    [getToken, activeTeamId],
+  );
+
   return {
     baseUrl: API_BASE_URL,
     get: (path, init) => request(path, { ...init, method: 'GET' }),
@@ -61,5 +111,21 @@ export function useApi(): ApiClient {
     patch: (path, body, init) =>
       request(path, { ...init, method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
     delete: (path, init) => request(path, { ...init, method: 'DELETE' }),
+    download,
   };
+}
+
+/**
+ * Dispara el save dialog del browser para un Blob recibido (típicamente
+ * desde `api.download(...)`). Crea un `<a>` temporal con un Object URL.
+ */
+export function triggerBlobDownload(file: DownloadedFile): void {
+  const url = URL.createObjectURL(file.blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

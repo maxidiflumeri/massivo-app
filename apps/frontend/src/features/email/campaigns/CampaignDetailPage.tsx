@@ -33,6 +33,7 @@ import type {
 } from './types';
 import { CampaignSendsSection } from './CampaignSendsSection';
 import { CampaignProcessingBanner } from './CampaignProcessingBanner';
+import { ExportReportButton } from '../reports/ExportReportButton';
 
 const REPORT_STATUSES: Array<{ key: string; label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error' }> = [
   { key: 'PENDING', label: 'Pendientes', color: 'default' },
@@ -349,13 +350,24 @@ export function CampaignDetailPage() {
 
       {report && (campaign.status === 'PROCESSING' || campaign.status === 'COMPLETED' || campaign._count.reports > 0) && (
         <Paper sx={{ p: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
             <Typography variant="h6">Resultados</Typography>
             {socket?.connected ? (
               <Chip size="small" label="● en vivo" color="success" variant="outlined" />
             ) : (
               <Chip size="small" label="○ desconectado" variant="outlined" />
             )}
+            <Box sx={{ flex: 1 }} />
+            <ExportReportButton
+              kind="campaign-summary"
+              filters={{ campaignId: campaign.id }}
+              label="Resumen"
+            />
+            <ExportReportButton
+              kind="campaign-reports"
+              filters={{ campaignId: campaign.id }}
+              label="Detalle por contacto"
+            />
           </Box>
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
             {REPORT_STATUSES.map((s) => (

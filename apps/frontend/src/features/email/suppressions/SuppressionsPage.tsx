@@ -30,6 +30,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useConfirm } from '../../../feedback/ConfirmProvider';
+import { ExportReportButton } from '../reports/ExportReportButton';
 import type {
   BounceListResponse,
   BounceRow,
@@ -220,6 +221,18 @@ export function SuppressionsPage() {
             Emails que no recibirán envíos: unsubscribes manuales, opt-out por link y bounces hard.
           </Typography>
         </Box>
+        <ExportReportButton
+          kind="suppressions"
+          label="Exportar unsubs"
+          variant="outlined"
+          size="medium"
+        />
+        <ExportReportButton
+          kind="bounces-complaints"
+          label="Exportar bounces/complaints"
+          variant="outlined"
+          size="medium"
+        />
         {tab === 'unsubscribes' && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={openEditor}>
             Agregar manual
