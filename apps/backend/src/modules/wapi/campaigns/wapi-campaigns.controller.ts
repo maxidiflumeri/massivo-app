@@ -79,6 +79,12 @@ export class WapiCampaignsController {
     return this.service.addContacts(id, dto);
   }
 
+  @Get(':id/contacts/data-keys')
+  @CheckPolicies((a: AppAbility) => a.can('read', 'Campaign'))
+  getContactDataKeys(@Param('id') id: string): Promise<string[]> {
+    return this.service.getContactDataKeys(id);
+  }
+
   @Post(':id/send')
   @HttpCode(HttpStatus.ACCEPTED)
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))

@@ -21,6 +21,32 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.F.1.c — Mapeo CSV → variables del template + fixes de envío con vars
+
+#### Added
+- **Backend — `WapiCampaign.config.bodyVars`**: el campo `config` de la campaña ahora acepta un objeto `{ bodyVars: string[] }` que mapea cada variable `{{N}}` del template a una columna del `WapiContact.data`. El `WapiWorkerService.buildTemplateComponents` ya leía ese formato; faltaba el camino de escritura (DTO + UI). `UpdateWapiCampaignDto` suma `config?: Record<string, unknown> | null`.
+- **Endpoint `GET /api/wapi/campaigns/:id/contacts/data-keys`**: devuelve la unión de claves de `WapiContact.data` para todos los contactos cargados en la campaña (toma una muestra de hasta 200, suficiente para CSVs uniformes). Permite que la UI sugiera columnas existentes sin pedir al usuario que re-pegue el CSV.
+- **Frontend — Sección "Variables del template"** en `WapiCampaignDetailPage`: aparece automáticamente cuando se selecciona un template con `{{1}}…{{N}}` en el body. Muestra el texto del body en cursiva como referencia y un dropdown por cada variable, alimentado por las columnas detectadas (CSV recién pegado + `data-keys` del backend). Si todavía no hay columnas conocidas, cae a un TextField de texto libre. Soporta el mapping persistido al re-abrir la campaña.
+- **`WapiTemplateDetailFull`** (frontend types): tipo público para consumir `GET /api/wapi/templates/:id` y extraer el body text del JSON `components` (ya devuelto por el endpoint).
+
+#### Changed
+- **Validación de envío** en `WapiCampaignDetailPage`: `canSend` ahora exige que las variables del template estén mapeadas (en `campaign.config.bodyVars`) y guardadas. Mensaje de helper actualizado.
+- **Parser CSV** (`parseContactsCsv`): las columnas `name` y `nombre` ya no se "consumen" exclusivamente al escalar `contact.name` — ahora se duplican también en `contact.data` para que el worker las pueda referenciar como variables del template. Antes, mapear `{{1}}` → `nombre` siempre fallaba con "columna no existe" porque el parser hoisteaba la columna fuera de `data`.
+
+#### Fixed
+- **Meta error #132000 (parameter count mismatch)**: causado porque la UI no permitía mapear vars y el worker mandaba `template: { name, language }` sin `components.parameters` cuando el template tenía `{{N}}`. Resuelto end-to-end con la sección de mapping + persistencia en `campaign.config.bodyVars`.
+- **Meta error #131008 (required parameter is missing)**: el worker mandaba `text: ''` cuando la columna mapeada estaba ausente en un contacto. Ahora `buildTemplateComponents` lanza un error descriptivo (`Variable {{N}} (columna "X") está vacía o no existe en este contacto`) que se persiste como `report.error` y queda visible en la sección de envíos. Además se agregó un fallback: si la spec es `name`/`nombre` y no está en `data`, se usa el escalar `contact.name` (rescata contactos cargados antes del fix del parser).
+
+### 4.F.2.c — Renderizado de markdown WhatsApp en preview de templates
+
+#### Added
+- **Helper `renderWhatsAppMarkdown`** (`apps/frontend/src/features/wapi/templates/whatsappMarkdown.tsx`): subset de markdown soportado por WhatsApp — `*negrita*`, `_cursiva_`, `~tachado~`, `` `monoespaciado` ``, ` ```bloque código``` ` (multilínea). Tokenizer en dos pasadas: primero monoespaciado/bloque (no nestable), luego negrita/cursiva/tachado (anidable, `findEarliestInline` elige el delimitador más a la izquierda).
+- Aplicado en la preview del diálogo de la lista (`WapiTemplatesListPage`) y en la live preview del editor (`WapiTemplateEditorPage`). Header, body y footer todos pasan por el helper.
+- Los emojis funcionan vía teclado del SO sin cambios adicionales (Win + `.` en Windows, ⌃⌘Espacio en Mac).
+
+#### Fixed
+- **Preview de templates en dark mode**: las burbujas de chat se renderizaban con colores de light mode (fondo crema `#e5ddd5`, burbuja blanca) y eran ilegibles. Ahora las preview detectan `theme.palette.mode` y aplican los colores oficiales de WhatsApp dark (`#0b141a` fondo, `#1f2c34` burbuja, `#e9edef` texto, `#53bdeb` botones, `rgba(255,255,255,0.12)` borders). Aplicado en list page y editor.
+
 ### 4.F.2.b — Frontend: editor de templates Massivo → Meta con preview en vivo
 - **`WapiTemplateEditorPage`** (`/dashboard/wapi/templates/new`): form completo + live preview side-by-side. Selector de número origen (config), name (validado contra `^[a-z0-9_]{1,512}$`), idioma, categoría (Marketing/Utility/Authentication). Sección Header con tipo `NONE/TEXT/IMAGE/VIDEO/DOCUMENT` — TEXT muestra textfield + samples auto-generados según `{{N}}` detectados; IMAGE/VIDEO/DOCUMENT pide `mediaHandle` (con helper indicando que la upload UI llega en 4.F.2.c). Cuerpo con detección automática de variables `{{1}}…{{N}}` y generación dinámica de inputs de sample por cada var. Footer toggleable. Gestor de buttons (hasta 3) con type-aware fields: QUICK_REPLY sólo texto, URL pide `url`, PHONE_NUMBER pide `phoneNumber` E.164.
 - **Live preview**: panel sticky en md+ replicando el bubble WhatsApp del list page (mismos estilos `bgcolor: '#e5ddd5'`, white message bubble) con substitución en vivo de variables — `{{N}}` se reemplaza por el sample correspondiente o queda como placeholder visual.

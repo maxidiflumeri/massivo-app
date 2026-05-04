@@ -68,6 +68,29 @@ export interface UpdateWapiCampaignPayload {
   templateId?: string | null;
   configId?: string | null;
   scheduledAt?: string | null;
+  config?: Record<string, unknown> | null;
+}
+
+export interface WapiCampaignConfig {
+  bodyVars?: string[];
+}
+
+export interface WapiTemplateComponent {
+  type: string;
+  format?: string;
+  text?: string;
+  buttons?: Array<Record<string, unknown>>;
+  example?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface WapiTemplateDetailFull {
+  id: string;
+  metaName: string;
+  language: string;
+  category: string | null;
+  status: string;
+  components: WapiTemplateComponent[] | null;
 }
 
 export interface WapiCampaignContactInput {

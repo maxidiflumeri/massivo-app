@@ -235,7 +235,11 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
         return { dailyLimitReached: true };
       }
 
-      const components = this.buildTemplateComponents(report.campaign.config, report.contact.data);
+      const components = this.buildTemplateComponents(
+        report.campaign.config,
+        report.contact.data,
+        report.contact.name,
+      );
       const sendInput: SendTemplateInput = {
         to: report.phone,
         templateName: template.metaName,
@@ -320,17 +324,28 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
   private buildTemplateComponents(
     campaignConfig: unknown,
     contactData: unknown,
+    contactName: string | null = null,
   ): TemplateComponent[] {
     const cfg = (campaignConfig ?? {}) as { bodyVars?: string[] };
     const vars = cfg.bodyVars;
     if (!Array.isArray(vars) || vars.length === 0) return [];
 
     const data = (contactData ?? {}) as Record<string, unknown>;
-    const parameters = vars.map((spec) => {
-      // Si la spec arranca con `{{` la tratamos como literal (renderable a futuro);
-      // por ahora trato `key` como key directa de contact.data.
-      const value = data[spec];
-      const text = value === undefined || value === null ? '' : String(value);
+    const parameters = vars.map((spec, idx) => {
+      let value = data[spec];
+      // Fallback: si la spec es "name"/"nombre" y data no la tiene, usar el
+      // escalar contact.name. Esto rescata contactos cargados antes del fix
+      // del parser que hoisteaba name/nombre fuera de data.
+      if ((value === undefined || value === null || value === '') && contactName) {
+        const k = spec.toLowerCase();
+        if (k === 'name' || k === 'nombre') value = contactName;
+      }
+      const text = value === undefined || value === null ? '' : String(value).trim();
+      if (!text) {
+        throw new Error(
+          `Variable {{${idx + 1}}} (columna "${spec}") está vacía o no existe en este contacto`,
+        );
+      }
       return { type: 'text' as const, text };
     });
     return [{ type: 'body', parameters }];

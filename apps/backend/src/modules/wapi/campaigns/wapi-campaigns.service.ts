@@ -92,6 +92,29 @@ export class WapiCampaignsService {
     await this.prisma.scoped.wapiCampaign.delete({ where: { id } });
   }
 
+  /**
+   * Devuelve la unión de keys de `WapiContact.data` para todos los contactos
+   * de la campaña. Útil para sugerir columnas en el mapeo de variables del
+   * template sin pedirle al usuario re-pegar el CSV. Toma una muestra acotada
+   * (los CSV típicos son uniformes, así que con los primeros N alcanza).
+   */
+  async getContactDataKeys(campaignId: string): Promise<string[]> {
+    await this.findOne(campaignId);
+    const rows = await this.prisma.scoped.wapiContact.findMany({
+      where: { campaignId } as never,
+      select: { data: true },
+      take: 200,
+    });
+    const keys = new Set<string>();
+    for (const r of rows) {
+      const d = r.data as Record<string, unknown> | null;
+      if (d && typeof d === 'object') {
+        for (const k of Object.keys(d)) keys.add(k);
+      }
+    }
+    return Array.from(keys).sort();
+  }
+
   async addContacts(
     id: string,
     dto: AddWapiCampaignContactsDto,

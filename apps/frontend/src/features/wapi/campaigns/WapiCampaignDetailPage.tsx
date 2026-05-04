@@ -25,11 +25,13 @@ import { useTeamSocket } from '../../../realtime/useTeamSocket';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useConfirm } from '../../../feedback/ConfirmProvider';
 import type {
+  WapiCampaignConfig,
   WapiCampaignContactInput,
   WapiCampaignDetail,
   WapiCampaignReport,
   WapiCampaignStatus,
   WapiConfigListItem,
+  WapiTemplateDetailFull,
   WapiTemplateListItem,
 } from './types';
 import { WapiCampaignSendsSection } from './WapiCampaignSendsSection';
@@ -104,9 +106,12 @@ function parseContactsCsv(text: string): {
     if (headers) {
       headers.forEach((h, i) => {
         const v = cols[i] ?? '';
-        if (h === 'phone' || h === 'telefono' || h === 'teléfono') phone = v;
-        else if (h === 'name' || h === 'nombre') name = v;
-        else if (v) data[h] = v;
+        if (h === 'phone' || h === 'telefono' || h === 'teléfono') {
+          phone = v;
+          return;
+        }
+        if (h === 'name' || h === 'nombre') name = v;
+        if (v) data[h] = v;
       });
     } else {
       phone = cols[0];
@@ -145,6 +150,9 @@ export function WapiCampaignDetailPage() {
   const [templateId, setTemplateId] = useState('');
   const [configId, setConfigId] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
+  const [bodyVars, setBodyVars] = useState<string[]>([]);
+  const [templateDetail, setTemplateDetail] = useState<WapiTemplateDetailFull | null>(null);
+  const [savedDataKeys, setSavedDataKeys] = useState<string[]>([]);
 
   const [contactsText, setContactsText] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -169,7 +177,15 @@ export function WapiCampaignDetailPage() {
       setTemplateId(c.templateId ?? '');
       setConfigId(c.configId ?? '');
       setScheduledAt(c.scheduledAt ? c.scheduledAt.slice(0, 16) : '');
+      const cfg = (c.config ?? {}) as WapiCampaignConfig;
+      setBodyVars(Array.isArray(cfg.bodyVars) ? cfg.bodyVars : []);
       setError(null);
+      try {
+        const keys = await api.get<string[]>(`/api/wapi/campaigns/${id}/contacts/data-keys`);
+        setSavedDataKeys(keys);
+      } catch {
+        setSavedDataKeys([]);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error cargando campaña');
     }
@@ -210,6 +226,62 @@ export function WapiCampaignDetailPage() {
 
   const parsed = useMemo(() => parseContactsCsv(contactsText), [contactsText]);
 
+  useEffect(() => {
+    if (!templateId) {
+      setTemplateDetail(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<WapiTemplateDetailFull>(`/api/wapi/templates/${templateId}`)
+      .then((d) => {
+        if (!cancelled) setTemplateDetail(d);
+      })
+      .catch(() => {
+        if (!cancelled) setTemplateDetail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId]);
+
+  const templateBodyText = useMemo(() => {
+    const comps = templateDetail?.components;
+    if (!Array.isArray(comps)) return '';
+    const body = comps.find((c) => (c.type ?? '').toUpperCase() === 'BODY');
+    return body?.text ?? '';
+  }, [templateDetail]);
+
+  const bodyVarsCount = useMemo(() => {
+    const matches = templateBodyText.match(/\{\{(\d+)\}\}/g) ?? [];
+    let max = 0;
+    for (const m of matches) {
+      const n = Number(m.replace(/[^0-9]/g, ''));
+      if (n > max) max = n;
+    }
+    return max;
+  }, [templateBodyText]);
+
+  useEffect(() => {
+    setBodyVars((prev) => {
+      if (prev.length === bodyVarsCount) return prev;
+      const next = [...prev];
+      while (next.length < bodyVarsCount) next.push('');
+      next.length = bodyVarsCount;
+      return next;
+    });
+  }, [bodyVarsCount]);
+
+  const csvColumnSuggestions = useMemo(() => {
+    const keys = new Set<string>();
+    for (const k of savedDataKeys) keys.add(k);
+    for (const c of parsed.contacts) {
+      if (c.data) for (const k of Object.keys(c.data)) keys.add(k);
+    }
+    return Array.from(keys).sort();
+  }, [parsed.contacts, savedDataKeys]);
+
   async function handleSave() {
     if (!campaign) return;
     setSaving(true);
@@ -218,6 +290,7 @@ export function WapiCampaignDetailPage() {
       payload.templateId = templateId || null;
       payload.configId = configId || null;
       payload.scheduledAt = scheduledAt ? new Date(scheduledAt).toISOString() : null;
+      payload.config = bodyVarsCount > 0 ? { bodyVars: bodyVars.slice(0, bodyVarsCount) } : null;
       await api.patch(`/api/wapi/campaigns/${campaign.id}`, payload);
       notify.success('Cambios guardados');
       await load();
@@ -241,6 +314,14 @@ export function WapiCampaignDetailPage() {
       );
       setContactsText('');
       await load();
+      try {
+        const keys = await api.get<string[]>(
+          `/api/wapi/campaigns/${campaign.id}/contacts/data-keys`,
+        );
+        setSavedDataKeys(keys);
+      } catch {
+        // silencioso
+      }
     } catch (e) {
       notify.error(e instanceof Error ? e.message : 'Error subiendo contactos');
     } finally {
@@ -340,8 +421,20 @@ export function WapiCampaignDetailPage() {
     return <Alert severity="error">{error ?? 'No se pudo cargar'}</Alert>;
   }
 
+  const savedBodyVars = (() => {
+    const cfg = (campaign.config ?? {}) as WapiCampaignConfig;
+    return Array.isArray(cfg.bodyVars) ? cfg.bodyVars : [];
+  })();
+  const varsSatisfied =
+    bodyVarsCount === 0 ||
+    (savedBodyVars.length === bodyVarsCount &&
+      savedBodyVars.every((v) => typeof v === 'string' && v.trim().length > 0));
   const canSend =
-    editable && campaign._count.contacts > 0 && !!campaign.templateId && !!campaign.configId;
+    editable &&
+    campaign._count.contacts > 0 &&
+    !!campaign.templateId &&
+    !!campaign.configId &&
+    varsSatisfied;
 
   return (
     <Stack spacing={3}>
@@ -472,6 +565,92 @@ export function WapiCampaignDetailPage() {
               ))}
             </Select>
           </FormControl>
+          {templateId && bodyVarsCount > 0 && (
+            <Box
+              sx={{
+                p: 2,
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1,
+                bgcolor: (t) =>
+                  t.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'grey.50',
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                Variables del template ({bodyVarsCount})
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                Asigná a cada <code>{'{{N}}'}</code> el nombre de la columna del CSV. Por ejemplo,
+                si tu CSV tiene la columna <code>firstName</code>, escribí <code>firstName</code>{' '}
+                para <code>{'{{1}}'}</code>.
+              </Typography>
+              {templateBodyText && (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    mb: 2,
+                    p: 1,
+                    bgcolor: 'background.default',
+                    borderRadius: 0.5,
+                    whiteSpace: 'pre-wrap',
+                    fontStyle: 'italic',
+                  }}
+                >
+                  {templateBodyText}
+                </Typography>
+              )}
+              <Stack spacing={1.5}>
+                {csvColumnSuggestions.length === 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    Pegá un CSV con header abajo para auto-detectar columnas, o escribí el nombre
+                    de la columna manualmente.
+                  </Typography>
+                )}
+                {Array.from({ length: bodyVarsCount }).map((_, i) =>
+                  csvColumnSuggestions.length > 0 ? (
+                    <FormControl key={i} fullWidth size="small" disabled={!editable}>
+                      <InputLabel>{`Columna para {{${i + 1}}}`}</InputLabel>
+                      <Select
+                        label={`Columna para {{${i + 1}}}`}
+                        value={bodyVars[i] ?? ''}
+                        onChange={(e) => {
+                          const next = [...bodyVars];
+                          next[i] = e.target.value;
+                          setBodyVars(next);
+                        }}
+                      >
+                        <MenuItem value="">
+                          <em>— elegir —</em>
+                        </MenuItem>
+                        {csvColumnSuggestions.map((col) => (
+                          <MenuItem key={col} value={col}>
+                            {col}
+                          </MenuItem>
+                        ))}
+                        {bodyVars[i] && !csvColumnSuggestions.includes(bodyVars[i]!) && (
+                          <MenuItem value={bodyVars[i]}>{bodyVars[i]}</MenuItem>
+                        )}
+                      </Select>
+                    </FormControl>
+                  ) : (
+                    <TextField
+                      key={i}
+                      size="small"
+                      label={`Columna para {{${i + 1}}}`}
+                      value={bodyVars[i] ?? ''}
+                      onChange={(e) => {
+                        const next = [...bodyVars];
+                        next[i] = e.target.value;
+                        setBodyVars(next);
+                      }}
+                      disabled={!editable}
+                      fullWidth
+                    />
+                  ),
+                )}
+              </Stack>
+            </Box>
+          )}
           <FormControl fullWidth disabled={!editable}>
             <InputLabel>Número origen</InputLabel>
             <Select
@@ -527,7 +706,8 @@ export function WapiCampaignDetailPage() {
           </Box>
           {!canSend && editable && (
             <Typography variant="caption" color="text.secondary">
-              Para enviar: template + número origen + al menos 1 contacto.
+              Para enviar: template + número origen + al menos 1 contacto
+              {bodyVarsCount > 0 ? ' + variables mapeadas y guardadas' : ''}.
             </Typography>
           )}
         </Stack>

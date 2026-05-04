@@ -54,6 +54,10 @@ export class UpdateWapiCampaignDto {
   @IsDate()
   @Type(() => Date)
   scheduledAt?: Date | null;
+
+  @IsOptional()
+  @IsObject()
+  config?: Record<string, unknown> | null;
 }
 
 export class WapiCampaignContactDto {
