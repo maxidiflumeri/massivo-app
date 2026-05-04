@@ -4,6 +4,7 @@ import { Worker, type Job } from 'bullmq';
 import type { RequestContext } from '@massivo/shared-types';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
 import {
@@ -58,6 +59,7 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly sender: WapiSenderService,
     private readonly events: EventsService,
+    private readonly encryption: EncryptionService,
   ) {}
 
   private notifyReportUpdate(teamId: string, campaignId: string): void {
@@ -239,8 +241,7 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
         const result = await this.sender.sendTemplate(
           {
             phoneNumberId: cfg.phoneNumberId,
-            // TODO 4.B: decriptar accessTokenEnc con KMS en lugar de leerlo en claro
-            accessToken: cfg.accessTokenEnc,
+            accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
           },
           sendInput,
         );

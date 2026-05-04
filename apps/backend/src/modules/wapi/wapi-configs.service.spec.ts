@@ -3,6 +3,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { WapiConfigsService } from './wapi-configs.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
+import { EncryptionService } from '../../common/security/encryption.service';
 import type { RequestContext } from '@massivo/shared-types';
 
 describe('WapiConfigsService', () => {
@@ -34,6 +35,14 @@ describe('WapiConfigsService', () => {
         {
           provide: PrismaService,
           useValue: { scoped: prismaMock },
+        },
+        {
+          provide: EncryptionService,
+          useValue: {
+            encrypt: jest.fn((v: string) => `enc(${v})`),
+            decrypt: jest.fn((v: string) => v.replace(/^enc\(|\)$/g, '')),
+            isEncrypted: jest.fn((v: string) => v.startsWith('enc(')),
+          },
         },
       ],
     }).compile();
@@ -80,7 +89,8 @@ describe('WapiConfigsService', () => {
     expect(prismaMock.wapiConfig.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         phoneNumberId: '123',
-        accessTokenEnc: 'abc',
+        accessTokenEnc: 'enc(abc)',
+        webhookVerifyTokenEnc: 'enc(def)',
       }),
     });
   });

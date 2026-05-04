@@ -26,6 +26,7 @@ describe('WapiWorkerService.process', () => {
   let prismaRoot: { wapiCampaign: { updateMany: jest.Mock } };
   let sender: { sendTemplate: jest.Mock };
   let events: { emitToTeamDebounced: jest.Mock; emitToTeam: jest.Mock };
+  let encryption: { encrypt: jest.Mock; decrypt: jest.Mock; isEncrypted: jest.Mock };
   let worker: WapiWorkerService;
 
   beforeEach(() => {
@@ -41,12 +42,18 @@ describe('WapiWorkerService.process', () => {
     };
     sender = { sendTemplate: jest.fn() };
     events = { emitToTeamDebounced: jest.fn(), emitToTeam: jest.fn() };
+    encryption = {
+      encrypt: jest.fn((v: string) => `enc(${v})`),
+      decrypt: jest.fn((v: string) => v.replace(/^enc\(|\)$/g, '')),
+      isEncrypted: jest.fn((v: string) => v.startsWith('enc(')),
+    };
     // Forzar jitter a 0 para no demorar tests
     worker = new WapiWorkerService(
       new ConfigService({ WAPI_DELAY_MIN_MS: '0', WAPI_DELAY_MAX_MS: '0' }),
       { scoped: prismaScoped, ...prismaRoot } as never,
       sender as never,
       events as never,
+      encryption as never,
     );
   });
 
@@ -86,7 +93,9 @@ describe('WapiWorkerService.process', () => {
   }
 
   it('happy path: sendTemplate OK → SENT + metaMessageId', async () => {
-    prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(reportFixture());
+    const fix = reportFixture();
+    fix.campaign.configRel.accessTokenEnc = 'enc(real-token)';
+    prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(fix);
     sender.sendTemplate.mockResolvedValueOnce({ metaMessageId: 'wamid.A', raw: {} });
 
     const out = await worker.process(
@@ -95,8 +104,9 @@ describe('WapiWorkerService.process', () => {
 
     expect(out).toEqual({ metaMessageId: 'wamid.A' });
     expect(sender.sendTemplate).toHaveBeenCalledTimes(1);
+    expect(encryption.decrypt).toHaveBeenCalledWith('enc(real-token)');
     const [cfgArg, inputArg] = sender.sendTemplate.mock.calls[0]!;
-    expect(cfgArg).toEqual({ phoneNumberId: 'ph1', accessToken: 'tok-plain' });
+    expect(cfgArg).toEqual({ phoneNumberId: 'ph1', accessToken: 'real-token' });
     expect(inputArg.to).toBe('5491100');
     expect(inputArg.templateName).toBe('welcome');
     expect(inputArg.language).toBe('es');
@@ -227,7 +237,7 @@ describe('WapiWorkerService.process', () => {
 
   it('campaign.config.bodyVars=["firstName"] → envía components con vars del contact', async () => {
     const fix = reportFixture();
-    fix.campaign.config = { bodyVars: ['firstName'] };
+    (fix.campaign as { config: unknown }).config = { bodyVars: ['firstName'] };
     prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(fix);
     sender.sendTemplate.mockResolvedValueOnce({ metaMessageId: 'wamid.X', raw: {} });
 

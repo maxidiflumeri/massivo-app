@@ -19,6 +19,7 @@ import { ContactsService } from '../../modules/contacts/contacts.service';
 import { TagsService } from '../../modules/contacts/tags.service';
 import { EmailSenderService } from '../../modules/email/sender/email-sender.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { EncryptionService } from '../security/encryption.service';
 import { TenantContext } from './tenant-context';
 import type { RequestContext } from '@massivo/shared-types';
 
@@ -128,6 +129,14 @@ describe('Aislamiento tenant-a-tenant', () => {
         {
           provide: EmailSenderService,
           useValue: { verifyAccount: jest.fn(), sendForAccount: jest.fn() },
+        },
+        {
+          provide: EncryptionService,
+          useValue: {
+            encrypt: jest.fn((v: string) => v),
+            decrypt: jest.fn((v: string) => v),
+            isEncrypted: jest.fn(() => false),
+          },
         },
       ],
     }).compile();

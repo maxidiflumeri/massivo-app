@@ -7,6 +7,7 @@ import {
 import type { Prisma } from '@massivo/prisma';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
+import { EncryptionService } from '../../common/security/encryption.service';
 import type { CreateWapiConfigDto, UpdateWapiConfigDto } from './wapi-configs.dto';
 
 export interface WapiConfigListItem {
@@ -40,7 +41,10 @@ function toListItem(row: any): WapiConfigListItem {
 export class WapiConfigsService {
   private readonly logger = new Logger(WapiConfigsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly encryption: EncryptionService,
+  ) {}
 
   private requireContext() {
     const ctx = TenantContext.current();
@@ -87,9 +91,9 @@ export class WapiConfigsService {
         name: dto.name,
         phoneNumberId: dto.phoneNumberId,
         businessAccountId: dto.businessAccountId,
-        accessTokenEnc: dto.accessToken, // TODO: Fase 4 - encriptar con KMS
-        webhookVerifyTokenEnc: dto.webhookVerifyToken, // TODO: Fase 4 - encriptar
-        appSecretEnc: dto.appSecret, // TODO: Fase 4 - encriptar
+        accessTokenEnc: this.encryption.encrypt(dto.accessToken),
+        webhookVerifyTokenEnc: this.encryption.encrypt(dto.webhookVerifyToken),
+        appSecretEnc: dto.appSecret ? this.encryption.encrypt(dto.appSecret) : dto.appSecret,
         welcomeMessage: dto.welcomeMessage,
         optOutConfirmMessage: dto.optOutConfirmMessage,
         dailyLimit: dto.dailyLimit,
@@ -118,9 +122,11 @@ export class WapiConfigsService {
       isActive: dto.isActive,
     };
 
-    if (dto.accessToken !== undefined) updateData.accessTokenEnc = dto.accessToken;
-    if (dto.webhookVerifyToken !== undefined) updateData.webhookVerifyTokenEnc = dto.webhookVerifyToken;
-    if (dto.appSecret !== undefined) updateData.appSecretEnc = dto.appSecret;
+    if (dto.accessToken !== undefined) updateData.accessTokenEnc = this.encryption.encrypt(dto.accessToken);
+    if (dto.webhookVerifyToken !== undefined) updateData.webhookVerifyTokenEnc = this.encryption.encrypt(dto.webhookVerifyToken);
+    if (dto.appSecret !== undefined) {
+      updateData.appSecretEnc = dto.appSecret === null ? null : this.encryption.encrypt(dto.appSecret);
+    }
 
     const row = await this.prisma.scoped.wapiConfig.update({
       where: { id },
