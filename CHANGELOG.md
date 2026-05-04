@@ -21,6 +21,24 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.A — Infra de envío WhatsApp Cloud API
+- **Backend — `WapiSenderService`** (`apps/backend/src/modules/wapi/sender/`): cliente HTTP a Graph API v20 `/messages` usando `fetch` nativo (Node 22 / undici bundled — sin deps nuevas). Métodos `sendText` / `sendTemplate` / `sendMedia` que devuelven `{ metaMessageId, raw }`. Errores Meta normalizados en `WapiSendException` con `{ code, subCode, message, isRateLimit, isAuth, retryable, raw }`. Conoce los códigos de rate limit (130429, 131048, 131056) y de auth (190, 102, 10, 200) para que el worker decida backoff vs FAILED definitivo. URL base override-able vía `WAPI_GRAPH_BASE_URL` (mocks/staging).
+- **Backend — `WapiQueueService`** (`apps/backend/src/modules/wapi/queue/`): wrapper sobre BullMQ Queue `wapi-send` con `jobId=reportId` para idempotencia. Mismo `attempts:3 + backoff exponencial` y TTLs que `email-send`. Acepta `delayMs` opcional al enquolar.
+- **Backend — `WapiWorkerService`**: BullMQ Worker que procesa los jobs. Por cada job:
+  - Reconstruye `TenantContext` desde el payload (orgId/teamId, role sintético `OWNER`/`ADMIN`).
+  - Carga `WapiReport` + `WapiContact` + `WapiCampaign(template, configRel)` via `prisma.scoped` — falla naturalmente si el job es de otro tenant.
+  - Control actions de campaña (paridad con email 3.C.5): `PAUSED` → `job.moveToDelayed(now + 30s)` y exit; `COMPLETED|FAILED` con report PENDING → marca FAILED con `error='campaign-closed'`.
+  - **Rate limiting per-config**: cuenta `WapiReport.SENT` con la misma `configId` en las últimas 24h (filtro `campaign.configId`); si alcanzó `WapiConfig.dailyLimit` (default 200), `moveToDelayed(now + 1h)` y exit.
+  - Llama `WapiSenderService.sendTemplate` con `templateName` / `language` del `WapiTemplate` y opcionalmente `components` mapeados desde `WapiContact.data` según `campaign.config.bodyVars` (array de keys).
+  - Marca `WapiReport.SENT` con `metaMessageId` + `sentAt`. Emite `wapi.report.updated` (debounced) + `wapi.report.log` (cada transición). Llama `maybeCompleteCampaign` para transicionar `PROCESSING` → `COMPLETED` cuando no quedan PENDING.
+  - **Jitter post-envío**: tras un SENT exitoso, sleep `random(WAPI_DELAY_MIN_MS, WAPI_DELAY_MAX_MS)` (defaults 30s/60s). Con `concurrency=1` (default) esto da rate limiting efectivo per-worker.
+  - **Backoff exponencial Meta rate-limit**: si el sender tira `WapiSendException` con `isRateLimit=true`, NO marca FAILED — `moveToDelayed(now + min(60s × 2^attempt, 1h))` para no perder el report.
+  - Otros errores (auth, 5xx no-retryable, errores no-Meta) → marca FAILED + rethrow para que BullMQ aplique sus retries del `defaultJobOptions`.
+- **Endpoint placeholder** `POST /api/wapi/campaigns/:id/send` (`WapiCampaignsController` con `@CheckPolicies('send', 'Campaign')`): valida estado de la campaña (DRAFT/SCHEDULED/PAUSED), templateId/configId/contacts, marca `PROCESSING`, crea un `WapiReport` por contacto en `$transaction`, y enquola un job por cada uno. CRUD completo (create/update/addContacts/control actions/getReport) viene en 4.E.
+- **Pendientes intencionales en 4.A**: encriptación KMS de `accessTokenEnc` (4.B) — el worker lee el token en claro con `// TODO 4.B`. Webhook Meta + statuses (delivered/read/failed) (4.C). Opt-out check pre-envío (4.H — requiere agregar `SUPPRESSED` al enum `WapiReportStatus`). Inbox conversacional (4.F).
+- **Tests**: `wapi-sender.service.spec.ts` (8 tests: sendText/Template happy path, code 131056 → isRateLimit, code 190 → isAuth, 200 sin messages[].id, 5xx genérico, 429 sin error.code, override de `WAPI_GRAPH_BASE_URL`). `wapi-worker.service.spec.ts` (9 tests: happy path, report not found cross-tenant, PAUSED, COMPLETED+PENDING → FAILED, dailyLimit alcanzado, rate-limit code 131056 → moveToDelayed sin FAILED, error auth → FAILED + rethrow, components con bodyVars del config, transición a COMPLETED). Backend full: **255/255 ✅**.
+- **Fix colateral**: `email/reports/report-generator.service.spec.ts` — tipo del buffer pasado a `wb.xlsx.load()` no asignaba bajo strict (Buffer<ArrayBufferLike> vs Buffer requerido por exceljs); cast `as never` puntual. Era TS strict-only — los tests pasaban porque ts-jest es más permisivo.
+
 ### 3.D — Reportes consolidados con export (CSV/XLSX)
 - **Backend**: nuevo `ReportGeneratorService` (`apps/backend/src/modules/email/reports/`) con 4 generators sync que devuelven `{ filename, mime, buffer }`:
   - `campaign-summary` — una fila por campaña con counts agregados (PENDING/SENT/FAILED/BOUNCED/COMPLAINED/SUPPRESSED/CANCELED) + uniqueOpens/uniqueClicks + openRate/clickRate.

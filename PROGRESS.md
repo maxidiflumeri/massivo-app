@@ -31,11 +31,11 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 3 — Canal Email (sub-A ✅, sub-B ✅, sub-C.1/.2/.3.a/.3.b/.3.c/.3.d/.3.e ✅, sub-C.4 ✅ [.a/.a'/.b/.c/.d/.e/.f], sub-C.5 ✅, **sub-D ✅**; resta **3.E** inbound — postergado al final de Fase 3)
-- **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅
+- **Fase actual:** Fase 4 — Canal WhatsApp Cloud API (**sub-A ✅**; siguen 4.B encriptación KMS, 4.C webhook Meta, 4.D sync templates, 4.E CRUD campañas + control actions, 4.F inbox, 4.G snippets, 4.H opt-out, 4.I welcome, 4.J live dashboard, 4.K botones)
+- **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅ + **Fase 3 ✅** (3.E inbound postergado, decisión del dueño)
 - **Última actualización:** 2026-05-04
 - **Branch principal:** `main`
-- **Último commit (próximo a este cierre):** Sesión 16 cierre (3.D reports consolidados con export CSV/XLSX). Para retomar: arrancar **Fase 4 — Canal WhatsApp Cloud API** o, alternativamente, **3.E inbound** (parsing IMAP/forwarders) si el dueño lo prioriza antes que WAPI. Ver detalle más abajo.
+- **Último commit (próximo a este cierre):** Sesión 17 cierre (4.A infra de envío WAPI: sender Graph API + queue + worker + endpoint placeholder). Para retomar: arrancar **4.B — Encriptación KMS de tokens** (`accessTokenEnc` / `webhookVerifyTokenEnc` / `appSecretEnc` quedaron en claro hasta ahora) o **4.C — Webhook Meta** (verify token + statuses delivered/read/failed). Ver detalle más abajo.
 - **Repo remoto:** `https://github.com/maxidiflumeri/massivo-app`
 
 ---
@@ -276,6 +276,40 @@ Criterios de aceptación 3.A:
 
 ---
 
+## Plan de Fase 4 — Canal WhatsApp Cloud API (en curso)
+
+> Schema y CRUD mínimo (`WapiConfig`, `WapiTemplate`) ya hechos en 2.B. Faltan envío real, inbox conversacional, webhooks de Meta, sync de templates aprobados, encriptación KMS, UI frontend, opt-out, welcome message, live dashboard.
+
+**4.A — Infra de envío WAPI** (✅ completada — Sesión 17 / 2026-05-04):
+- [x] **WapiSenderService** ✅: cliente HTTP a Graph API v20+ `/messages` con `fetch` nativo (Node 22 / undici, sin deps). Métodos `sendText` / `sendTemplate` / `sendMedia`. `WapiSendException` con `{code, subCode, message, isRateLimit, isAuth, retryable, raw}` — el worker decide backoff vs FAILED. Códigos rate limit conocidos: 130429, 131048, 131056. Códigos auth: 190, 102, 10, 200. Override de URL base vía `WAPI_GRAPH_BASE_URL`.
+- [x] **WapiQueueService** ✅: BullMQ Queue `wapi-send` con `jobId=reportId` (idempotente). Mismo patrón que `email-send` (`attempts:3`, backoff exponencial, TTLs). Acepta `delayMs` opcional al enquolar.
+- [x] **WapiWorkerService** ✅: BullMQ Worker que reconstruye `TenantContext` desde el payload, carga report+contact+campaign(template, configRel) via `prisma.scoped`, chequea control actions (PAUSED → moveToDelayed; COMPLETED+PENDING → FAILED 'campaign-closed'), aplica daily limit per-config (cuenta SENT últimas 24h y compara con `WapiConfig.dailyLimit`), envía vía `WapiSenderService.sendTemplate`, marca SENT con `metaMessageId`/`sentAt`, emite `wapi.report.updated` (debounced) + `wapi.report.log`, llama `maybeCompleteCampaign`. **Jitter post-envío**: sleep `random(WAPI_DELAY_MIN_MS, WAPI_DELAY_MAX_MS)` (defaults 30s/60s) — con `concurrency=1` da rate limiting per-worker. **Backoff exponencial Meta rate-limit**: si `WapiSendException.isRateLimit`, NO marca FAILED — `moveToDelayed(now + min(60s × 2^attempt, 1h))`. Otros errores → FAILED + rethrow para retries de BullMQ.
+- [x] **Endpoint placeholder** `POST /api/wapi/campaigns/:id/send` ✅: valida estado/templateId/configId/contacts, marca PROCESSING, crea WapiReport por contacto en transaction, enquola un job por cada uno. CRUD completo de campañas y control actions vienen en 4.E.
+- [x] **Tests** ✅: `wapi-sender.service.spec.ts` 8/8 (sendText/Template happy + 6 errores) + `wapi-worker.service.spec.ts` 9/9 (happy, cross-tenant, PAUSED, COMPLETED, dailyLimit, rate-limit, auth, components con bodyVars, transición a COMPLETED). Backend full **255/255 ✅**.
+
+**Pendientes de Fase 4 (próximos pasos):**
+- [ ] **4.B — Encriptación de tokens** (KMS-backed): `WapiConfig.accessTokenEnc` / `webhookVerifyTokenEnc` / `appSecretEnc` quedaron en claro hasta ahora. Helper `EncryptionService.encrypt/decrypt` con cache. Migración de los placeholders.
+- [ ] **4.C — Webhook Meta**: `POST /webhooks/wapi/:configId` (público, `@SkipTenantScope`). `GET` con verify_token único por config. Validación firma con `appSecret`. Procesa `messages` (entrante texto/imagen/audio/doc/sticker/contacto/reacción/botón), `statuses` (sent/delivered/read/failed), `template_status_update`, `account_alerts`. Resuelve tenant por `configId` → `WapiConfig` → `(orgId, teamId)`.
+- [ ] **4.D — Sync de templates Meta**: `POST /api/wapi/templates/sync` por config — pull de templates aprobados desde Graph API, persiste `metaName`, `language`, `category`, `status`, `components`. Cron opcional semanal (Fase 8).
+- [ ] **4.E — Campañas WAPI** (CRUD completo, addContacts CSV, send con dailyLimit global, control actions pause/resume/forceClose mismo patrón que 3.C.5, getReport, realtime).
+- [ ] **4.F — Inbox conversacional** (modelos, endpoints take/assign/resolve/mark-read, send dentro de ventana 24h, media S3, realtime, frontend chat layout).
+- [ ] **4.G — Respuestas rápidas** (snippets `WapiQuickReply`, autocomplete `/atajo`).
+- [ ] **4.H — Bajas / opt-out** (auto desde keywords entrantes "BAJA"/"STOP", worker check pre-envío, UI). Requiere agregar `SUPPRESSED` al enum `WapiReportStatus`.
+- [ ] **4.I — Welcome message automático** (`WapiConfig.welcomeMessage` + `delaySec` cuando llega mensaje de número sin conversación previa).
+- [ ] **4.J — Live dashboard WAPI** (`/dashboard/wapi/live` con campañas en curso, throughput per-config, alertas daily-limit 80%/100%).
+- [ ] **4.K — Botones de templates** (`interactive.button_reply` → INBOX/BAJA/IGNORAR según payload).
+
+### Criterios de aceptación Fase 4
+
+- Dos tenants con cuentas Meta distintas envían campañas en paralelo sin interferencia. Webhooks llegan al tenant correcto (resolución por `configId`).
+- Inbox: asesor ve solo conversaciones del team, admin ve cola sin asignar, asignar+resolver funciona, media sube/baja con URL firmada.
+- Opt-out automático por palabra clave entrante funciona; el worker no envía a phones suprimidos.
+- Daily limit per-config no se excede aún bajo carga (test con campaña 1000 contactos + limit=50 → 50 envíos día 0, resto en próximos días).
+
+> **Notas de portado AMSA:** ver `C:\Users\MDIFLUME\Documents\Proyectos\Propios\amsa-sender\backend\src\modules\wapi\*` (services, worker, webhook, queue, inbox) y `frontend/src/features/wapi/*` (chat layout). Adaptar a multi-tenant: el `WapiConfig` reemplaza el global de AMSA — todo el contexto viene del job payload o resolución por `configId`.
+
+---
+
 ## Plan de Fase 2 (completada ✅ — referencia)
 
 **Sub-fase 2.A — Email** (completada ✅)
@@ -467,6 +501,34 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 ---
 
 ## Bitácora de sesiones
+
+### 2026-05-04 — Sesión 17 (Claude Opus 4.7) — Sub-fase 4.A (infra de envío WAPI)
+- **Decisión de scope**: arrancar Fase 4 (WhatsApp Cloud API) en lugar de cerrar 3.E inbound de mails — el dueño priorizó WAPI. 3.E queda postergado al final de Fase 3 (después de 4 entera).
+- **Cleanup previo**: las 7 sub-tareas legacy bajo "Sub-tareas legacy del plan original (referencia, ya cubiertas en 3.A/3.B/3.C)" de la sección Fase 3 estaban con `[ ]` aunque el header decía que ya estaban cubiertas. Marcadas como `[x]` con referencia a la sub-fase exacta donde se implementó cada una. Commit `abbe371`.
+- **WapiSenderService** (`apps/backend/src/modules/wapi/sender/wapi-sender.service.ts`): cliente HTTP a Graph API v20+ `/messages` usando `fetch` nativo (Node 22 / undici bundled — sin agregar `@nestjs/axios` ni `undici` como dep). Métodos `sendText` / `sendTemplate` / `sendMedia`. Errores Meta normalizados en `WapiSendException` con flags `isRateLimit` / `isAuth` / `retryable` para que el worker pueda decidir backoff vs FAILED definitivo. Códigos rate limit conocidos del API: 130429, 131048, 131056. Códigos auth: 190, 102, 10, 200. Override de URL base vía env `WAPI_GRAPH_BASE_URL` (mocks/staging).
+- **WapiQueueService** (`apps/backend/src/modules/wapi/queue/wapi-queue.service.ts`): wrapper sobre BullMQ Queue `wapi-send` con `jobId=reportId` para idempotencia. Mismas opciones default que `email-send` (`attempts:3`, backoff exponencial 5s, removeOnComplete age 1h).
+- **WapiWorkerService** (`apps/backend/src/modules/wapi/queue/wapi-worker.service.ts`): patrón calcado del EmailWorker. Por cada job:
+  - Reconstruye TenantContext (orgId/teamId del payload, role sintético OWNER/ADMIN porque el envío es background).
+  - Carga `WapiReport` + `WapiContact` + `WapiCampaign(template, configRel)` via `prisma.scoped` — falla naturalmente si el job vino de otro tenant.
+  - **Control actions** (paridad con email 3.C.5): PAUSED → `job.moveToDelayed(now + 30s)` y exit; COMPLETED|FAILED + report PENDING → marca FAILED con `error='campaign-closed'`. Nota: `WapiReportStatus` no tiene `CANCELED` (solo email lo tiene), así que reusamos `FAILED` con error string distintivo.
+  - **Daily limit per-config**: `prisma.scoped.wapiReport.count` con filtro `status='SENT' + sentAt >= 24h ago + campaign.configId = X`. Si `>= cfg.dailyLimit` → `moveToDelayed(now + 1h)`.
+  - Llama `WapiSenderService.sendTemplate` con `templateName/language` del template + `components` mapeados desde `WapiContact.data` según `campaign.config.bodyVars` (array de keys, opcional).
+  - Marca `WapiReport.SENT` + `metaMessageId` + `sentAt`. Emite `wapi.report.updated` (debounced) + `wapi.report.log` (cada transición). Llama `maybeCompleteCampaign` (PROCESSING → COMPLETED si no quedan PENDING).
+  - **Jitter post-envío**: sleep `random(WAPI_DELAY_MIN_MS, WAPI_DELAY_MAX_MS)` defaults 30s/60s. Con `concurrency=1` (default) esto da rate limiting per-worker. Multi-worker sync (Redis `nextAvailableAt` per-config) queda pendiente para cuando se necesite escalar.
+  - **Backoff exponencial Meta rate-limit**: si `WapiSendException.isRateLimit=true`, NO marca FAILED — `moveToDelayed(now + min(60s × 2^attemptsMade, 1h))`. Otros errores → marca FAILED + rethrow para retries del `defaultJobOptions` de BullMQ.
+- **Endpoint placeholder** `POST /api/wapi/campaigns/:id/send` (`WapiCampaignsController` con `@CheckPolicies('send', 'Campaign')`): SENDABLE_STATUSES = {DRAFT, SCHEDULED, PAUSED}, valida `templateId`/`configId`/`contacts.length > 0`, marca campaign PROCESSING, crea `WapiReport` por contacto en `$transaction` (copia `phone` del contacto al report para sobrevivir si después se elimina el contact), enquola un job por cada uno. CRUD completo (create/update/addContacts/control actions/getReport) viene en 4.E.
+- **Decisiones intencionales para 4.A**:
+  - **Token en claro**: el worker lee `cfg.accessTokenEnc` directamente sin decriptar. TODO marcado para 4.B (encriptación KMS). Por ahora los tokens se persisten igual de plano que en 2.B (era placeholder explícito).
+  - **Sin opt-out check pre-envío**: requiere agregar `SUPPRESSED` al enum `WapiReportStatus` (migración Prisma). Diferido a 4.H que es la sub-fase específica de opt-out.
+  - **Sin webhook Meta**: los `statuses` (delivered/read/failed) vendrán cuando se implemente 4.C.
+  - **Single-worker rate limiting**: jitter sleep + `concurrency=1` es suficiente para MVP. Si se necesita multi-worker en una misma config, se agrega sync vía Redis (no en 4.A).
+- **Tests** (17 nuevos):
+  - `wapi-sender.service.spec.ts` 8/8: sendText OK + sendTemplate OK con components, code 131056 → isRateLimit, code 190 → isAuth, 200 sin `messages[0].id` → tira, 5xx genérico → retryable=true isRateLimit=false, 429 sin error.code → isRateLimit=true (HTTP-level), override `WAPI_GRAPH_BASE_URL`. Mock de `global.fetch` (no abre red).
+  - `wapi-worker.service.spec.ts` 9/9: happy path, report not found cross-tenant, PAUSED → moveToDelayed sin tocar report, COMPLETED → FAILED, dailyLimit alcanzado → moveToDelayed sin sender, rate-limit code 131056 → moveToDelayed sin FAILED (PENDING preserved para reintento), error auth 190 → FAILED + rethrow, components con `bodyVars=['firstName']` envía vars del contact, último report SENT → transiciona campaign PROCESSING → COMPLETED.
+  - Backend full: **255/255 ✅** (228 anteriores + 10 de 3.D + 17 nuevos de 4.A, 0 regresiones).
+- **Fix colateral preexistente**: `email/reports/report-generator.service.spec.ts` no compilaba bajo `tsc --noEmit` por tipo del Buffer pasado a `wb.xlsx.load()` (`Buffer<ArrayBufferLike>` vs el `Buffer` que pide exceljs). Cast `as never` puntual. Era TS strict-only — los tests pasaban porque ts-jest es más permisivo. Detectado al correr typecheck antes de los specs nuevos de 4.A.
+- **Verificación de scope**: typecheck backend ✅ (0 errores), tests 255/255 ✅. Frontend no tocado (no hay UI WAPI todavía — viene en 4.E adelante).
+- **Próximo paso**: **4.B — Encriptación KMS de tokens** (`accessTokenEnc` / `webhookVerifyTokenEnc` / `appSecretEnc` quedaron en claro). Decisión a tomar: AWS KMS vs `crypto.subtle` con clave maestra en env vs Vault. Alternativa: arrancar **4.C — Webhook Meta** primero para tener inbound completo (mensajes entrantes + statuses delivered/read/failed) antes de invertir en KMS — depende de qué se pueda probar end-to-end primero.
 
 ### 2026-05-04 — Sesión 16 (Claude Opus 4.7) — Sub-fase 3.D (reportes consolidados con export CSV/XLSX)
 - **Backend**: nuevo módulo `apps/backend/src/modules/email/reports/` con `ReportGeneratorService` (4 generators: `campaign-summary` / `campaign-reports` / `bounces-complaints` / `suppressions`), `GenerateReportDto` (class-validator: `@IsIn(REPORT_KINDS)`, `@IsIn(REPORT_FORMATS)`, `campaignId?` / `status?` / `fromDate?` / `toDate?` con `@Type(() => Date)`) y `ReportsController` con un único endpoint `POST /api/email/reports/generate`.
