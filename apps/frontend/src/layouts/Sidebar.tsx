@@ -77,8 +77,21 @@ const NAV_GROUPS: NavGroupSpec[] = [
   {
     label: 'WhatsApp',
     items: [
-      { label: 'Campañas', icon: <WhatsAppIcon fontSize="small" />, disabled: true },
-      { label: 'Templates', icon: <DescriptionIcon fontSize="small" />, disabled: true },
+      {
+        to: '/dashboard/wapi/campaigns',
+        label: 'Campañas',
+        icon: <WhatsAppIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/wapi/templates',
+        label: 'Templates',
+        icon: <DescriptionIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/wapi/configs',
+        label: 'Números',
+        icon: <DnsIcon fontSize="small" />,
+      },
     ],
   },
   {

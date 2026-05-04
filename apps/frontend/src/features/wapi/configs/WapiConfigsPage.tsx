@@ -1,0 +1,430 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  InputAdornment,
+  Paper,
+  Skeleton,
+  Stack,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import DnsIcon from '@mui/icons-material/Dns';
+import { useApi } from '../../../api/client';
+import { useNotify } from '../../../feedback/NotifyProvider';
+import { useConfirm } from '../../../feedback/ConfirmProvider';
+import type {
+  CreateWapiConfigPayload,
+  UpdateWapiConfigPayload,
+  WapiConfigDetail,
+  WapiConfigListItem,
+} from './types';
+
+interface FormState {
+  name: string;
+  phoneNumberId: string;
+  businessAccountId: string;
+  accessToken: string;
+  webhookVerifyToken: string;
+  appSecret: string;
+  welcomeMessage: string;
+  optOutConfirmMessage: string;
+  dailyLimit: string;
+}
+
+const EMPTY_FORM: FormState = {
+  name: '',
+  phoneNumberId: '',
+  businessAccountId: '',
+  accessToken: '',
+  webhookVerifyToken: '',
+  appSecret: '',
+  welcomeMessage: '',
+  optOutConfirmMessage: '',
+  dailyLimit: '',
+};
+
+export function WapiConfigsPage() {
+  const api = useApi();
+  const notify = useNotify();
+  const confirm = useConfirm();
+  const [items, setItems] = useState<WapiConfigListItem[] | null>(null);
+  const [editing, setEditing] = useState<WapiConfigDetail | null>(null);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [showSecrets, setShowSecrets] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isEdit = editing !== null;
+
+  async function load() {
+    try {
+      const data = await api.get<WapiConfigListItem[]>('/api/wapi/configs');
+      setItems(data);
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error cargando configs');
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleOpenCreate() {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setError(null);
+    setShowSecrets(false);
+    setOpenDialog(true);
+  }
+
+  async function handleOpenEdit(c: WapiConfigListItem) {
+    try {
+      const detail = await api.get<WapiConfigDetail>(`/api/wapi/configs/${c.id}`);
+      setEditing(detail);
+      setForm({
+        name: detail.name ?? '',
+        phoneNumberId: detail.phoneNumberId,
+        businessAccountId: detail.businessAccountId,
+        accessToken: '',
+        webhookVerifyToken: '',
+        appSecret: '',
+        welcomeMessage: detail.welcomeMessage ?? '',
+        optOutConfirmMessage: detail.optOutConfirmMessage ?? '',
+        dailyLimit: String(detail.dailyLimit),
+      });
+      setError(null);
+      setShowSecrets(false);
+      setOpenDialog(true);
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error cargando config');
+    }
+  }
+
+  function handleClose() {
+    if (saving) return;
+    setOpenDialog(false);
+  }
+
+  const canSave = useMemo(() => {
+    if (!form.phoneNumberId.trim() || !form.businessAccountId.trim()) return false;
+    if (isEdit) return true; // tokens opcionales en edit
+    return form.accessToken.trim().length > 0 && form.webhookVerifyToken.trim().length > 0;
+  }, [form, isEdit]);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      if (isEdit && editing) {
+        const payload: UpdateWapiConfigPayload = {
+          name: form.name.trim() || undefined,
+          phoneNumberId: form.phoneNumberId.trim(),
+          businessAccountId: form.businessAccountId.trim(),
+          welcomeMessage: form.welcomeMessage.trim() || null,
+          optOutConfirmMessage: form.optOutConfirmMessage.trim() || null,
+          dailyLimit: form.dailyLimit ? Number(form.dailyLimit) : undefined,
+        };
+        if (form.accessToken.trim()) payload.accessToken = form.accessToken.trim();
+        if (form.webhookVerifyToken.trim())
+          payload.webhookVerifyToken = form.webhookVerifyToken.trim();
+        if (form.appSecret.trim()) payload.appSecret = form.appSecret.trim();
+        await api.patch(`/api/wapi/configs/${editing.id}`, payload);
+        notify.success('Config actualizada');
+      } else {
+        const payload: CreateWapiConfigPayload = {
+          name: form.name.trim() || undefined,
+          phoneNumberId: form.phoneNumberId.trim(),
+          businessAccountId: form.businessAccountId.trim(),
+          accessToken: form.accessToken.trim(),
+          webhookVerifyToken: form.webhookVerifyToken.trim(),
+          appSecret: form.appSecret.trim() || undefined,
+          welcomeMessage: form.welcomeMessage.trim() || undefined,
+          optOutConfirmMessage: form.optOutConfirmMessage.trim() || undefined,
+          dailyLimit: form.dailyLimit ? Number(form.dailyLimit) : undefined,
+        };
+        await api.post('/api/wapi/configs', payload);
+        notify.success('Config creada');
+      }
+      setOpenDialog(false);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error guardando');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleToggleActive(c: WapiConfigListItem, isActive: boolean) {
+    try {
+      await api.patch(`/api/wapi/configs/${c.id}`, { isActive });
+      notify.success(isActive ? 'Config activada' : 'Config desactivada');
+      await load();
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error');
+    }
+  }
+
+  async function handleDelete(c: WapiConfigListItem) {
+    const ok = await confirm({
+      title: 'Borrar config',
+      message: `¿Seguro que querés borrar "${c.name ?? c.phoneNumberId}"? Si hay campañas asociadas, fallará.`,
+      confirmText: 'Borrar',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await api.delete(`/api/wapi/configs/${c.id}`);
+      notify.success('Config eliminada');
+      await load();
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error borrando');
+    }
+  }
+
+  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  const secretAdornment = (
+    <InputAdornment position="end">
+      <IconButton size="small" onClick={() => setShowSecrets((v) => !v)} edge="end">
+        {showSecrets ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+      </IconButton>
+    </InputAdornment>
+  );
+
+  return (
+    <Stack spacing={3}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <DnsIcon color="success" />
+          <Typography variant="h4">Configs WhatsApp</Typography>
+        </Stack>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
+          Nueva config
+        </Button>
+      </Box>
+
+      <Typography variant="body2" color="text.secondary">
+        Cada config representa un número de WhatsApp Business conectado a Meta Cloud API. Necesitás
+        al menos uno activo para enviar campañas. Los tokens (accessToken, webhookVerifyToken,
+        appSecret) se guardan encriptados.
+      </Typography>
+
+      {items === null && (
+        <Paper sx={{ p: 2 }}>
+          <Stack spacing={1}>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} variant="rectangular" height={48} />
+            ))}
+          </Stack>
+        </Paper>
+      )}
+
+      {items !== null && items.length === 0 && (
+        <Paper sx={{ p: 6, textAlign: 'center' }}>
+          <DnsIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+          <Typography color="text.secondary">
+            Todavía no hay configs. Creá la primera para conectar un número de WhatsApp.
+          </Typography>
+        </Paper>
+      )}
+
+      {items !== null && items.length > 0 && (
+        <TableContainer component={Paper}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Nombre</TableCell>
+                <TableCell>Phone Number ID</TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>WABA ID</TableCell>
+                <TableCell>Activa</TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Creada</TableCell>
+                <TableCell align="right">Acciones</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {items.map((c) => (
+                <TableRow key={c.id} hover>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {c.name ?? <em style={{ opacity: 0.6 }}>(sin nombre)</em>}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={c.phoneNumberId}
+                      variant="outlined"
+                      sx={{ fontFamily: 'monospace' }}
+                    />
+                  </TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                      {c.businessAccountId}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Switch
+                      size="small"
+                      checked={c.isActive}
+                      onChange={(e) => handleToggleActive(c, e.target.checked)}
+                    />
+                  </TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                    {new Date(c.createdAt).toLocaleString()}
+                  </TableCell>
+                  <TableCell align="right">
+                    <Tooltip title="Editar">
+                      <IconButton size="small" onClick={() => handleOpenEdit(c)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Borrar">
+                      <IconButton size="small" color="error" onClick={() => handleDelete(c)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      <Dialog open={openDialog} onClose={handleClose} fullWidth maxWidth="md">
+        <DialogTitle>{isEdit ? 'Editar config' : 'Nueva config WhatsApp'}</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ mt: 0.5 }}>
+            {error && <Alert severity="error">{error}</Alert>}
+            <TextField
+              label="Nombre (opcional)"
+              placeholder="Ej: Atención al cliente"
+              fullWidth
+              value={form.name}
+              onChange={(e) => update('name', e.target.value)}
+              inputProps={{ maxLength: 80 }}
+            />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                label="Phone Number ID"
+                fullWidth
+                required
+                value={form.phoneNumberId}
+                onChange={(e) => update('phoneNumberId', e.target.value)}
+                helperText="Lo obtenés en Meta → WhatsApp → API Setup"
+                inputProps={{ maxLength: 100 }}
+              />
+              <TextField
+                label="Business Account ID (WABA)"
+                fullWidth
+                required
+                value={form.businessAccountId}
+                onChange={(e) => update('businessAccountId', e.target.value)}
+                helperText="Necesario para sincronizar templates"
+                inputProps={{ maxLength: 100 }}
+              />
+            </Stack>
+            <TextField
+              label={isEdit ? 'Access Token (dejar vacío para no cambiar)' : 'Access Token'}
+              fullWidth
+              required={!isEdit}
+              type={showSecrets ? 'text' : 'password'}
+              value={form.accessToken}
+              onChange={(e) => update('accessToken', e.target.value)}
+              placeholder={isEdit ? '••••••••' : ''}
+              InputProps={{ endAdornment: secretAdornment }}
+            />
+            <TextField
+              label={
+                isEdit
+                  ? 'Webhook Verify Token (dejar vacío para no cambiar)'
+                  : 'Webhook Verify Token'
+              }
+              fullWidth
+              required={!isEdit}
+              type={showSecrets ? 'text' : 'password'}
+              value={form.webhookVerifyToken}
+              onChange={(e) => update('webhookVerifyToken', e.target.value)}
+              placeholder={isEdit ? '••••••••' : ''}
+              helperText="Usado por Meta para verificar el webhook (lo elegís vos)"
+              inputProps={{ maxLength: 100 }}
+              InputProps={{ endAdornment: secretAdornment }}
+            />
+            <TextField
+              label={
+                isEdit ? 'App Secret (dejar vacío para no cambiar)' : 'App Secret (opcional)'
+              }
+              fullWidth
+              type={showSecrets ? 'text' : 'password'}
+              value={form.appSecret}
+              onChange={(e) => update('appSecret', e.target.value)}
+              placeholder={isEdit ? '••••••••' : ''}
+              helperText="Si lo seteás, se valida la firma X-Hub-Signature-256 de Meta"
+              InputProps={{ endAdornment: secretAdornment }}
+            />
+            <TextField
+              label="Daily limit"
+              type="number"
+              fullWidth
+              value={form.dailyLimit}
+              onChange={(e) => update('dailyLimit', e.target.value)}
+              helperText="Tope de envíos diarios por config (default 200). Al alcanzarlo, los jobs reintentan en 1h."
+              inputProps={{ min: 1 }}
+            />
+            <TextField
+              label="Welcome message (opcional)"
+              fullWidth
+              multiline
+              minRows={2}
+              value={form.welcomeMessage}
+              onChange={(e) => update('welcomeMessage', e.target.value)}
+              helperText="Pendiente — se aplicará en 4.I"
+            />
+            <TextField
+              label="Opt-out confirm message (opcional)"
+              fullWidth
+              multiline
+              minRows={2}
+              value={form.optOutConfirmMessage}
+              onChange={(e) => update('optOutConfirmMessage', e.target.value)}
+              helperText="Pendiente — se aplicará en 4.H"
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClose} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button variant="contained" onClick={handleSave} disabled={!canSave || saving}>
+            {isEdit ? 'Guardar' : 'Crear'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Stack>
+  );
+}

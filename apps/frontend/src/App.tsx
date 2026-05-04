@@ -12,6 +12,10 @@ import { CampaignDetailPage } from './features/email/campaigns/CampaignDetailPag
 import { SmtpAccountsPage } from './features/email/smtp-accounts/SmtpAccountsPage';
 import { SuppressionsPage } from './features/email/suppressions/SuppressionsPage';
 import { MetricsPage } from './features/email/metrics/MetricsPage';
+import { WapiCampaignsListPage } from './features/wapi/campaigns/WapiCampaignsListPage';
+import { WapiCampaignDetailPage } from './features/wapi/campaigns/WapiCampaignDetailPage';
+import { WapiConfigsPage } from './features/wapi/configs/WapiConfigsPage';
+import { WapiTemplatesListPage } from './features/wapi/templates/WapiTemplatesListPage';
 
 export function App() {
   return (
@@ -44,6 +48,10 @@ export function App() {
         <Route path="email/smtp-accounts" element={<SmtpAccountsPage />} />
         <Route path="email/suppressions" element={<SuppressionsPage />} />
         <Route path="email/metrics" element={<MetricsPage />} />
+        <Route path="wapi/campaigns" element={<WapiCampaignsListPage />} />
+        <Route path="wapi/campaigns/:id" element={<WapiCampaignDetailPage />} />
+        <Route path="wapi/configs" element={<WapiConfigsPage />} />
+        <Route path="wapi/templates" element={<WapiTemplatesListPage />} />
       </Route>
 
       {/* Fallback */}
