@@ -21,6 +21,20 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 3.C.5 — Control actions de campaña (pausar / reanudar / forzar cierre)
+- **Schema**: nuevo valor `CANCELED` en el enum `EmailReportStatus` para reports descartados por force-close. Migración `20260504181455_add_canceled_report_status` aplicada en Postgres local vía WSL.
+- **Backend** (`EmailCampaignsService`): tres métodos nuevos con guards de status y notificación por socket (`emitToTeamDebounced`):
+  - `pause(id)` — sólo desde `PROCESSING` → `PAUSED` (Conflict en cualquier otro estado).
+  - `resume(id)` — sólo desde `PAUSED` → `PROCESSING` y re-encola los reports `PENDING` (idempotente vía `jobId=reportId`).
+  - `forceClose(id)` — desde `PROCESSING` o `PAUSED` → `COMPLETED`; `updateMany` marca los `PENDING` como `CANCELED` con `error='force-closed'`.
+- **Endpoints** nuevos en `EmailCampaignsController`, todos con `@CheckPolicies((a) => a.can('send', 'Campaign'))`: `POST /api/email/campaigns/:id/pause | /resume | /force-close`.
+- **Worker** (`EmailWorkerService.process`): chequea el estado de la campaña antes de enviar:
+  - Si `campaign.status === 'PAUSED'` y el report está `PENDING` → `job.moveToDelayed(now+30s, job.token)` y exit (no toca el report).
+  - Si `campaign.status` es `COMPLETED`/`FAILED` (force-close) y el report está `PENDING` → marca `CANCELED` con `error='campaign-closed'` y exit.
+  - Estrategia "DB-flag + worker check" en lugar de cancelar en BullMQ: idempotente, sobrevive reinicios del worker, sin race con jobs ya tomados.
+- **Frontend**: `CampaignProcessingBanner` ahora se muestra también en estado `PAUSED` (icono `PauseCircle`, título "Campaña pausada", barra warning) y recibe `status` + handlers `onPause`/`onResume`/`onForceClose` + flag `actionsBusy`. Tres botones nuevos: Pausar (sólo en PROCESSING), Reanudar (sólo en PAUSED) y Forzar cierre (en ambos, con `useConfirm` destructive). `CampaignDetailPage` cablea las acciones contra los nuevos endpoints con `useNotify` para feedback de éxito/error y refresh de campaign+report tras cada acción.
+- **Tests**: `email-campaigns.service.spec.ts` cubre los 3 métodos nuevos y todos los branches de error (Conflict, NotFound) — 7 casos nuevos. `email-worker.service.spec.ts` agrega 2 casos: PAUSED → moveToDelayed sin tocar report ni sender, y COMPLETED por force-close → CANCELED. Backend test suite: **228/228 ✅**.
+
 ### 3.C.4.f — Log en vivo por campaña + fix throttle de socket
 - **Backend**: `EmailWorkerService` ahora emite un evento `email.report.log` por cada transición de report (`SENT` / `FAILED` / `SUPPRESSED`) con payload `{ campaignId, reportId, email, status, messageId?, error?, ts }`. **No** está throttleado — el frontend se encarga del filtrado y ring buffer. Tests del worker actualizados (7/7 ✅) cubriendo asserts de `email.report.log` en cada transición.
 - **Backend**: `EventsService.emitToTeamDebounced` reescrito de debounce puro a **throttle leading+trailing** (1s window): el primer emit del burst sale inmediato + máximo 1 emit/seg con el payload más reciente. El debounce puro nunca disparaba durante un envío activo (cada nueva transición reseteaba el timer), dejando la barra de progreso pegada en 0%. Tests events: 11/11 ✅.

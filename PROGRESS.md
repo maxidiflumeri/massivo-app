@@ -31,11 +31,11 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 3 — Canal Email (sub-A ✅, sub-B ✅, sub-C.1/.2/.3.a/.3.b/.3.c/.3.d/.3.e ✅, **sub-C.4 ✅** [.a/.a'/.b/.c/.d/.e/.f]; falta **3.C.5** control actions + **3.D** reports consolidados)
+- **Fase actual:** Fase 3 — Canal Email (sub-A ✅, sub-B ✅, sub-C.1/.2/.3.a/.3.b/.3.c/.3.d/.3.e ✅, sub-C.4 ✅ [.a/.a'/.b/.c/.d/.e/.f], **sub-C.5 ✅**; falta **3.D** reports consolidados)
 - **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅
-- **Última actualización:** 2026-04-30
+- **Última actualización:** 2026-05-04
 - **Branch principal:** `main`
-- **Último commit (próximo a este cierre):** `6706721` — feat(email): log en vivo por campaña en el banner PROCESSING (3.C.4.f). Para retomar: arrancar **3.C.5 — Control actions de campaña** (pause / resume / force-close en estado PROCESSING). Ver detalle más abajo.
+- **Último commit (próximo a este cierre):** `6706721` — feat(email): log en vivo por campaña en el banner PROCESSING (3.C.4.f). Para retomar: arrancar **3.D — Reports consolidados** (vistas globales cross-campañas). Ver detalle más abajo.
 - **Repo remoto:** `https://github.com/maxidiflumeri/massivo-app`
 
 ---
@@ -246,6 +246,9 @@ Criterios de aceptación 3.A:
 - [x] **3.C.4.d — Métricas globales** ✅ (2026-04-30): backend `EmailMetricsService` con groupBy agregado (sent/failed/bounced/complained/suppressed/pending + aperturas/clicks únicos via firstOpenedAt/firstClickedAt) y top 5 campañas. Endpoint `GET /api/email/metrics/overview?days=7|30`. Frontend `/dashboard/email/metrics` con 4 KpiCards (Enviados / Open rate / Click rate / Bounce rate), distribución por estado, tabla top campañas con link al detalle. ToggleButtonGroup 7d/30d. Tests: 3/3 ✅.
 - [x] **3.C.4.e — Live processing view** ✅ (2026-04-30): nuevo `CampaignProcessingBanner` que se muestra arriba de Resultados cuando `campaign.status === 'PROCESSING'`. LinearProgress determinate calculada como `(totalReports - PENDING) / totalReports`, contador `procesados / total (%)`, chip "● en vivo / ○ desconectado" según socket, breakdown por status (Pendientes/Enviados/Fallidos/Bounced/Complaints/Suprimidos). Hook `useThroughput` con buffer de muestras (ventana 60s, ≥5s de datos, delta>0) que estima envíos/min — null mientras no haya datos. Auto-refresh ya cubierto por el socket existente (`email.report.updated`). Pause/resume de campaña diferido a 3.C.5.
 - [x] **3.C.4.f — Log en vivo por campaña + throttle fix** ✅ (2026-04-30): backend emite `email.report.log` por transición (SENT/FAILED/SUPPRESSED) con `{campaignId, reportId, email, status, messageId?, error?, ts}` — no throttleado, el filtrado lo hace el frontend. `EventsService.emitToTeamDebounced` reescrito a throttle leading+trailing (debounce puro nunca disparaba durante un burst → progreso pegado en 0%). Frontend `CampaignProcessingBanner` con panel "Log en vivo" colapsable estilo consola (monospace dark, scroll auto, filtro por status, ring buffer 200, botón limpiar). Multi-campaña: cada banner filtra por su `campaignId`, soporta hasta 5 campañas en paralelo sin cruzar logs. Tests: events 11/11 ✅, worker 7/7 ✅.
+
+**3.C.5 — Control actions de campaña (pausar / reanudar / forzar cierre):**
+- [x] **3.C.5 — Control actions completas** ✅ (2026-05-04): nuevo valor `CANCELED` en `EmailReportStatus` (migración `20260504181455_add_canceled_report_status`). Service: `pause` (PROCESSING→PAUSED), `resume` (PAUSED→PROCESSING + re-enqueue PENDING idempotente), `forceClose` (PROCESSING|PAUSED→COMPLETED + `updateMany` PENDING→CANCELED). Endpoints `POST /:id/pause | /resume | /force-close` con `@CheckPolicies('send', 'Campaign')`. Worker chequea `campaign.status` antes de procesar: PAUSED → `job.moveToDelayed(now+30s, token)` y exit; COMPLETED+PENDING → marca CANCELED y exit. Estrategia DB-flag + worker check (no se cancelan jobs en BullMQ → idempotente, sobrevive reinicios, sin race con jobs ya tomados). Frontend: `CampaignProcessingBanner` también se muestra en PAUSED (icono PauseCircle, color warning) y recibe `status` + handlers; tres botones nuevos (Pausar / Reanudar / Forzar cierre) con `useConfirm` destructive en force-close. Tests: campaigns 19/19 ✅ (7 nuevos para pause/resume/forceClose), worker 9/9 ✅ (2 nuevos para PAUSED y CANCELED por force-close), backend full **228/228 ✅**.
 
 > Sub-tareas legacy del plan original (referencia, ya cubiertas en 3.A/3.B/3.C):
 - [x] Tracking JWT: payload `{ rid: reportId, oid: orgId, tid: teamId, cid: campaignId }` firmado con `EMAIL_TRACKING_JWT_SECRET`. Endpoints `GET /api/track/open.gif` (1×1 transparente, registra `EmailEvent` OPEN) y `GET /api/track/click` (registra CLICK + 302 al destino). Ambos públicos (sin Clerk) pero validan firma JWT y resuelven tenant del payload, no del header.
@@ -461,6 +464,19 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 ---
 
 ## Bitácora de sesiones
+
+### 2026-05-04 — Sesión 15 (Claude Opus 4.7) — Sub-fase 3.C.5 (control actions de campaña)
+- **Schema**: nuevo valor `CANCELED` en `EmailReportStatus`. Migración `20260504181455_add_canceled_report_status` aplicada en Postgres local vía WSL (workaround de Git-Bash MSYS path conversion: script en `/mnt/c/...` invocado con `MSYS_NO_PATHCONV=1 wsl.exe`).
+- **Backend service**: `EmailCampaignsService.pause` (PROCESSING→PAUSED, Conflict en otros estados), `resume` (PAUSED→PROCESSING + re-enqueue PENDING idempotente vía `jobId=reportId`), `forceClose` (PROCESSING|PAUSED→COMPLETED + `updateMany` PENDING→CANCELED con `error='force-closed'`). Cada acción notifica via `events.emitToTeamDebounced` para que dashboards/banner/lista refresquen.
+- **Endpoints**: `POST /api/email/campaigns/:id/pause | /resume | /force-close`, todos con `@CheckPolicies((a) => a.can('send', 'Campaign'))`.
+- **Worker**: `EmailWorkerService.process` ahora chequea `report.campaign.status` antes de enviar:
+  - PAUSED + report PENDING → `job.moveToDelayed(now+30s, job.token)` (BullMQ idiomatic), exit-early sin tocar el report.
+  - COMPLETED|FAILED (force-close) + report PENDING → marca CANCELED con `error='campaign-closed'` y exit.
+  - **Decisión arquitectural**: estrategia "DB-flag + worker check" en lugar de cancelar jobs en BullMQ → idempotente, sobrevive reinicios, sin race con jobs ya tomados por otro worker.
+- **Frontend**: `CampaignProcessingBanner` ahora se renderiza también en estado `PAUSED` (icono `PauseCircle`, color warning, barra warning a 0%). Recibe `status` + `onPause/onResume/onForceClose` + `actionsBusy`. Tres botones: Pausar (PROCESSING), Reanudar (PAUSED), Forzar cierre (en ambos, con `useConfirm` destructive). `CampaignDetailPage` cablea las acciones contra los nuevos endpoints con `useNotify` y refresh de campaign+report tras cada acción.
+- **Fix preexistente**: `tenant-isolation.spec.ts` no compilaba en CI por dependencia de `EmailSenderService` agregada en 3.C.4.a' al `SmtpAccountsService`. Sumado mock `{ verifyAccount, sendForAccount }`.
+- **Tests**: campaigns.service.spec 19/19 ✅ (7 nuevos: pause OK / pause Conflict / resume OK + reEnqueue / resume Conflict / forceClose PROCESSING / forceClose PAUSED / forceClose Conflict). worker.service.spec 9/9 ✅ (2 nuevos: PAUSED → moveToDelayed sin tocar report, COMPLETED por force-close → CANCELED). Backend full **228/228 ✅**. Frontend typecheck OK (los 2 errores en `CampaignDetailPage` son preexistentes en parser CSV, no tocados).
+- **Próximo paso**: **3.D — Reportes consolidados** (vistas globales cross-campañas). Implica: tablero de reportes por team con filtros por rango de fechas/canal, drill-down por campaña, export CSV/XLSX, scheduler genérico de reportes (Fase 9 dependency: cualquier reporte agendable + entrega por mail con adjunto). Antes de eso, sumar al Sender SES verificación real de tracking en producción (cloudflared) — diferido si lo prioriza el dueño.
 
 ### 2026-04-30 — Sesión 14 (Claude Opus 4.7) — Cierre sub-fase 3.C.4 (frontend email features)
 - **3.C.4.c — Suppressions UI** ✅: backend con endpoints separados unsubscribes/bounces (cursor + filtro email), POST manual, DELETE de ambos. Frontend `/dashboard/email/suppressions` con Tabs, search, dialog "Agregar manual". Tests: 25/25 ✅.
