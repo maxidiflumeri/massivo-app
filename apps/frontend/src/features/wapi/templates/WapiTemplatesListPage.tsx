@@ -41,6 +41,7 @@ import type {
   WapiTemplateDetail,
   WapiTemplateListItem,
 } from './types';
+import { renderWhatsAppMarkdown } from './whatsappMarkdown';
 
 const STATUS_COLOR: Record<string, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
   APPROVED: 'success',
@@ -403,7 +404,7 @@ function TemplatePreview({ components }: { components: WapiTemplateComponent[] }
       >
         {header && header.format === 'TEXT' && header.text && (
           <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5, color: 'inherit' }}>
-            {header.text}
+            {renderWhatsAppMarkdown(header.text)}
           </Typography>
         )}
         {header && header.format && header.format !== 'TEXT' && (
@@ -423,7 +424,7 @@ function TemplatePreview({ components }: { components: WapiTemplateComponent[] }
         )}
         {body?.text && (
           <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: 'inherit' }}>
-            {body.text}
+            {renderWhatsAppMarkdown(body.text)}
           </Typography>
         )}
         {footer?.text && (
@@ -435,7 +436,7 @@ function TemplatePreview({ components }: { components: WapiTemplateComponent[] }
               color: (t) => (t.palette.mode === 'dark' ? 'rgba(233,237,239,0.6)' : 'text.secondary'),
             }}
           >
-            {footer.text}
+            {renderWhatsAppMarkdown(footer.text)}
           </Typography>
         )}
         {buttons?.buttons && Array.isArray(buttons.buttons) && (

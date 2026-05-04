@@ -23,6 +23,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import type { WapiConfigOption } from './types';
+import { renderWhatsAppMarkdown } from './whatsappMarkdown';
 
 type HeaderFormat = 'NONE' | 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
 type ButtonType = 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
@@ -539,7 +540,7 @@ export function WapiTemplateEditorPage() {
               >
                 {form.headerFormat === 'TEXT' && previewHeader && (
                   <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5, color: 'inherit' }}>
-                    {previewHeader}
+                    {renderWhatsAppMarkdown(previewHeader)}
                   </Typography>
                 )}
                 {form.headerFormat !== 'NONE' && form.headerFormat !== 'TEXT' && (
@@ -564,7 +565,7 @@ export function WapiTemplateEditorPage() {
                     variant="body2"
                     sx={{ whiteSpace: 'pre-wrap', color: 'inherit' }}
                   >
-                    {previewBody}
+                    {renderWhatsAppMarkdown(previewBody)}
                   </Typography>
                 )}
                 {form.footerEnabled && form.footerText && (
@@ -577,7 +578,7 @@ export function WapiTemplateEditorPage() {
                         t.palette.mode === 'dark' ? 'rgba(233,237,239,0.6)' : 'text.secondary',
                     }}
                   >
-                    {form.footerText}
+                    {renderWhatsAppMarkdown(form.footerText)}
                   </Typography>
                 )}
                 {form.buttons.length > 0 && (
