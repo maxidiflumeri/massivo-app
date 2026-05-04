@@ -21,6 +21,20 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 3.D — Reportes consolidados con export (CSV/XLSX)
+- **Backend**: nuevo `ReportGeneratorService` (`apps/backend/src/modules/email/reports/`) con 4 generators sync que devuelven `{ filename, mime, buffer }`:
+  - `campaign-summary` — una fila por campaña con counts agregados (PENDING/SENT/FAILED/BOUNCED/COMPLAINED/SUPPRESSED/CANCELED) + uniqueOpens/uniqueClicks + openRate/clickRate.
+  - `campaign-reports` — detalle por contacto (email, status, sentAt, 1ª apertura, 1er click, count events, smtpMessageId, error). Acepta filtro `status`.
+  - `bounces-complaints` — combina `EmailBounce` + `EmailReport.status=COMPLAINED` en un rango (default últimos 30 días, override `fromDate`/`toDate`), ordenado descendente.
+  - `suppressions` — snapshot completo de `EmailUnsubscribe` del team.
+- **Endpoint** `POST /api/email/reports/generate` con DTO class-validator (`kind`, `format`, `campaignId?`, `status?`, `fromDate?`, `toDate?`). Devuelve binary attachment con `Content-Disposition: attachment; filename="…"`. CASL: requiere `read Campaign` AND `read EmailSuppression` (ambas las tienen los roles MEMBER/ADMIN actuales).
+- **Estrategia**: sync-only, single Buffer en memoria, suficiente hasta ~50k filas. Datasets más grandes + scheduler agendable diferidos a Fase 8 (BullMQ + S3).
+- **Libs**: `csv-stringify@^6.7.0` (sync API) + `exceljs@^4.4.0` (XLSX con header bold + columnas con width).
+- **Frontend**: nuevo componente reutilizable `ExportReportButton` (`apps/frontend/src/features/email/reports/`) con split-menu CSV/Excel. `useApi` extendido con método `download(path, body, fallbackFilename)` que devuelve `{ blob, filename }` parseando `Content-Disposition`, y helper `triggerBlobDownload` que crea un `<a>` temporal con `URL.createObjectURL`. Botones cableados en:
+  - `CampaignDetailPage` → "Resumen" + "Detalle por contacto" en el panel de Resultados.
+  - `SuppressionsPage` → "Exportar unsubs" + "Exportar bounces/complaints" en el header.
+- **Tests**: `report-generator.service.spec` cubre los 4 generators con asserts de header CSV + datos + parseo XLSX (header bold, valores numéricos), errores BadRequest/NotFound, y respeta `fromDate/toDate`. Backend full: **238/238 ✅**.
+
 ### 3.C.5 — Control actions de campaña (pausar / reanudar / forzar cierre)
 - **Schema**: nuevo valor `CANCELED` en el enum `EmailReportStatus` para reports descartados por force-close. Migración `20260504181455_add_canceled_report_status` aplicada en Postgres local vía WSL.
 - **Backend** (`EmailCampaignsService`): tres métodos nuevos con guards de status y notificación por socket (`emitToTeamDebounced`):
