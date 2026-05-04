@@ -9,10 +9,17 @@ import { WapiCampaignsService } from './campaigns/wapi-campaigns.service';
 import { WapiSenderService } from './sender/wapi-sender.service';
 import { WapiQueueService } from './queue/wapi-queue.service';
 import { WapiWorkerService } from './queue/wapi-worker.service';
+import { WapiWebhookController } from './webhook/wapi-webhook.controller';
+import { WapiWebhookService } from './webhook/wapi-webhook.service';
 
 @Module({
   imports: [EventsModule],
-  controllers: [WapiConfigsController, WapiTemplatesController, WapiCampaignsController],
+  controllers: [
+    WapiConfigsController,
+    WapiTemplatesController,
+    WapiCampaignsController,
+    WapiWebhookController,
+  ],
   providers: [
     WapiConfigsService,
     WapiTemplatesService,
@@ -20,6 +27,7 @@ import { WapiWorkerService } from './queue/wapi-worker.service';
     WapiSenderService,
     WapiQueueService,
     WapiWorkerService,
+    WapiWebhookService,
   ],
   exports: [WapiQueueService, WapiSenderService],
 })
