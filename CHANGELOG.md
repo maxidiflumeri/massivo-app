@@ -21,6 +21,19 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.F.2.b — Frontend: editor de templates Massivo → Meta con preview en vivo
+- **`WapiTemplateEditorPage`** (`/dashboard/wapi/templates/new`): form completo + live preview side-by-side. Selector de número origen (config), name (validado contra `^[a-z0-9_]{1,512}$`), idioma, categoría (Marketing/Utility/Authentication). Sección Header con tipo `NONE/TEXT/IMAGE/VIDEO/DOCUMENT` — TEXT muestra textfield + samples auto-generados según `{{N}}` detectados; IMAGE/VIDEO/DOCUMENT pide `mediaHandle` (con helper indicando que la upload UI llega en 4.F.2.c). Cuerpo con detección automática de variables `{{1}}…{{N}}` y generación dinámica de inputs de sample por cada var. Footer toggleable. Gestor de buttons (hasta 3) con type-aware fields: QUICK_REPLY sólo texto, URL pide `url`, PHONE_NUMBER pide `phoneNumber` E.164.
+- **Live preview**: panel sticky en md+ replicando el bubble WhatsApp del list page (mismos estilos `bgcolor: '#e5ddd5'`, white message bubble) con substitución en vivo de variables — `{{N}}` se reemplaza por el sample correspondiente o queda como placeholder visual.
+- **Submit**: payload mapeado al `CreateWapiTemplateMetaDto` del backend (4.F.2.a), POST a `/api/wapi/templates/submit/:configId`. Toast de éxito + redirect a `/dashboard/wapi/templates` donde el nuevo aparece con badge PENDING. Errores Meta surfacean el mensaje devuelto por el service.
+- **Botón "Sugerir con IA"**: placeholder que dispara toast "disponible en Fase 6" — esqueleto preparado para enchufar el provider Gemini cuando llegue.
+- **CTA "Nuevo template"** en `WapiTemplatesListPage` (junto al "Sincronizar"). Texto de la lista actualizado: ya no dice "creación llega en próxima fase".
+- **Routing**: `/dashboard/wapi/templates/new` agregado en `App.tsx`.
+- **Layout**: usa flex (no `Grid item` — la versión de MUI Grid del proyecto exige `component` prop, así que migramos a Box flex). Sticky preview en md+.
+- **Pendientes intencionales en 4.F.2.b**:
+  - **Media upload (4.F.2.c)**: el campo `mediaHandle` para IMAGE/VIDEO/DOCUMENT espera que el usuario lo genere por su cuenta; falta endpoint backend que orqueste la Resumable Upload de Meta + UI con `<input type="file">` que llame a ese endpoint y rellene el campo automáticamente.
+  - **Edición de templates existentes**: hoy sólo create. Meta sólo permite editar templates en estados específicos (REJECTED) — agregar el endpoint `PATCH submit` cuando lo necesitemos.
+  - **Tests**: form complejo, vale la pena agregar tests pero priorizamos el smoke test manual del dueño primero.
+
 ### 4.F.2.a — Backend: posting de templates Massivo → Meta Graph API
 - **Motivación**: cerrar la asimetría de 4.D — hoy podemos sincronizar templates aprobados desde Meta hacia Massivo, pero no podemos crear uno nuevo desde Massivo y mandarlo a Meta para revisión. Es bloqueante porque el dueño quiere que el flujo de templates viva 100% dentro de Massivo (sin tocar Meta Business Manager). El frontend (4.F.2.b) consume este endpoint en sesión posterior.
 - **DTOs** (`apps/backend/src/modules/wapi/templates-posting/wapi-templates-posting.dto.ts`):

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -26,6 +27,7 @@ import {
   Typography,
 } from '@mui/material';
 import SyncIcon from '@mui/icons-material/Sync';
+import AddIcon from '@mui/icons-material/Add';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DescriptionIcon from '@mui/icons-material/Description';
@@ -153,28 +155,38 @@ export function WapiTemplatesListPage() {
           <DescriptionIcon color="success" />
           <Typography variant="h4">Templates WhatsApp</Typography>
         </Stack>
-        <Button
-          variant="contained"
-          startIcon={<SyncIcon />}
-          onClick={handleOpenSync}
-          disabled={configs.length === 0}
-        >
-          Sincronizar desde Meta
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="outlined"
+            startIcon={<SyncIcon />}
+            onClick={handleOpenSync}
+            disabled={configs.length === 0}
+          >
+            Sincronizar desde Meta
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            component={RouterLink}
+            to="/dashboard/wapi/templates/new"
+            disabled={configs.length === 0}
+          >
+            Nuevo template
+          </Button>
+        </Stack>
       </Box>
 
       <Typography variant="body2" color="text.secondary">
-        Catálogo local de templates aprobados en Meta. Por ahora solo es read-only: la creación
-        desde Massivo (con post a Meta) llega en la próxima fase. Mientras tanto, creá los templates
-        en{' '}
+        Catálogo local de templates. Podés crearlos desde Massivo (los enviamos a Meta para
+        revisión) o sincronizar los que ya existan en{' '}
         <a
           href="https://business.facebook.com/wa/manage/message-templates/"
           target="_blank"
           rel="noopener noreferrer"
         >
           Meta Business Manager
-        </a>{' '}
-        y sincronizá acá.
+        </a>
+        .
       </Typography>
 
       {items === null && (

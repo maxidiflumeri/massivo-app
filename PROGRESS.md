@@ -31,7 +31,7 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 4 — Canal WhatsApp Cloud API (**sub-A ✅, sub-B ✅, sub-C ✅, sub-D ✅, sub-E ✅, sub-F.1 ✅, sub-F.1.a ✅, sub-F.1.b ✅, sub-F.2.a ✅** backend templates Massivo→Meta; siguen 4.F.2.b frontend del editor, 4.F.2.c media upload, 4.F.3-4 inbox, 4.G snippets, 4.H opt-out, 4.I welcome, 4.J live dashboard, 4.K botones)
+- **Fase actual:** Fase 4 — Canal WhatsApp Cloud API (**sub-A ✅, sub-B ✅, sub-C ✅, sub-D ✅, sub-E ✅, sub-F.1 ✅, sub-F.1.a ✅, sub-F.1.b ✅, sub-F.2.a ✅, sub-F.2.b ✅**; siguen 4.F.2.c media upload Meta, 4.F.3-4 inbox, 4.G snippets, 4.H opt-out, 4.I welcome, 4.J live dashboard, 4.K botones)
 - **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅ + **Fase 3 ✅** (3.E inbound postergado, decisión del dueño)
 - **Última actualización:** 2026-05-04
 - **Branch principal:** `main`
@@ -517,6 +517,25 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
   - **Templates en Massivo** (4.F.2) — el flow actual sólo permite seleccionar templates ya sincronizados desde Meta vía 4.D. Para 4.F.2 hay que agregar `WapiTemplateEditorPage` que permita crear template desde cero, postearlo a `POST /<wabaId>/message_templates` (Graph API), trackear el status `PENDING/APPROVED/REJECTED` que devuelve Meta y mostrarlo en `WapiTemplatesListPage`. Variantes: header text/image/video/document, body con `{{1}}…{{N}}` y vars de ejemplo, footer, botones quick-reply/URL/phone, preview WhatsApp en vivo, AI suggestion como placeholder (botón "Sugerir con IA" → toast "Próximamente").
   - **Inbox WAPI** (4.F.3-4.F.4) — `WapiConversation`/`WapiMessage` ya existen desde 2.B y reciben mensajes inbound desde 4.C webhook. Falta UI: lista conversations + thread + send dentro de ventana 24h + media S3 con URL firmada.
 - **Próximo paso**: **4.F.2 — Templates con creación desde Massivo + posting a Meta**.
+
+### 2026-05-04 — Sesión 22 (continuación 3) — Sub-fase 4.F.2.b (frontend editor de templates)
+- **Decisión de scope**: con 10% de tokens restantes, el dueño autorizó intentar 4.F.2.b. Apunté a entregar el editor funcional con preview en vivo + submit, sin tests automáticos (form complejo, prioridad smoke test del dueño primero).
+- **`WapiTemplateEditorPage`** (`/dashboard/wapi/templates/new`): form en 2 columnas (form izq, preview sticky der) usando Box flex porque la versión de MUI Grid del proyecto exige `component` prop y rompe con `item xs md` syntax (TS2769). Migré a `Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}`.
+  - **Detección de vars**: helper `detectVars(text)` con regex `/\{\{(\d+)\}\}/g` busca el N máximo. Effect sincroniza `headerTextExamples`/`bodyExamples` arrays cuando cambia el count, generando inputs de sample dinámicamente.
+  - **Buttons editor**: hasta 3, type-aware (QUICK_REPLY texto/QUICK_REPLY, URL pide `url` adicional, PHONE_NUMBER pide `phoneNumber`). Add/remove con state local.
+  - **Validación client-side**: `canSubmit` chequea name regex, idioma, configId, body texto+1024 chars, header (TEXT exige text, IMAGE/VIDEO/DOCUMENT exige mediaHandle), footer (si enabled exige text), buttons (cada uno texto + url/phone si aplica). Sin esto el backend tira BadRequest pero ahorramos round-trip.
+  - **Submit**: builds payload exacto al `CreateWapiTemplateMetaDto`, POST a `/api/wapi/templates/submit/:configId`. Notifica + redirect a la lista. El nuevo aparece con badge PENDING.
+  - **Preview**: replica el `TemplatePreview` del list (no extraído porque era más rápido duplicar — ~50 líneas — que crear un componente compartido). Substitución de vars en vivo via `buildPreviewText`.
+  - **Botón "Sugerir con IA"**: placeholder con toast "disponible en Fase 6". Estructura preparada para enchufar Gemini.
+- **CTA "Nuevo template"** en `WapiTemplatesListPage` con `RouterLink` a la ruta nueva. El "Sincronizar" pasó de contained a outlined para no competir visualmente. Texto explicativo actualizado.
+- **Routing**: `App.tsx` agrega `wapi/templates/new` y el import.
+- **Verificación**: `tsc -b --noEmit` ✅ para los archivos nuevos. Los 2 errores TS pre-existentes en `email/CampaignDetailPage` siguen tal cual. Smoke test del dueño pendiente (golden path: ir a `/wapi/templates`, click "Nuevo template", llenar form con vars en body, agregar 2 botones, ver preview, submit, verificar que aparece PENDING en la lista, revisar en Meta Business Manager que existe).
+- **Pendientes intencionales en 4.F.2.b**:
+  - **4.F.2.c — Resumable Upload Meta**: hoy `mediaHandle` se pide al usuario que lo genere por afuera. La sub-fase implementaría endpoint backend (3-step: start → upload → commit) + UI con `<input type="file">` que rellena el campo automáticamente.
+  - **Edición de templates**: Meta sólo permite editar en ciertos estados (REJECTED). Agregar cuando se necesite — endpoint backend separado.
+  - **Tests del editor**: form complejo, vale agregar Vitest cuando se estabilice. Priorizamos UX manual primero.
+  - **Reuso de TemplatePreview**: hoy duplicado entre list y editor. Si crece la lógica de preview, extraer a shared component (probablemente cuando 4.F.2.c agregue render real de imagen/video).
+- **Próximo paso**: **smoke test del dueño** + decidir si seguir con 4.F.2.c (media upload) o saltar a 4.F.3 (inbox conversacional). Mi voto: **inbox** — los media headers son nicho y el inbox desbloquea casos de uso completos. La directiva del dueño manda.
 
 ### 2026-05-04 — Sesión 22 (continuación 2) — Sub-fase 4.F.2.a (backend templates Massivo→Meta)
 - **Decisión de scope**: tras smoke-test exitoso del golden path (crear config → sync templates → crear campaña → enviar) confirmado por el dueño, autorizó arrancar 4.F.2 con la directiva *"hace todo el backend y cuando termines vemos si llegamos con el frontend"*. Le advertí honestamente que 4.F.2 entera (backend + frontend del editor) no entra en lo que queda de sesión sin riesgo de quedar a la mitad. Subdividí en **4.F.2.a** (esta — backend posting service + endpoint + tests), **4.F.2.b** (frontend editor + preview + AI placeholder, sesión nueva), **4.F.2.c** (Resumable Upload para media headers, futura).

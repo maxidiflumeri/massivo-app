@@ -16,6 +16,7 @@ import { WapiCampaignsListPage } from './features/wapi/campaigns/WapiCampaignsLi
 import { WapiCampaignDetailPage } from './features/wapi/campaigns/WapiCampaignDetailPage';
 import { WapiConfigsPage } from './features/wapi/configs/WapiConfigsPage';
 import { WapiTemplatesListPage } from './features/wapi/templates/WapiTemplatesListPage';
+import { WapiTemplateEditorPage } from './features/wapi/templates/WapiTemplateEditorPage';
 
 export function App() {
   return (
@@ -52,6 +53,7 @@ export function App() {
         <Route path="wapi/campaigns/:id" element={<WapiCampaignDetailPage />} />
         <Route path="wapi/configs" element={<WapiConfigsPage />} />
         <Route path="wapi/templates" element={<WapiTemplatesListPage />} />
+        <Route path="wapi/templates/new" element={<WapiTemplateEditorPage />} />
       </Route>
 
       {/* Fallback */}
