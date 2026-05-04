@@ -85,7 +85,7 @@ describe('ReportGeneratorService', () => {
       expect(r.filename.endsWith('.xlsx')).toBe(true);
 
       const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(r.buffer);
+      await wb.xlsx.load(r.buffer as never);
       const ws = wb.getWorksheet('Reporte');
       expect(ws).toBeDefined();
       const headerRow = ws!.getRow(1);
