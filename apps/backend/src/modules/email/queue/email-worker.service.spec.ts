@@ -63,8 +63,10 @@ describe('EmailWorkerService.process', () => {
       organizationId: 'org-a',
       teamId: 'team-a',
       campaignId: 'camp-1',
+      status: 'PENDING',
       contact: { id: 'c-1', email: 'user@example.com', data: { firstName: 'Ana' } },
       campaign: {
+        status: 'PROCESSING',
         template: { subject: 'Hola {{firstName}}', html: '<p>Hi {{firstName}}</p>' },
         smtpAccount: {
           id: 'acc-1',
@@ -220,6 +222,44 @@ describe('EmailWorkerService.process', () => {
     );
 
     expect(prismaRoot.emailCampaign.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('campaign PAUSED → moveToDelayed sin tocar report ni sender', async () => {
+    const fix = reportFixture();
+    fix.campaign.status = 'PAUSED';
+    prismaScoped.emailReport.findFirst.mockResolvedValueOnce(fix);
+    const moveToDelayed = jest.fn().mockResolvedValue(undefined);
+    const job = {
+      data: { reportId: 'rep-1', organizationId: 'org-a', teamId: 'team-a' },
+      id: 'rep-1',
+      token: 'tok-x',
+      moveToDelayed,
+    } as never;
+
+    const out = await worker.process(job);
+
+    expect(out).toEqual({ paused: true });
+    expect(moveToDelayed).toHaveBeenCalledTimes(1);
+    expect(senders.sendForAccount).not.toHaveBeenCalled();
+    expect(prismaScoped.emailReport.update).not.toHaveBeenCalled();
+  });
+
+  it('campaign COMPLETED por force-close + report PENDING → marca CANCELED y exit', async () => {
+    const fix = reportFixture();
+    fix.campaign.status = 'COMPLETED';
+    fix.status = 'PENDING';
+    prismaScoped.emailReport.findFirst.mockResolvedValueOnce(fix);
+
+    const out = await worker.process(
+      jobOf({ reportId: 'rep-1', organizationId: 'org-a', teamId: 'team-a' }),
+    );
+
+    expect(out).toEqual({ canceled: true });
+    expect(senders.sendForAccount).not.toHaveBeenCalled();
+    expect(prismaScoped.emailReport.update).toHaveBeenCalledWith({
+      where: { id: 'rep-1' },
+      data: { status: 'CANCELED', error: 'campaign-closed' },
+    });
   });
 
   it('campaign sin template → tira sin enviar', async () => {

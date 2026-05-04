@@ -17,6 +17,7 @@ import { WapiConfigsService } from '../../modules/wapi/wapi-configs.service';
 import { WapiTemplatesService } from '../../modules/wapi/wapi-templates.service';
 import { ContactsService } from '../../modules/contacts/contacts.service';
 import { TagsService } from '../../modules/contacts/tags.service';
+import { EmailSenderService } from '../../modules/email/sender/email-sender.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContext } from './tenant-context';
 import type { RequestContext } from '@massivo/shared-types';
@@ -124,6 +125,10 @@ describe('Aislamiento tenant-a-tenant', () => {
         ContactsService,
         TagsService,
         { provide: PrismaService, useValue: { scoped: prismaMock, ...prismaMock } },
+        {
+          provide: EmailSenderService,
+          useValue: { verifyAccount: jest.fn(), sendForAccount: jest.fn() },
+        },
       ],
     }).compile();
 

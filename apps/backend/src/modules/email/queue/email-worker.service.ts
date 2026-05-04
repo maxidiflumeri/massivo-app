@@ -116,7 +116,15 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
     await this.worker?.close();
   }
 
-  async process(job: Job<EmailSendJob>): Promise<{ messageId?: string; suppressed?: true; reason?: string }> {
+  async process(
+    job: Job<EmailSendJob>,
+  ): Promise<{
+    messageId?: string;
+    suppressed?: true;
+    reason?: string;
+    paused?: true;
+    canceled?: true;
+  }> {
     const { reportId, organizationId, teamId } = job.data;
     const ctx: RequestContext = {
       userId: 'system:email-worker',
@@ -135,6 +143,32 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
         },
       });
       if (!report) throw new Error(`EmailReport ${reportId} not found in tenant`);
+
+      // Control actions: si la campaña está PAUSED, el worker difiere el job sin
+      // tocar el report. Si fue force-closed (status COMPLETED + report PENDING),
+      // marca el report como CANCELED y exit-early.
+      const campaignStatus = report.campaign.status;
+      if (campaignStatus === 'PAUSED' && report.status === 'PENDING') {
+        await job.moveToDelayed(Date.now() + 30_000, job.token);
+        this.logger.log(
+          `Job ${job.id} → delayed 30s (campaign ${report.campaignId} PAUSED)`,
+        );
+        return { paused: true };
+      }
+      if (
+        report.status === 'PENDING' &&
+        (campaignStatus === 'COMPLETED' || campaignStatus === 'FAILED')
+      ) {
+        await this.prisma.scoped.emailReport.update({
+          where: { id: reportId },
+          data: { status: 'CANCELED', error: 'campaign-closed' },
+        });
+        this.notifyReportUpdate(teamId, report.campaignId);
+        this.logger.log(
+          `Report ${reportId} → CANCELED (campaign ${report.campaignId} cerrada)`,
+        );
+        return { canceled: true };
+      }
 
       const template = report.campaign.template;
       const account = report.campaign.smtpAccount;

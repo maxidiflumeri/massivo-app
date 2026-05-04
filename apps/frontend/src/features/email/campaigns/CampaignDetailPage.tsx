@@ -125,6 +125,7 @@ export function CampaignDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [actionsBusy, setActionsBusy] = useState(false);
 
   const editable = campaign ? EDITABLE.has(campaign.status) : false;
 
@@ -222,6 +223,61 @@ export function CampaignDetailPage() {
     }
   }
 
+  async function handlePause() {
+    if (!campaign) return;
+    setActionsBusy(true);
+    try {
+      await api.post(`/api/email/campaigns/${campaign.id}/pause`, {});
+      notify.success('Campaña pausada');
+      await Promise.all([load(), loadReport()]);
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error pausando');
+    } finally {
+      setActionsBusy(false);
+    }
+  }
+
+  async function handleResume() {
+    if (!campaign) return;
+    setActionsBusy(true);
+    try {
+      const res = await api.post<{ resumed: true; reEnqueued: number }>(
+        `/api/email/campaigns/${campaign.id}/resume`,
+        {},
+      );
+      notify.success(`Campaña reanudada (${res.reEnqueued} pendientes re-encolados)`);
+      await Promise.all([load(), loadReport()]);
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error reanudando');
+    } finally {
+      setActionsBusy(false);
+    }
+  }
+
+  async function handleForceClose() {
+    if (!campaign) return;
+    const ok = await confirm({
+      title: 'Forzar cierre de la campaña',
+      message: `Vas a cerrar "${campaign.name}" y cancelar todos los envíos pendientes.\nEsta acción no se puede deshacer.`,
+      confirmText: 'Forzar cierre',
+      destructive: true,
+    });
+    if (!ok) return;
+    setActionsBusy(true);
+    try {
+      const res = await api.post<{ closed: true; canceled: number }>(
+        `/api/email/campaigns/${campaign.id}/force-close`,
+        {},
+      );
+      notify.success(`Campaña cerrada (${res.canceled} pendientes cancelados)`);
+      await Promise.all([load(), loadReport()]);
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error cerrando campaña');
+    } finally {
+      setActionsBusy(false);
+    }
+  }
+
   async function handleSend() {
     if (!campaign) return;
     const ok = await confirm({
@@ -277,12 +333,17 @@ export function CampaignDetailPage() {
 
       {error && <Alert severity="error">{error}</Alert>}
 
-      {campaign.status === 'PROCESSING' && (
+      {(campaign.status === 'PROCESSING' || campaign.status === 'PAUSED') && (
         <CampaignProcessingBanner
           campaignId={campaign.id}
           totalReports={campaign._count.reports}
           report={report}
           socket={socket}
+          status={campaign.status}
+          onPause={handlePause}
+          onResume={handleResume}
+          onForceClose={handleForceClose}
+          actionsBusy={actionsBusy}
         />
       )}
 

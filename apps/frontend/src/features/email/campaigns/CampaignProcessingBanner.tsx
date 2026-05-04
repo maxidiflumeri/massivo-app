@@ -12,10 +12,14 @@ import {
   Typography,
 } from '@mui/material';
 import HourglassTopIcon from '@mui/icons-material/HourglassTop';
+import PauseCircleIcon from '@mui/icons-material/PauseCircle';
+import PauseIcon from '@mui/icons-material/Pause';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { Socket } from 'socket.io-client';
-import type { CampaignReport } from './types';
+import type { CampaignReport, CampaignStatus } from './types';
 
 interface Props {
   /** Id de la campaña actual — usado para filtrar logs por socket. */
@@ -26,6 +30,14 @@ interface Props {
   report: CampaignReport | null;
   /** Socket del team — null si todavía no conectó. */
   socket: Socket | null;
+  /** PROCESSING o PAUSED — controla qué acciones se renderizan. */
+  status: Extract<CampaignStatus, 'PROCESSING' | 'PAUSED'>;
+  /** Callbacks de control. El parent maneja confirm + notify + reload. */
+  onPause: () => void | Promise<void>;
+  onResume: () => void | Promise<void>;
+  onForceClose: () => void | Promise<void>;
+  /** Mientras corre una acción los botones se deshabilitan. */
+  actionsBusy: boolean;
 }
 
 type LogStatus = 'SENT' | 'FAILED' | 'SUPPRESSED';
@@ -51,7 +63,18 @@ const MAX_LOG_ENTRIES = 200;
  *    los logs cuyo campaignId del payload coincide — soporta múltiples
  *    campañas en simultáneo en el mismo team.
  */
-export function CampaignProcessingBanner({ campaignId, totalReports, report, socket }: Props) {
+export function CampaignProcessingBanner({
+  campaignId,
+  totalReports,
+  report,
+  socket,
+  status,
+  onPause,
+  onResume,
+  onForceClose,
+  actionsBusy,
+}: Props) {
+  const isPaused = status === 'PAUSED';
   const counts = report?.counts ?? {};
   const pending = counts.PENDING ?? 0;
   const sent = counts.SENT ?? 0;
@@ -101,9 +124,9 @@ export function CampaignProcessingBanner({ campaignId, totalReports, report, soc
   return (
     <Paper sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-        <HourglassTopIcon color="warning" />
+        {isPaused ? <PauseCircleIcon color="warning" /> : <HourglassTopIcon color="warning" />}
         <Typography variant="h6" sx={{ flex: 1 }}>
-          Enviando campaña…
+          {isPaused ? 'Campaña pausada' : 'Enviando campaña…'}
         </Typography>
         {socketConnected ? (
           <Chip size="small" label="● en vivo" color="success" variant="outlined" />
@@ -114,8 +137,9 @@ export function CampaignProcessingBanner({ campaignId, totalReports, report, soc
 
       <Box sx={{ mb: 1.5 }}>
         <LinearProgress
-          variant={hasFreshData ? 'determinate' : 'indeterminate'}
-          value={hasFreshData ? Math.min(100, pct) : undefined}
+          variant={isPaused || hasFreshData ? 'determinate' : 'indeterminate'}
+          value={hasFreshData ? Math.min(100, pct) : isPaused ? 0 : undefined}
+          color={isPaused ? 'warning' : 'primary'}
           sx={{ height: 10, borderRadius: 5 }}
         />
       </Box>
@@ -154,6 +178,42 @@ export function CampaignProcessingBanner({ campaignId, totalReports, report, soc
         {suppressed > 0 && (
           <Chip size="small" label={`Suprimidos: ${suppressed}`} variant="outlined" />
         )}
+      </Stack>
+
+      <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: 'wrap' }} useFlexGap>
+        {isPaused ? (
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            startIcon={<PlayArrowIcon />}
+            onClick={() => void onResume()}
+            disabled={actionsBusy}
+          >
+            Reanudar
+          </Button>
+        ) : (
+          <Button
+            size="small"
+            variant="outlined"
+            color="warning"
+            startIcon={<PauseIcon />}
+            onClick={() => void onPause()}
+            disabled={actionsBusy}
+          >
+            Pausar
+          </Button>
+        )}
+        <Button
+          size="small"
+          variant="outlined"
+          color="error"
+          startIcon={<StopIcon />}
+          onClick={() => void onForceClose()}
+          disabled={actionsBusy}
+        >
+          Forzar cierre
+        </Button>
       </Stack>
 
       <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>

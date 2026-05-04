@@ -7,13 +7,14 @@ describe('EmailCampaignsService', () => {
     scoped: {
       emailCampaign: { create: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock; delete: jest.Mock };
       emailContact: { createMany: jest.Mock };
-      emailReport: { groupBy: jest.Mock; count: jest.Mock };
+      emailReport: { groupBy: jest.Mock; count: jest.Mock; findMany: jest.Mock; updateMany: jest.Mock };
       emailEvent: { count: jest.Mock };
     };
     emailReport: { create: jest.Mock };
     $transaction: jest.Mock;
   };
   let queue: { enqueue: jest.Mock };
+  let events: { emitToTeamDebounced: jest.Mock };
   let svc: EmailCampaignsService;
 
   beforeEach(() => {
@@ -30,6 +31,8 @@ describe('EmailCampaignsService', () => {
         emailReport: {
           groupBy: jest.fn().mockResolvedValue([]),
           count: jest.fn().mockResolvedValue(0),
+          findMany: jest.fn().mockResolvedValue([]),
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         },
         emailEvent: { count: jest.fn().mockResolvedValue(0) },
       },
@@ -37,7 +40,8 @@ describe('EmailCampaignsService', () => {
       $transaction: jest.fn((calls) => Promise.all(calls)),
     };
     queue = { enqueue: jest.fn().mockResolvedValue('job-id') };
-    svc = new EmailCampaignsService(prisma as never, queue as never);
+    events = { emitToTeamDebounced: jest.fn() };
+    svc = new EmailCampaignsService(prisma as never, queue as never, events as never);
   });
 
   function withCtx<T>(fn: () => Promise<T>) {
@@ -117,6 +121,9 @@ describe('EmailCampaignsService', () => {
       expect(queue.enqueue.mock.calls[0]![0]).toEqual({
         reportId: 'r1', organizationId: 'org-1', teamId: 'team-1',
       });
+      expect(events.emitToTeamDebounced).toHaveBeenCalledWith(
+        'team-1', 'email.report.updated', 'c1', { campaignId: 'c1' },
+      );
     });
 
     it('sin contactos → BadRequest', async () => {
@@ -162,6 +169,76 @@ describe('EmailCampaignsService', () => {
       expect(r.counts.PENDING).toBe(0);
       expect(r.counts.SUPPRESSED).toBe(0);
       expect(r.events).toEqual({ opens: 10, clicks: 3, uniqueOpens: 4, uniqueClicks: 2 });
+    });
+  });
+
+  describe('pause', () => {
+    it('PROCESSING → PAUSED + notifica', async () => {
+      prisma.scoped.emailCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'PROCESSING' });
+      prisma.scoped.emailCampaign.update.mockResolvedValueOnce({ id: 'c1', status: 'PAUSED' });
+      const out = await withCtx(() => svc.pause('c1'));
+      expect(out).toMatchObject({ status: 'PAUSED' });
+      expect(prisma.scoped.emailCampaign.update).toHaveBeenCalledWith({
+        where: { id: 'c1' }, data: { status: 'PAUSED' },
+      });
+      expect(events.emitToTeamDebounced).toHaveBeenCalledWith(
+        'team-1', 'email.report.updated', 'c1', { campaignId: 'c1' },
+      );
+    });
+
+    it('estado distinto a PROCESSING → Conflict', async () => {
+      prisma.scoped.emailCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      await expect(withCtx(() => svc.pause('c1'))).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.scoped.emailCampaign.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resume', () => {
+    it('PAUSED → PROCESSING + re-enquola pendientes', async () => {
+      prisma.scoped.emailCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'PAUSED' });
+      prisma.scoped.emailReport.findMany.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }]);
+      const out = await withCtx(() => svc.resume('c1'));
+      expect(out).toEqual({ resumed: true, reEnqueued: 2 });
+      expect(prisma.scoped.emailCampaign.update).toHaveBeenCalledWith({
+        where: { id: 'c1' }, data: { status: 'PROCESSING' },
+      });
+      expect(queue.enqueue).toHaveBeenCalledTimes(2);
+      expect(queue.enqueue.mock.calls[0]![0]).toEqual({
+        reportId: 'r1', organizationId: 'org-1', teamId: 'team-1',
+      });
+    });
+
+    it('estado distinto a PAUSED → Conflict', async () => {
+      prisma.scoped.emailCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'PROCESSING' });
+      await expect(withCtx(() => svc.resume('c1'))).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('forceClose', () => {
+    it('PROCESSING → COMPLETED + cancela PENDING', async () => {
+      prisma.scoped.emailCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'PROCESSING' });
+      prisma.scoped.emailReport.updateMany.mockResolvedValueOnce({ count: 7 });
+      const out = await withCtx(() => svc.forceClose('c1'));
+      expect(out).toEqual({ closed: true, canceled: 7 });
+      expect(prisma.scoped.emailReport.updateMany).toHaveBeenCalledWith({
+        where: { campaignId: 'c1', status: 'PENDING' },
+        data: { status: 'CANCELED', error: 'force-closed' },
+      });
+      expect(prisma.scoped.emailCampaign.update).toHaveBeenCalledWith({
+        where: { id: 'c1' }, data: { status: 'COMPLETED' },
+      });
+    });
+
+    it('PAUSED → COMPLETED + cancela PENDING', async () => {
+      prisma.scoped.emailCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'PAUSED' });
+      prisma.scoped.emailReport.updateMany.mockResolvedValueOnce({ count: 0 });
+      await withCtx(() => svc.forceClose('c1'));
+      expect(prisma.scoped.emailCampaign.update).toHaveBeenCalled();
+    });
+
+    it('DRAFT → Conflict', async () => {
+      prisma.scoped.emailCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      await expect(withCtx(() => svc.forceClose('c1'))).rejects.toBeInstanceOf(ConflictException);
     });
   });
 });

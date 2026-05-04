@@ -95,6 +95,24 @@ export class EmailCampaignsController {
     return this.service.send(id);
   }
 
+  @Post(':id/pause')
+  @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  pause(@Param('id') id: string) {
+    return this.service.pause(id);
+  }
+
+  @Post(':id/resume')
+  @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  resume(@Param('id') id: string) {
+    return this.service.resume(id);
+  }
+
+  @Post(':id/force-close')
+  @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  forceClose(@Param('id') id: string) {
+    return this.service.forceClose(id);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @CheckPolicies((a: AppAbility) => a.can('delete', 'Campaign'))

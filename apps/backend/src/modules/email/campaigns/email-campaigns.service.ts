@@ -8,6 +8,7 @@ import {
 import type { EmailCampaign } from '@massivo/prisma';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EmailQueueService } from '../queue/email-queue.service';
+import { EventsService } from '../../events/events.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import {
   AddCampaignContactsDto,
@@ -25,7 +26,17 @@ export class EmailCampaignsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queue: EmailQueueService,
+    private readonly events: EventsService,
   ) {}
+
+  private notifyCampaignUpdated(teamId: string, campaignId: string): void {
+    this.events.emitToTeamDebounced(
+      teamId,
+      'email.report.updated',
+      campaignId,
+      { campaignId },
+    );
+  }
 
   async create(dto: CreateEmailCampaignDto): Promise<EmailCampaign> {
     if (dto.scheduledAt && dto.scheduledAt.getTime() < Date.now()) {
@@ -149,7 +160,95 @@ export class EmailCampaignsService {
     }
 
     this.logger.log(`Campaign ${id} → enqueued ${reports.length} reports`);
+    this.notifyCampaignUpdated(ctx.teamId, id);
     return { enqueued: reports.length };
+  }
+
+  /**
+   * Pausa una campaign en PROCESSING. El worker chequea EmailCampaign.status
+   * antes de procesar cada job y, si está PAUSED, mueve el job a delayed para
+   * reintentar más tarde sin perderlo. No se cancelan jobs en BullMQ — el flag
+   * en BD es la fuente de verdad y sobrevive reinicios del worker.
+   */
+  async pause(id: string): Promise<EmailCampaign> {
+    const ctx = TenantContext.current();
+    if (!ctx) throw new Error('pause sin TenantContext');
+    const current = await this.findOne(id);
+    if (current.status !== 'PROCESSING') {
+      throw new ConflictException(
+        `Solo se puede pausar una campaign PROCESSING (estado actual: ${current.status})`,
+      );
+    }
+    const updated = await this.prisma.scoped.emailCampaign.update({
+      where: { id },
+      data: { status: 'PAUSED' },
+    });
+    this.logger.log(`Campaign ${id} → PAUSED`);
+    this.notifyCampaignUpdated(ctx.teamId, id);
+    return updated;
+  }
+
+  /**
+   * Reanuda una campaign PAUSED. Re-enquola los reports que sigan en PENDING
+   * (idempotente: jobId=reportId, BullMQ deduplica).
+   */
+  async resume(id: string): Promise<{ resumed: true; reEnqueued: number }> {
+    const ctx = TenantContext.current();
+    if (!ctx) throw new Error('resume sin TenantContext');
+    const current = await this.findOne(id);
+    if (current.status !== 'PAUSED') {
+      throw new ConflictException(
+        `Solo se puede reanudar una campaign PAUSED (estado actual: ${current.status})`,
+      );
+    }
+
+    await this.prisma.scoped.emailCampaign.update({
+      where: { id },
+      data: { status: 'PROCESSING' },
+    });
+
+    const pending = await this.prisma.scoped.emailReport.findMany({
+      where: { campaignId: id, status: 'PENDING' },
+      select: { id: true },
+    });
+    for (const r of pending) {
+      await this.queue.enqueue({
+        reportId: r.id,
+        organizationId: ctx.organizationId,
+        teamId: ctx.teamId,
+      });
+    }
+    this.logger.log(`Campaign ${id} → PROCESSING (re-enqueued ${pending.length} reports)`);
+    this.notifyCampaignUpdated(ctx.teamId, id);
+    return { resumed: true, reEnqueued: pending.length };
+  }
+
+  /**
+   * Cierra forzadamente una campaign PROCESSING/PAUSED. Los reports PENDING
+   * pasan a CANCELED; el worker los detecta al procesar (si llegan a correr)
+   * y exit-early sin enviar.
+   */
+  async forceClose(id: string): Promise<{ closed: true; canceled: number }> {
+    const ctx = TenantContext.current();
+    if (!ctx) throw new Error('forceClose sin TenantContext');
+    const current = await this.findOne(id);
+    if (current.status !== 'PROCESSING' && current.status !== 'PAUSED') {
+      throw new ConflictException(
+        `Solo se puede forzar cierre desde PROCESSING o PAUSED (estado actual: ${current.status})`,
+      );
+    }
+
+    const canceled = await this.prisma.scoped.emailReport.updateMany({
+      where: { campaignId: id, status: 'PENDING' },
+      data: { status: 'CANCELED', error: 'force-closed' },
+    });
+    await this.prisma.scoped.emailCampaign.update({
+      where: { id },
+      data: { status: 'COMPLETED' },
+    });
+    this.logger.log(`Campaign ${id} → COMPLETED (force-close, canceled ${canceled.count} pending)`);
+    this.notifyCampaignUpdated(ctx.teamId, id);
+    return { closed: true, canceled: canceled.count };
   }
 
   /**
@@ -270,7 +369,7 @@ export class EmailCampaignsService {
       _count: { _all: true },
     });
     const counts: Record<string, number> = {
-      PENDING: 0, SENT: 0, FAILED: 0, BOUNCED: 0, COMPLAINED: 0, SUPPRESSED: 0,
+      PENDING: 0, SENT: 0, FAILED: 0, BOUNCED: 0, COMPLAINED: 0, SUPPRESSED: 0, CANCELED: 0,
     };
     for (const g of grouped) counts[g.status] = g._count._all;
 
