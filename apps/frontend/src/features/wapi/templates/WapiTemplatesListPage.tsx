@@ -385,7 +385,7 @@ function TemplatePreview({ components }: { components: WapiTemplateComponent[] }
   return (
     <Box
       sx={{
-        bgcolor: '#e5ddd5',
+        bgcolor: (t) => (t.palette.mode === 'dark' ? '#0b141a' : '#e5ddd5'),
         borderRadius: 2,
         p: 1.5,
         minHeight: 160,
@@ -393,7 +393,8 @@ function TemplatePreview({ components }: { components: WapiTemplateComponent[] }
     >
       <Box
         sx={{
-          bgcolor: '#fff',
+          bgcolor: (t) => (t.palette.mode === 'dark' ? '#1f2c34' : '#fff'),
+          color: (t) => (t.palette.mode === 'dark' ? '#e9edef' : 'text.primary'),
           borderRadius: '6px 6px 6px 0',
           p: 1.5,
           maxWidth: 360,
@@ -401,47 +402,59 @@ function TemplatePreview({ components }: { components: WapiTemplateComponent[] }
         }}
       >
         {header && header.format === 'TEXT' && header.text && (
-          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5, color: 'inherit' }}>
             {header.text}
           </Typography>
         )}
         {header && header.format && header.format !== 'TEXT' && (
           <Box
             sx={{
-              bgcolor: 'grey.200',
+              bgcolor: (t) => (t.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'grey.200'),
               borderRadius: 1,
               py: 2,
               textAlign: 'center',
               mb: 1,
               fontSize: 12,
-              color: 'text.secondary',
+              color: (t) => (t.palette.mode === 'dark' ? 'rgba(233,237,239,0.7)' : 'text.secondary'),
             }}
           >
             [{header.format} header]
           </Box>
         )}
         {body?.text && (
-          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: 'text.primary' }}>
+          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: 'inherit' }}>
             {body.text}
           </Typography>
         )}
         {footer?.text && (
           <Typography
             variant="caption"
-            sx={{ display: 'block', mt: 1, color: 'text.secondary' }}
+            sx={{
+              display: 'block',
+              mt: 1,
+              color: (t) => (t.palette.mode === 'dark' ? 'rgba(233,237,239,0.6)' : 'text.secondary'),
+            }}
           >
             {footer.text}
           </Typography>
         )}
         {buttons?.buttons && Array.isArray(buttons.buttons) && (
-          <Stack spacing={0.5} sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}>
+          <Stack
+            spacing={0.5}
+            sx={{
+              mt: 1,
+              pt: 1,
+              borderTop: 1,
+              borderColor: (t) => (t.palette.mode === 'dark' ? 'rgba(255,255,255,0.12)' : 'divider'),
+            }}
+          >
             {(buttons.buttons as Array<Record<string, unknown>>).map((b, i) => (
               <Box
                 key={i}
                 sx={{
                   textAlign: 'center',
                   py: 0.5,
-                  color: '#0084ff',
+                  color: (t) => (t.palette.mode === 'dark' ? '#53bdeb' : '#0084ff'),
                   fontSize: 13,
                   fontWeight: 500,
                 }}
