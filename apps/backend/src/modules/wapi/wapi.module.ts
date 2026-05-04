@@ -9,6 +9,7 @@ import { WapiCampaignsService } from './campaigns/wapi-campaigns.service';
 import { WapiSenderService } from './sender/wapi-sender.service';
 import { WapiQueueService } from './queue/wapi-queue.service';
 import { WapiWorkerService } from './queue/wapi-worker.service';
+import { WapiTemplatesSyncService } from './templates-sync/wapi-templates-sync.service';
 import { WapiWebhookController } from './webhook/wapi-webhook.controller';
 import { WapiWebhookService } from './webhook/wapi-webhook.service';
 
@@ -28,6 +29,7 @@ import { WapiWebhookService } from './webhook/wapi-webhook.service';
     WapiQueueService,
     WapiWorkerService,
     WapiWebhookService,
+    WapiTemplatesSyncService,
   ],
   exports: [WapiQueueService, WapiSenderService],
 })

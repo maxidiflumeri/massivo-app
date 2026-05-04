@@ -17,6 +17,7 @@ import { TenantContextInterceptor } from '../../common/auth/tenant-context.inter
 import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { WapiTemplatesService } from './wapi-templates.service';
+import { WapiTemplatesSyncService } from './templates-sync/wapi-templates-sync.service';
 import { CreateWapiTemplateDto, UpdateWapiTemplateDto } from './wapi-templates.dto';
 import type { AppAbility } from '@massivo/permissions';
 
@@ -24,7 +25,17 @@ import type { AppAbility } from '@massivo/permissions';
 @UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
 export class WapiTemplatesController {
-  constructor(private readonly service: WapiTemplatesService) {}
+  constructor(
+    private readonly service: WapiTemplatesService,
+    private readonly sync: WapiTemplatesSyncService,
+  ) {}
+
+  @Post('sync/:configId')
+  @HttpCode(HttpStatus.OK)
+  @CheckPolicies((ability: AppAbility) => ability.can('create', 'WapiTemplate'))
+  syncFromMeta(@Param('configId') configId: string) {
+    return this.sync.sync(configId);
+  }
 
   @Get()
   @CheckPolicies((ability: AppAbility) => ability.can('read', 'WapiTemplate'))
