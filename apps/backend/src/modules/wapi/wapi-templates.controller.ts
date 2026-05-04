@@ -18,8 +18,11 @@ import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { WapiTemplatesService } from './wapi-templates.service';
 import { WapiTemplatesSyncService } from './templates-sync/wapi-templates-sync.service';
+import { WapiTemplatesPostingService } from './templates-posting/wapi-templates-posting.service';
+import { CreateWapiTemplateMetaDto } from './templates-posting/wapi-templates-posting.dto';
 import { CreateWapiTemplateDto, UpdateWapiTemplateDto } from './wapi-templates.dto';
 import type { AppAbility } from '@massivo/permissions';
+import type { WapiTemplate } from '@massivo/prisma';
 
 @Controller('wapi/templates')
 @UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
@@ -28,6 +31,7 @@ export class WapiTemplatesController {
   constructor(
     private readonly service: WapiTemplatesService,
     private readonly sync: WapiTemplatesSyncService,
+    private readonly posting: WapiTemplatesPostingService,
   ) {}
 
   @Post('sync/:configId')
@@ -35,6 +39,16 @@ export class WapiTemplatesController {
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'WapiTemplate'))
   syncFromMeta(@Param('configId') configId: string) {
     return this.sync.sync(configId);
+  }
+
+  @Post('submit/:configId')
+  @HttpCode(HttpStatus.CREATED)
+  @CheckPolicies((ability: AppAbility) => ability.can('create', 'WapiTemplate'))
+  submitToMeta(
+    @Param('configId') configId: string,
+    @Body() dto: CreateWapiTemplateMetaDto,
+  ): Promise<WapiTemplate> {
+    return this.posting.submit(configId, dto);
   }
 
   @Get()

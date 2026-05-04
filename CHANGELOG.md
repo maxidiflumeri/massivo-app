@@ -21,6 +21,38 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.F.2.a — Backend: posting de templates Massivo → Meta Graph API
+- **Motivación**: cerrar la asimetría de 4.D — hoy podemos sincronizar templates aprobados desde Meta hacia Massivo, pero no podemos crear uno nuevo desde Massivo y mandarlo a Meta para revisión. Es bloqueante porque el dueño quiere que el flujo de templates viva 100% dentro de Massivo (sin tocar Meta Business Manager). El frontend (4.F.2.b) consume este endpoint en sesión posterior.
+- **DTOs** (`apps/backend/src/modules/wapi/templates-posting/wapi-templates-posting.dto.ts`):
+  - `CreateWapiTemplateMetaDto` con `name` (regex `^[a-z0-9_]{1,512}$` — exigencia de Meta), `language` (e.g. `es_AR`), `category` (`MARKETING|UTILITY|AUTHENTICATION`).
+  - `TemplateHeaderDto` (`format: NONE|TEXT|IMAGE|VIDEO|DOCUMENT`, `text?`, `textExamples?`, `mediaHandle?`).
+  - `TemplateBodyDto` (`text` 1-1024, `examples?: string[][]` shape `[["Ana", "1234"]]`).
+  - `TemplateFooterDto` (`text` max 60).
+  - `TemplateButtonDto` (`type: QUICK_REPLY|URL|PHONE_NUMBER`, `text` max 25, `url?`, `phoneNumber?`) con `ArrayMaxSize(3)` en buttons (límite Meta).
+  - Validación cruzada (URL exige `url`, PHONE_NUMBER exige `phoneNumber`, header TEXT exige `text`, header IMAGE/VIDEO/DOCUMENT exige `mediaHandle`) hecha en el service con `BadRequestException` específico — class-validator no expresa "campo X requerido sólo si Y=Z" sin custom decorators y agrega complejidad innecesaria para 4 reglas.
+- **`WapiTemplatesPostingService`** (`templates-posting/wapi-templates-posting.service.ts`):
+  - `submit(configId, dto)`:
+    1. `requireContext()` — `ForbiddenException` si no hay tenant.
+    2. `prisma.scoped.wapiConfig.findFirst` por id (cross-tenant 404 natural por la extension).
+    3. `findFirst` en `wapiTemplate` por `(metaName, businessAccountId)` — si existe → `ConflictException` (Meta también lo rechaza, pero anticipar el error es mejor UX y evita gastar un POST contra el rate limit de Meta).
+    4. `buildMetaPayload(dto)` — mapeo declarativo de DTO a shape Meta: HEADER component sólo si `format !== 'NONE'`, BODY siempre, FOOTER opcional, BUTTONS array (vacío omitido).
+    5. Decripta `accessTokenEnc` con `EncryptionService` (LRU caché del decrypt).
+    6. `POST /v20.0/<wabaId>/message_templates` con `Authorization: Bearer <token>` y `Content-Type: application/json`. URL base override por `WAPI_GRAPH_BASE_URL` (mismo env del sender/sync).
+    7. Errores Meta non-2xx → `ServiceUnavailableException` con `code` y `message` del payload `error` para que el UI los pueda surface al usuario (ej: "Template name already exists" si pisamos el dedup, "Body text exceeds 1024 chars", etc.).
+    8. Persiste local con `metaName, businessAccountId, category, language, status: response.status ?? 'PENDING', components: payload.components, syncedAt: now`. El status default `PENDING` es lo que devuelve Meta el 99% de las veces; si en algún caso devuelve directamente `APPROVED` (templates AUTHENTICATION pre-aprobados) lo respetamos.
+  - **Notas**:
+    - El `metaTemplateId` que devuelve Meta (response `id`) se loggea pero **NO** se persiste — el modelo `WapiTemplate` no tiene esa columna. La identificación canónica es `(teamId, metaName, businessAccountId)` igual que en sync. Sub-fase futura agregaría la columna si necesitamos delete-from-Meta sin re-fetch.
+    - Para header IMAGE/VIDEO/DOCUMENT, Meta exige un `header_handle` obtenido vía Resumable Upload API (3-step: start → upload → commit). Acá lo aceptamos como input (`mediaHandle`) — la sub-fase 4.F.2.c implementará el endpoint de upload (`POST /api/wapi/templates/media-handle/:configId` con multipart) que devuelve el handle. Por ahora si el usuario quiere mandar template con media, tiene que generar el handle por su cuenta o usar TEXT/NONE.
+    - Components persisten con shape Meta (`type: 'HEADER'`, `format: 'TEXT'`, etc.) para que el `TemplatePreview` del frontend (4.F.1.b) los renderice idénticos a un template sincronizado, sin necesidad de tener dos render paths.
+- **Endpoint** `POST /api/wapi/templates/submit/:configId` agregado a `WapiTemplatesController` con `@HttpCode(201)` y `@CheckPolicies('create', 'WapiTemplate')`. Devuelve el row de `WapiTemplate` recién creado con su `id` y `status` para que el UI pueda navegarlo de inmediato. Anotación explícita `Promise<WapiTemplate>` por el TS2742 (referencia a runtime de Prisma en types inferidos).
+- **Wire**: `WapiTemplatesPostingService` registrado en `wapi.module.ts`.
+- **Tests** (`wapi-templates-posting.service.spec.ts`, 14 nuevos): sin tenant → Forbidden, config no existe → NotFound, dedup → Conflict, happy path full (header TEXT + body con vars + footer + 3 botones de cada type) verificando shape exacto del payload Meta, header IMAGE sin handle → BadRequest, header IMAGE con handle → `header_handle` array, header TEXT sin text → BadRequest, button URL sin url → BadRequest, button PHONE_NUMBER sin phoneNumber → BadRequest, Graph API 400 con error Meta → ServiceUnavailable preservando mensaje, decryption del accessToken (verifica `Bearer <plaintext>`), Meta sin status en respuesta → default `PENDING`, body sin examples → no incluye `example.body_text`, header NONE → omite el componente HEADER del payload. Backend full: **339/339 ✅** (325 anteriores + 14 nuevos, 0 regresiones).
+- **Pendientes intencionales en 4.F.2.a**:
+  - **Frontend (4.F.2.b)** — `WapiTemplateEditorPage` con form completo + live preview + AI suggestion placeholder. Va en sesión separada.
+  - **Resumable Upload (4.F.2.c)** — endpoint para subir media a Meta y devolver el handle. Sin esto, los templates con header IMAGE/VIDEO/DOCUMENT son inviables desde el UI (sólo posibles vía API directa).
+  - **Sync de status post-creación** — los templates entran como PENDING; Meta los revisa async (típicamente ~minutos pero hasta 24h). El status local se actualiza cuando el usuario corre el sync de 4.D, o vía webhook `template_status_update` (4.C los ignora explícitamente — flag para 4.D.1 a futuro).
+  - **`metaTemplateId` column** — si necesitamos delete-from-Meta directo sin pasar por el `metaName`, agregar la columna en migration aparte.
+
 ### 4.F.1.a + 4.F.1.b — Frontend: admin de WapiConfigs (números) y catálogo de Templates con sync
 - **Motivación**: 4.F.1 dejó las campañas operativas pero el usuario no podía crear ninguna campaña real porque no había UI ni para dar de alta un número de WhatsApp (`WapiConfig`) ni para ver/sincronizar los templates aprobados desde Meta. 4.F.2 (editor de templates con posting a Meta) queda postergado hasta cubrir este gap operativo. Ambas pantallas son CRUD/admin sin lógica de negocio nueva — consumen los endpoints REST existentes desde 4.A/4.D.
 - **Tipos** (`apps/frontend/src/features/wapi/configs/types.ts`): `WapiConfigListItem` (id, name, phoneNumberId, businessAccountId, isActive, createdAt), `WapiConfigDetail` extiende con `welcomeMessage, optOutConfirmMessage, dailyLimit, updatedAt` (los campos cifrados — accessToken, webhookVerifyToken, appSecret — **NUNCA** los devuelve el backend en `findOne`, así que tampoco existen acá). `CreateWapiConfigPayload` (phoneNumberId/businessAccountId/accessToken/webhookVerifyToken obligatorios, resto opcionales). `UpdateWapiConfigPayload` (todos opcionales + `isActive` boolean — los secrets son string `| null`-able para "deja vacío para no cambiar").
