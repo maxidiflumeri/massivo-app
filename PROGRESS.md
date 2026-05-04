@@ -31,11 +31,11 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 4 — Canal WhatsApp Cloud API (**sub-A ✅**; siguen 4.B encriptación KMS, 4.C webhook Meta, 4.D sync templates, 4.E CRUD campañas + control actions, 4.F inbox, 4.G snippets, 4.H opt-out, 4.I welcome, 4.J live dashboard, 4.K botones)
+- **Fase actual:** Fase 4 — Canal WhatsApp Cloud API (**sub-A ✅, sub-B ✅, sub-C ✅, sub-D ✅**; siguen 4.E CRUD campañas + control actions, 4.F inbox, 4.G snippets, 4.H opt-out, 4.I welcome, 4.J live dashboard, 4.K botones)
 - **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅ + **Fase 3 ✅** (3.E inbound postergado, decisión del dueño)
 - **Última actualización:** 2026-05-04
 - **Branch principal:** `main`
-- **Último commit (próximo a este cierre):** Sesión 17 cierre (4.A infra de envío WAPI: sender Graph API + queue + worker + endpoint placeholder). Para retomar: arrancar **4.B — Encriptación KMS de tokens** (`accessTokenEnc` / `webhookVerifyTokenEnc` / `appSecretEnc` quedaron en claro hasta ahora) o **4.C — Webhook Meta** (verify token + statuses delivered/read/failed). Ver detalle más abajo.
+- **Último commit (próximo a este cierre):** Sesión 20 cierre (4.D sync templates Meta + 4.C.1 refactor webhook a URL única multi-config). 4.D: `POST /api/wapi/templates/sync/:configId`, pagina Graph API, upsert idempotente. 4.C.1: webhook URL única (`/api/webhooks/wapi` sin `:configId`) — escanea verifyToken activas en GET, resuelve config por `phone_number_id` del payload en POST. Soporta dos números bajo la misma Meta App (mismo appSecret). Para retomar: arrancar **4.E — CRUD completo de campañas WAPI** (paridad con email 3.C: create/update/addContacts/control actions/getReport/realtime). Ver detalle más abajo.
 - **Repo remoto:** `https://github.com/maxidiflumeri/massivo-app`
 
 ---
@@ -288,9 +288,9 @@ Criterios de aceptación 3.A:
 - [x] **Tests** ✅: `wapi-sender.service.spec.ts` 8/8 (sendText/Template happy + 6 errores) + `wapi-worker.service.spec.ts` 9/9 (happy, cross-tenant, PAUSED, COMPLETED, dailyLimit, rate-limit, auth, components con bodyVars, transición a COMPLETED). Backend full **255/255 ✅**.
 
 **Pendientes de Fase 4 (próximos pasos):**
-- [ ] **4.B — Encriptación de tokens** (KMS-backed): `WapiConfig.accessTokenEnc` / `webhookVerifyTokenEnc` / `appSecretEnc` quedaron en claro hasta ahora. Helper `EncryptionService.encrypt/decrypt` con cache. Migración de los placeholders.
-- [ ] **4.C — Webhook Meta**: `POST /webhooks/wapi/:configId` (público, `@SkipTenantScope`). `GET` con verify_token único por config. Validación firma con `appSecret`. Procesa `messages` (entrante texto/imagen/audio/doc/sticker/contacto/reacción/botón), `statuses` (sent/delivered/read/failed), `template_status_update`, `account_alerts`. Resuelve tenant por `configId` → `WapiConfig` → `(orgId, teamId)`.
-- [ ] **4.D — Sync de templates Meta**: `POST /api/wapi/templates/sync` por config — pull de templates aprobados desde Graph API, persiste `metaName`, `language`, `category`, `status`, `components`. Cron opcional semanal (Fase 8).
+- [x] **4.B — Encriptación de tokens at-rest** ✅ (Sesión 18 / 2026-05-04): `EncryptionService` abstracto + `AesGcmEncryptionService` concreto en `common/security/`, cloud-agnostic (sin acoplamiento a AWS/GCP/Vault). AES-256-GCM con master key desde `MASSIVO_ENCRYPTION_KEY` (hex/base64). Formato versionado `v1:<iv>:<ct>:<tag>` (base64url). Cache LRU TTL 5min, max 256 entries. Modo legacy: sin clave master, persiste plaintext; lee plaintext y `v1:` indistintamente. `WapiConfigsService.create/update` encriptan; `WapiWorkerService` decripta antes de enviar. Tests 11/11. Backend full 266/266 ✅.
+- [x] **4.C — Webhook Meta** ✅ (Sesión 19 / 2026-05-04): `GET /api/webhooks/wapi/:configId` verify (mode=subscribe + verify_token timing-safe), `POST` con HMAC-SHA256 sobre rawBody usando `appSecret` (sin appSecret → modo dev acepta sin validar + warn). Procesa `statuses[]` → WapiReport.DELIVERED/READ/FAILED por metaMessageId (no retrocede de READ a DELIVERED). Procesa `messages[]` entrantes → upsert `WapiConversation(teamId, configId, phone)` + crea `WapiMessage` con metaMessageId @unique (P2002 swallowed). Emite `wapi.report.updated` y `wapi.message.inbound`. Tests 20/20. Backend full 286/286 ✅. Pendiente: descarga de media → S3 (4.F), auto-reply welcome (4.I), keywords opt-out (4.H), `template_status_update`/`account_alerts`.
+- [x] **4.D — Sync de templates Meta** ✅ (Sesión 20 / 2026-05-04): `POST /api/wapi/templates/sync/:configId` en `WapiTemplatesController`. `WapiTemplatesSyncService` carga `WapiConfig` vía `prisma.scoped`, decripta `accessTokenEnc`, pagina Graph API v20 (`paging.next`) con safety guard `MAX_PAGES=5` (~500 templates), upsert idempotente por `(metaName, businessAccountId)` — skip si `(status, language, category, components)` no cambió, sino update con `syncedAt`. Errores: Forbidden sin context, NotFound config inexistente, ServiceUnavailable en Graph non-2xx. URL base override-able vía `WAPI_GRAPH_BASE_URL`. No remueve templates que Meta borró (queda último status conocido). Tests 9/9. Backend full **295/295 ✅**. Pendientes: cron semanal (Fase 8), procesar `template_status_update` desde webhook (4.C lo ignora).
 - [ ] **4.E — Campañas WAPI** (CRUD completo, addContacts CSV, send con dailyLimit global, control actions pause/resume/forceClose mismo patrón que 3.C.5, getReport, realtime).
 - [ ] **4.F — Inbox conversacional** (modelos, endpoints take/assign/resolve/mark-read, send dentro de ventana 24h, media S3, realtime, frontend chat layout).
 - [ ] **4.G — Respuestas rápidas** (snippets `WapiQuickReply`, autocomplete `/atajo`).
@@ -501,6 +501,107 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 ---
 
 ## Bitácora de sesiones
+
+### 2026-05-04 — Sesión 20 (Claude Opus 4.7) — Sub-fase 4.D (sync de templates Meta)
+- **Decisión de scope**: el dueño dijo *"avanza"* después de 4.C, así que continué en orden con 4.D. La idea: Massivo necesita conocer los `WapiTemplate` aprobados antes de poder lanzar campañas, y crearlos a mano vía CRUD existente es frágil (cambios de status en Meta — APPROVED/REJECTED — no se ven). 4.D agrega un sync explícito tirando del Graph API.
+- **`WapiTemplatesSyncService`** (`apps/backend/src/modules/wapi/templates-sync/wapi-templates-sync.service.ts`):
+  - `sync(configId)` — `prisma.scoped.wapiConfig.findFirst({ where: { id: configId } })` (cross-tenant 404 natural por la extension), decripta `accessTokenEnc` con `EncryptionService`, pagina Meta hasta `MAX_PAGES=5` (~500 templates con `PAGE_SIZE=100`), llama `upsertOne` por cada template y agrega al `SyncSummary { fetched, created, updated, skipped, pages }`.
+  - **Pagination**: arranca con `firstPageUrl(businessAccountId)` (`<base>/v20.0/<biz>/message_templates?fields=name,status,language,category,components,id&limit=100`) y avanza por `paging.next` que viene en cada response (Meta da la URL completa con cursor `after`). El loop `while (url && pages < MAX_PAGES)` corta solo si Meta devuelve un `paging.next` malformado o si ya hay más de 500 templates (caso patológico — el log warn lo deja explícito en `pages=5 fetched=500`). Tests cubren explícitamente el caso de `paging.next` infinito.
+  - **`upsertOne`** — `findFirst({ metaName, businessAccountId })` (la extension agrega teamId). Si no existe → `create`. Si existe → comparación: `sameStatus && sameLanguage && sameCategory && sameComponents` (este último por `JSON.stringify` — los components de Meta son arrays de objetos chicos con `type`/`text`/`buttons`, no necesitan diff estructural). Si nada cambió → `'skipped'` (no toca `syncedAt` para no ensuciar la timeline en re-syncs inocentes). Si difiere → `update` con `syncedAt = now`.
+  - **Errores**:
+    - Sin tenant context → `ForbiddenException`. Test directo via `svc.sync('cfg-1')` sin `TenantContext.run(...)`.
+    - Config no encontrada (incluye cross-tenant) → `NotFoundException`. La extension hace que un config de otro org vuelva null.
+    - Graph API non-2xx (401 token inválido, 5xx, 4xx parámetros) → `ServiceUnavailableException` con `code` y `message` desde `error` del payload Meta. El warn log incluye `status` HTTP + `code` Meta para que oncall pueda diferenciar 401 de 5xx en logs.
+- **Endpoint** `POST /api/wapi/templates/sync/:configId` agregado a `WapiTemplatesController` con `@CheckPolicies('create', 'WapiTemplate')` (criterio: si podés crear templates, podés sincronizar — el sync es esencialmente un bulk create+update). `@HttpCode(200)` porque devuelve el summary; un 201 sería confuso si `created=0`. El controller devuelve directamente el `SyncSummary` y el frontend (a futuro 4.E UI) lo muestra como toast.
+- **Decisiones intencionales para 4.D**:
+  - **Soft delete**: no removemos templates que Meta borró (Meta puede archivarlos). Si el sync no los trae, quedan en BD con su último status conocido. Esto evita romper campañas históricas que referencian un template viejo. El cleanup es manual vía `DELETE /api/wapi/templates/:id`. Una alternativa (marcar como `ARCHIVED` automáticamente) la dejé para cuando hagamos auditoría — por ahora, no info, no acción.
+  - **Cron semanal** (`ScheduledTask` con `kind=WAPI_TEMPLATES_SYNC`) lo dejo para Fase 8, junto al resto del sistema de tareas programadas. El sync manual es suficiente para MVP.
+  - **`template_status_update`** desde el webhook Meta — 4.C lo ignora (sólo procesa `messages` y `statuses`). Cuando llegue un APPROVED/REJECTED, Massivo no se entera hasta el próximo sync manual. Esto es aceptable: Meta tarda horas en revisar templates, no minutos. Cuando se haga 4.J (live dashboard) o se pida UX más reactiva, agregamos un handler en el webhook que llame `upsertOne` con el template del payload.
+- **Tests** (9 nuevos): `wapi-templates-sync.service.spec.ts`:
+  - sin tenant context → ForbiddenException (sanity).
+  - config no existe → NotFoundException.
+  - happy 1 página: 2 templates nuevos → 2 created. Verifica URL Graph (incluye `biz-1/message_templates` y `fields=name`) + header `Authorization: Bearer tok-plain`.
+  - paginación: 1ª página con `paging.next` → 2ª página → 3 templates totales en 2 pages. Verifica que la 2ª llamada usa la URL con `after=abc`.
+  - existing idéntico → skipped sin DB write (ni create ni update).
+  - existing con status distinto → updated, verifica `update` con `data: { status: 'APPROVED' }`.
+  - Graph API 401 (`error.code=190 Invalid OAuth`) → ServiceUnavailableException, no se escribió nada.
+  - safety guard MAX_PAGES=5 con `paging.next` infinito → corta en 5 páginas (5 fetches, summary.pages=5).
+  - decripta accessToken con EncryptionService antes de fetch — verifica `encrypt.decrypt('enc(real-token)')` y que el header sea `Bearer real-token`.
+  - Backend full: **295/295 ✅** (286 anteriores + 9 nuevos de 4.D, 0 regresiones).
+- **Verificación**: `tsc --noEmit` ✅ (0 errores), `jest` 295/295 ✅. Frontend no tocado (4.D es backend puro).
+- **Sub-fase 4.C.1 (refactor in-session)** — Antes de commitear, el dueño preguntó: *"el webhook va a ser un webhook x config? imaginando q alguien puede subir 2 numeros de 2 apps distintas o 2 numeros de la misma app entonces el webhook es el mismo"*. Acertó: el diseño original `/api/webhooks/wapi/:configId` solo soporta 1 config = 1 Meta App. Si dos configs comparten App, Meta solo permite registrar una webhook URL en la App, así que pierde eventos del segundo config. Refactor in-session a URL única:
+  - **`GET /api/webhooks/wapi`** (sin `:configId`): escanea todas las `WapiConfig` activas, decripta `webhookVerifyTokenEnc` de cada una, compara timing-safe contra `hub.verify_token`. Primera que matchea gana. Es one-shot (registro de webhook), N decrypts cacheados por LRU del `EncryptionService`.
+  - **`POST /api/webhooks/wapi`** (sin `:configId`): parsea rawBody, extrae los `phone_number_id` únicos (`entry[].changes[].value.metadata.phone_number_id`), `findMany({ phoneNumberId: { in: [...] } })` para resolver configs. Valida HMAC con el `appSecret` del primer config — todos los configs de la misma App comparten ese secreto, así que cualquiera sirve. Le pasa al service un `Map<phoneNumberId, ResolvedWebhookConfig>`. Sin matches → 404.
+  - **`WapiWebhookService.process(payload, configByPhoneNumberId)`**: itera entry-by-entry, resuelve config por `phone_number_id`, corre cada `value` en su propio `TenantContext.run`. Si Meta batchea events de N números en un mismo POST, cada uno se procesa contra su tenant correcto (caso real cuando un team tiene 2 números bajo la misma App).
+  - **Decisión**: la opción alternativa era modelar `WapiMetaApp` separado (App ⊃ WABAs ⊃ phoneNumbers) con URL `/webhooks/wapi/app/:metaAppId`. Más correcta conceptualmente pero requiere migración + cambio de UX (crear App primero, después configs). Para MVP, el lookup por payload es suficiente y no requiere schema changes.
+  - **Tests adicionales** (5 nuevos): match en 2ª config (escanea todas), multi-config carga ambos en map, phone_number_id sin matching → 404, payload sin phone_number_id → ignorado sin DB, multi-tenant entry processing.
+  - **Verificación final**: backend full **300/300 ✅** (295 de 4.D + 5 nuevos de 4.C.1, 0 regresiones). `tsc --noEmit` clean.
+- **Próximo paso**: **4.E — CRUD completo de campañas WAPI**. Paridad con email 3.C: create/update/addContacts/control actions (PAUSE/RESUME/FORCE_CLOSE)/getReport/realtime. La infra de envío (`WapiQueueService` + `WapiWorkerService`) ya está de 4.A — falta el wiring del CRUD y los control actions con el patrón de 3.C.5. Alternativa: **4.F — Inbox conversacional** (modelos ya existen de 2.B, el inbound ya entra de 4.C, falta UI + take/assign/resolve + media S3).
+
+### 2026-05-04 — Sesión 19 (Claude Opus 4.7) — Sub-fase 4.C (webhook Meta WhatsApp Cloud API)
+- **Decisión de scope**: continuar Fase 4 en orden — el dueño dijo *"perfecto, avanza con el 4C"* después de 4.B. 4.C cubre el inbound del canal WAPI: verify del registro del webhook + recepción de `statuses` (delivered/read/failed) y `messages[]` entrantes (base del inbox que viene en 4.F).
+- **Endpoint**: `GET /api/webhooks/wapi/:configId` (verify) + `POST /api/webhooks/wapi/:configId` (events). Bajo `@SkipTenantScope` — Meta no manda Authorization. La confianza es:
+  - **GET**: `hub.mode=subscribe` + `hub.verify_token` matchea el `webhookVerifyTokenEnc` decriptado de la WapiConfig identificada por `:configId`. Devuelve `hub.challenge` o 403. Comparación `timingSafeEqual` para evitar timing attacks.
+  - **POST**: header `X-Hub-Signature-256` = `sha256=<hex>` con HMAC-SHA256 sobre el rawBody usando `appSecret` decriptado. `main.ts` ya tiene `rawBody:true`, así que `@Req() req: RawBodyRequest<Request>` da `req.rawBody`. Verificación con `timingSafeEqual` sobre buffers de igual longitud.
+  - **Sin appSecret** en la config → modo dev: acepta sin validar firma + warn. Producción debería tener appSecret obligatorio (a futuro: validation en `WapiConfigsService.create` o flag `WAPI_REQUIRE_APP_SECRET=true`).
+- **`WapiWebhookService.process(payload, tenant)`**:
+  - Reconstruye TenantContext (configId resuelto a orgId/teamId en el controller, role sintético OWNER/ADMIN — el inbound es background).
+  - Itera `entry[].changes[].value`. Cada `value` puede traer `statuses[]` y/o `messages[]` (no son mutuamente excluyentes).
+- **Status flow** (statuses[]):
+  - Mapeo: `sent` → no-op (ya marcamos SENT en el ack del POST /messages); `delivered` → DELIVERED + deliveredAt; `read` → READ + readAt + (deliveredAt si no estaba); `failed` → FAILED + failedAt + error desde `errors[0]` (`code:title — message`, slice 500).
+  - **No retrocede**: si el report ya está READ y llega un `delivered`, ignoramos. Si está FAILED, tampoco aceptamos read/delivered. Esto importa porque Meta puede reordenar entregas (la red de webhooks no es FIFO).
+  - Idempotente vía el lookup `findFirst({ metaMessageId: st.id })` + el chequeo de status actual. Si llega un duplicado exacto, el update setea los mismos campos.
+  - Emite `wapi.report.updated` (debounced) por `(teamId, campaignId)` para que el frontend (Fase 4.J live dashboard / 4.E vista de reports) refresque.
+- **Inbound message flow** (messages[]):
+  - `upsert WapiConversation(teamId, configId, phone)` — el unique compuesto ya está en el schema. `create` setea `lastMessageAt=ts`, `window24hAt=ts+24h`, `unreadCount=1`, `name=contacts[0].profile.name`. `update` renueva los timestamps + `unreadCount: { increment: 1 }` + actualiza `name` si vino.
+  - Crea `WapiMessage` con `metaMessageId @unique` (catch P2002 → swallow + log debug — Meta reintenta hasta recibir 200).
+  - `content` persiste el sub-objeto del tipo (text/image/audio/video/document/sticker/button/interactive/reaction) + `context` para reply chains. Esto evita que el inbox de 4.F tenga que volver a parsear el payload Meta.
+  - `type` se persiste crudo de Meta — el inbox renderiza lo que conozca. Tipos no soportados quedan en BD para diagnóstico.
+  - Emite `wapi.message.inbound` por mensaje (no debounced — es UX-critical para el inbox).
+- **Tipos** (`wapi-webhook.types.ts`): shapes mínimos. No replicamos el schema completo de Meta (es enorme) — sólo los campos que tocamos. El payload crudo se persiste en `WapiMessage.content`.
+- **Decisiones intencionales para 4.C**:
+  - **Media no se descarga**: los `messages.image.id` de Meta son media IDs que requieren un `GET /v20.0/<media-id>` adicional para obtener la URL temporal. Eso + upload a S3 lo dejé para 4.F (inbox) — ahí sabremos qué thumbnails / proxy necesita el frontend.
+  - **Auto-reply welcome**: si llega un mensaje de un phone sin conversation previa, no respondemos automáticamente todavía. Eso es 4.I (welcome message + delaySec).
+  - **Auto-detección opt-out**: keywords "BAJA"/"STOP" no se detectan acá. Es 4.H — y depende de agregar `SUPPRESSED` al enum WapiReportStatus (migración Prisma diferida).
+  - **`template_status_update` / `account_alerts`**: estos vienen en `entry.changes.field` distinto de `messages` y los ignoramos por ahora. Cuando se haga 4.D (sync de templates), lo natural es procesar `template_status_update` para reflejar APPROVED/REJECTED en BD.
+- **Tests** (20 nuevos):
+  - `wapi-webhook.controller.spec.ts` 10/10: GET verify happy/mismatch/wrong-mode/not-found, POST signature válida (HMAC real, no mockeado)/inválida/sin-appSecret-acepta/object-distinto-ignora/no-JSON-400/not-found-404.
+  - `wapi-webhook.service.spec.ts` 10/10: status delivered/read/read-cuando-DELIVERED-no-resetea-deliveredAt/no-retrocede-READ→delivered/failed-con-errors[0]/sent-noop/sin-report-skip + mensaje text-crea-conv-y-message-y-evento/dup-P2002-swallow/image-content-incluye-image.
+  - Backend full: **286/286 ✅** (266 anteriores + 20 nuevos de 4.C, 0 regresiones).
+- **Verificación**: `tsc --noEmit` ✅ (0 errores), `jest` 286/286 ✅. Frontend no tocado (4.C es backend puro).
+- **Próximo paso**: **4.D — Sync de templates Meta** (`POST /api/wapi/templates/:configId/sync` — pull de templates aprobados desde Graph API, persiste `metaName`, `language`, `category`, `status`, `components`). Alternativa: **4.E — CRUD completo de campañas WAPI** (paridad con email 3.C: create/update/addContacts/control actions/getReport/realtime). Para tener un flujo end-to-end testeable, lo natural sería 4.D primero (templates aprobados) → 4.E (campañas) → 4.F (inbox que ya recibe inbound vía 4.C).
+
+### 2026-05-04 — Sesión 18 (Claude Opus 4.7) — Sub-fase 4.B (encriptación at-rest AES-256-GCM)
+- **Decisión arquitectónica del dueño**: cloud-agnostic. La frase exacta fue *"no quiero que massivo app quede acoplado solo a soluciones de AWS, xq si en un momento tendria q cambiar de entorno, complicaria las cosas. Quiero quedar lo mas abstracto e independiente posible"*. Descartado AWS KMS-only; elegido AES-256-GCM con master key en env detrás de una abstracción `EncryptionService` (clase abstracta) — el día que se quiera swapear a KMS / Vault / GCP, sólo cambia el `useExisting` del `SecurityModule`, los call sites no se tocan.
+- **`EncryptionService`** (`apps/backend/src/common/security/encryption.service.ts`): clase abstracta con `encrypt(plaintext): string`, `decrypt(value): string`, `isEncrypted(value): boolean`. Impl concreta `AesGcmEncryptionService`:
+  - Master key desde `MASSIVO_ENCRYPTION_KEY` (hex, 64 chars) o `MASSIVO_ENCRYPTION_KEY_B64` (base64, 44 chars). Validación de tamaño: 32 bytes exactos o el `onModuleInit` tira al boot.
+  - Algoritmo: AES-256-GCM via `node:crypto`. IV random 12 bytes per-encrypt. AuthTag 16 bytes detecta tampering.
+  - Formato de salida: `v1:<iv-b64url>:<ciphertext-b64url>:<authTag-b64url>` (string, 4 partes separadas por `:`). El prefijo `v1:` es el contrato — futuros algoritmos suben a `v2:` etc., y el `decrypt` puede coexistir con valores viejos hasta que rotemos todo.
+  - **Cache LRU TTL**: 5min, max 256 entries, key=ciphertext completo. Un WapiConfig con muchos sends evita correr AES en cada job. Se invalida cuando se rota el secreto (porque el ciphertext cambia).
+  - **Modo legacy** (sin clave master, sólo dev): `encrypt()` es no-op, `decrypt()` devuelve el valor sin cambios mientras NO tenga prefijo `v\d+:`. Si tiene prefijo y la clave no está → tira. Esto deja a 2.B funcionar sin breaking change.
+  - **Detección de versión desconocida**: `decrypt('v9:...')` tira `formato inválido (versión=v9)`. Sólo `v1` es aceptable hoy.
+- **`SecurityModule`** (`apps/backend/src/common/security/security.module.ts`) `@Global` — provider `AesGcmEncryptionService` ligado a token `EncryptionService` (`useExisting`). Importado en `AppModule`. Como es global, los call sites no necesitan importar el module.
+- **Integración call sites**:
+  - `WapiConfigsService.create`: encripta `accessToken`, `webhookVerifyToken`, `appSecret` (este último, si vino).
+  - `WapiConfigsService.update`: idem para los tres campos cuando vienen en el DTO. Trato especial para `appSecret: null` (limpia el campo) — no lo pasa por encrypt.
+  - `WapiWorkerService.process`: reemplaza el TODO 4.B (línea ~243) — `accessToken: this.encryption.decrypt(cfg.accessTokenEnc)`. Detección de legacy plaintext (sin prefijo `v1:`) → devuelve el valor tal cual, manteniendo backward-compat con WapiConfigs sembradas en 2.B.
+- **Env**: `.env.example` documenta `MASSIVO_ENCRYPTION_KEY` y `_B64`, con comando para generar (`openssl rand -hex 32`) y advertencia de no perder la clave. También aproveché para agregar las vars del worker WAPI (`WAPI_QUEUE_NAME`, `WAPI_WORKER_CONCURRENCY`, `WAPI_WORKER_ENABLED`, `WAPI_DELAY_MIN_MS/MAX_MS`) y `WAPI_GRAPH_BASE_URL` que faltaba documentar de 4.A.
+- **Tests** (11 nuevos): `encryption.service.spec.ts`:
+  - encrypt+decrypt roundtrip preserva el plaintext.
+  - cada `encrypt()` del mismo plaintext produce ciphertext distinto (IV random).
+  - tamper detection: flippear el primer char del ciphertext → `decrypt` tira.
+  - versión desconocida (`v9:...`) → tira `formato inválido`.
+  - clave de tamaño incorrecto al boot → tira.
+  - soporta clave en base64 vía `MASSIVO_ENCRYPTION_KEY_B64`.
+  - sin clave master: `encrypt` es no-op, `isEncrypted('plain')=false`.
+  - sin clave master + valor `v1:...` → `decrypt` tira con mensaje claro.
+  - decrypt de plaintext legacy (sin prefijo) lo devuelve sin cambios.
+  - `isEncrypted` distingue `v1:` de plaintext.
+  - cache hit: tras un `decrypt` exitoso, blanquear la masterKey y volver a llamar — devuelve el cached sin tocar crypto.
+- **Mocks actualizados**: `tenant-isolation.spec.ts` y `wapi-configs.service.spec.ts` agregan provider mock de `EncryptionService` con `encrypt(v) → 'enc(v)'` / `decrypt('enc(v)') → 'v'` para que los Nest testing modules resuelvan la dep.
+- **Fix colateral preexistente** en `wapi-worker.service.spec.ts`: el test de `bodyVars` asignaba `fix.campaign.config = { bodyVars: [...] }` pero el fixture infiere `config: null`. tsc strict lo rechazó — cast `(fix.campaign as { config: unknown }).config = ...`. Detectado al correr `tsc --noEmit` después de modificar el archivo.
+- **Verificación**: `tsc --noEmit` ✅ (0 errores), `jest` **266/266 ✅** (255 anteriores + 11 de 4.B, 0 regresiones).
+- **Próximo paso**: **4.C — Webhook Meta** (`POST /webhooks/wapi/:configId` público, `@SkipTenantScope`, verify_token + firma con `appSecret`, procesa `messages` entrantes y `statuses` delivered/read/failed). Alternativa: **4.D — Sync de templates Meta** si se quiere armar primero el flujo completo de outbound (templates aprobados desde Graph API).
 
 ### 2026-05-04 — Sesión 17 (Claude Opus 4.7) — Sub-fase 4.A (infra de envío WAPI)
 - **Decisión de scope**: arrancar Fase 4 (WhatsApp Cloud API) en lugar de cerrar 3.E inbound de mails — el dueño priorizó WAPI. 3.E queda postergado al final de Fase 3 (después de 4 entera).
