@@ -155,7 +155,7 @@ describe('WapiWorkerService.process', () => {
     expect(prismaScoped.wapiReport.update).not.toHaveBeenCalled();
   });
 
-  it('campaign COMPLETED + report PENDING → FAILED con campaign-closed', async () => {
+  it('campaign COMPLETED + report PENDING → CANCELED con campaign-closed', async () => {
     const fix = reportFixture();
     fix.campaign.status = 'COMPLETED';
     prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(fix);
@@ -168,8 +168,23 @@ describe('WapiWorkerService.process', () => {
     expect(sender.sendTemplate).not.toHaveBeenCalled();
     expect(prismaScoped.wapiReport.update).toHaveBeenCalledWith({
       where: { id: 'rep-1' },
-      data: { status: 'FAILED', error: 'campaign-closed' },
+      data: { status: 'CANCELED', error: 'campaign-closed' },
     });
+  });
+
+  it('report ya CANCELED (forceClose previo) → skip sin enviar ni update', async () => {
+    const fix = reportFixture();
+    fix.status = 'CANCELED';
+    fix.campaign.status = 'COMPLETED';
+    prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(fix);
+
+    const out = await worker.process(
+      jobOf({ reportId: 'rep-1', organizationId: 'org-a', teamId: 'team-a' }),
+    );
+
+    expect(out).toEqual({ canceled: true });
+    expect(sender.sendTemplate).not.toHaveBeenCalled();
+    expect(prismaScoped.wapiReport.update).not.toHaveBeenCalled();
   });
 
   it('dailyLimit alcanzado → moveToDelayed 1h, no llama sender', async () => {

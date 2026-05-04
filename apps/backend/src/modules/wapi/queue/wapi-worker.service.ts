@@ -186,22 +186,28 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
       });
       if (!report) throw new Error(`WapiReport ${reportId} not found in tenant`);
 
+      // Si el report ya no está PENDING (forceClose lo dejó CANCELED, o se
+      // procesó en una corrida anterior), no hay nada que hacer.
+      if (report.status !== 'PENDING') {
+        this.logger.log(
+          `Job ${job.id} → skip (report ${reportId} ya en estado ${report.status})`,
+        );
+        return { canceled: true };
+      }
+
       // Control actions
       const campaignStatus = report.campaign.status;
-      if (campaignStatus === 'PAUSED' && report.status === 'PENDING') {
+      if (campaignStatus === 'PAUSED') {
         await job.moveToDelayed(Date.now() + 30_000, job.token);
         this.logger.log(
           `Job ${job.id} → delayed 30s (campaign ${report.campaignId} PAUSED)`,
         );
         return { paused: true };
       }
-      if (
-        report.status === 'PENDING' &&
-        (campaignStatus === 'COMPLETED' || campaignStatus === 'FAILED')
-      ) {
+      if (campaignStatus === 'COMPLETED' || campaignStatus === 'FAILED') {
         await this.prisma.scoped.wapiReport.update({
           where: { id: reportId },
-          data: { status: 'FAILED', error: 'campaign-closed' },
+          data: { status: 'CANCELED', error: 'campaign-closed' },
         });
         this.notifyReportUpdate(teamId, report.campaignId);
         this.notifyReportLog(teamId, {
