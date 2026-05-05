@@ -7,13 +7,29 @@
 ## Prompt de arranque para IAs (copiar/pegar al iniciar sesión)
 
 ```
-Estoy migrando AMSA Sender (sistema interno de Ana Maya SA, NO se toca) a un
-SaaS multi-tenant llamado Massivo App, en este repositorio. Leé estos archivos
-en este orden y resumime el estado actual antes de proponer el siguiente paso:
+Estoy retomando la migración de AMSA Sender → Massivo App. Antes de proponer
+  nada, leé estos archivos en este orden y resumime el estado actual:
+  1. PROGRESS.md — buscá la sección "Estado actual" (línea ~30) y la última                                                                                                                          bitácora "2026-05-04 — Sesión 25" para ver qué quedó hecho y los bugs
+     resueltos al cierre.                                                                                                                                                                         2. MIGRATION_PLAN.md — para entender el roadmap general.                                                                                                                                        3. CHANGELOG.md — sección [Unreleased], últimas entradas 4.F.3, 4.F.4 y 4.G.                                                                                                                                                                                                                                                                                                                    Contexto rápido del último cierre:
+  - 4.F.3 (backend inbox WhatsApp) ✅, 4.F.4 (frontend inbox) ✅, 4.G (admin de
+    quick replies) ✅. Smoke test funcional pasó (curl simulado al webhook crea
+    conversación, aparece en /dashboard/wapi/inbox vía socket).
+  - Hay 4 commits locales sin pushear sobre origin/main (si todavía no pusheé,
+    preguntame antes de hacerlo).
 
-1. MIGRATION_PLAN.md  (plan maestro: arquitectura, stack, fases, criterios)
-2. PROGRESS.md        (este archivo: estado actual y próximo paso concreto)
-3. README.md          (setup local, scripts, convenciones)
+  Convenciones del repo (recordatorio):
+  - TypeScript strict, prohibido `any` salvo justificación.
+  - Logger Winston, nunca console.*.
+  - DTOs con class-validator en endpoints.
+  - UI con dark/light mode.
+  - Toda query a modelo tenant-aware DEBE filtrar por organizationId + teamId
+    (vía prisma.scoped).
+  - Mensajes de commit en español.
+
+  Próximo paso pendiente (según PROGRESS.md): smoke test extendido del inbox
+  en multi-pestaña y después decidir entre 4.F.2.d (media upload Meta) o 4.H
+  (opt-out automático con keywords). NO avances sin que te confirme cuál de
+  los dos elijo.
 
 Convenciones obligatorias:
 - TypeScript strict, prohibido `any` salvo justificación.
@@ -62,15 +78,15 @@ C:\Users\MDIFLUME\Documents\Proyectos\Propios\amsa-sender
 
 ### Mapa rápido AMSA → Massivo (referencia)
 
-| AMSA Sender (origen) | Massivo App (destino) | Cuándo se porta |
-|----------------------|-----------------------|-----------------|
-| `backend/src/modules/wapi/` | `apps/backend/src/modules/wapi/` (multi-tenant) | Fase 4 |
-| `backend/src/modules/email/` | `apps/backend/src/modules/email/` (multi-tenant) | Fase 3 |
-| `backend/src/workers/wapi-worker.service.ts` | `apps/backend/src/workers/` (con tenant context) | Fase 4 |
-| `backend/src/workers/email-worker.service.ts` | `apps/backend/src/workers/` (con tenant context) | Fase 3 |
-| `backend/src/modules/ai/gemini.service.ts` | `apps/backend/src/modules/ai/` | Fase 6 |
-| `frontend/` (componentes Unlayer, inbox, dashboards) | `apps/frontend/src/features/` | Fases 3-6 |
-| `prisma/schema.prisma` (modelos de dominio) | `packages/prisma/schema.prisma` (con `organizationId`/`teamId`) | Fase 1-2 |
+| AMSA Sender (origen)                                 | Massivo App (destino)                                           | Cuándo se porta |
+| ---------------------------------------------------- | --------------------------------------------------------------- | --------------- |
+| `backend/src/modules/wapi/`                          | `apps/backend/src/modules/wapi/` (multi-tenant)                 | Fase 4          |
+| `backend/src/modules/email/`                         | `apps/backend/src/modules/email/` (multi-tenant)                | Fase 3          |
+| `backend/src/workers/wapi-worker.service.ts`         | `apps/backend/src/workers/` (con tenant context)                | Fase 4          |
+| `backend/src/workers/email-worker.service.ts`        | `apps/backend/src/workers/` (con tenant context)                | Fase 3          |
+| `backend/src/modules/ai/gemini.service.ts`           | `apps/backend/src/modules/ai/`                                  | Fase 6          |
+| `frontend/` (componentes Unlayer, inbox, dashboards) | `apps/frontend/src/features/`                                   | Fases 3-6       |
+| `prisma/schema.prisma` (modelos de dominio)          | `packages/prisma/schema.prisma` (con `organizationId`/`teamId`) | Fase 1-2        |
 
 ### Lo que NO se porta
 
@@ -141,6 +157,7 @@ Ver `MIGRATION_PLAN.md` sección **9 → Fase 3** (líneas 529-542). Código de 
 ### Sub-fase 3.A — Infra de envío (completada ✅)
 
 Checklist:
+
 - [x] Decisión: arquitectura **driver-based** con interface `EmailSender` y dos implementaciones: `SmtpSender` (nodemailer, default — Mailpit en dev / SMTP de cliente en prod) y `SesSender` (`@aws-sdk/client-sesv2`). Selección por `SmtpAccount.provider` (campo nuevo `provider: "smtp"|"ses"` + `sesConfigSet?: string`).
 - [x] Migración `add_smtp_provider_field` aplicada.
 - [x] Deps: `nodemailer`, `@aws-sdk/client-sesv2`, `bullmq`, `ioredis`, `handlebars` + `@types/nodemailer`. Variables `EMAIL_QUEUE_NAME`, `EMAIL_WORKER_CONCURRENCY`, `EMAIL_WORKER_ENABLED`, `SES_CONFIG_SET_PREFIX` en `.env.example`.
@@ -151,6 +168,7 @@ Checklist:
 - [x] Tests: `ses-sender.spec.ts` (6 — config-set idempotente, NotFoundException → create, truncado 64 chars, send messageId) + `email-worker.service.spec.ts` (4 — happy path render+send+SENT, sender error → FAILED+rethrow, cross-tenant report not found, campaign sin template).
 
 Criterios de aceptación 3.A:
+
 - `pnpm typecheck` 8/8 ✅, `pnpm --filter @massivo/backend test` 124/124 ✅ (+10 vs Fase 2).
 - Worker reconstruye contexto desde el job y todas las queries son tenant-scoped (no leak cross-tenant — verificado por test).
 - ⚙️ **Pendiente de verificación dev local** (depende de instalar Mailpit + Redis en WSL): enquolar un job real → recibir el email en Mailpit UI → ver `EmailReport.status=SENT` con `smtpMessageId` poblado.
@@ -160,6 +178,7 @@ Criterios de aceptación 3.A:
 **Sub-fase 3.B — Tracking + Webhook SES**:
 
 **3.B.1 — Tracking saliente (✅ completada):**
+
 - [x] `TrackingTokenService.sign/verify` con HS256 + payload corto `{r,o,t,c}`. Secret en `EMAIL_TRACKING_JWT_SECRET`, base URL en `EMAIL_PUBLIC_URL`.
 - [x] Helper `prepareHtmlForTracking({html,token,publicUrl})`: reescribe href http(s) a `/api/track/click?t&u`, inyecta pixel 1×1 antes de `</body>` (o al final si no existe). Skip de href que ya apuntan al `publicUrl` propio.
 - [x] `TrackController` público (`/track/open.gif`, `/track/click`): NUNCA leakea validación — token inválido = 200+pixel / 302+redirect igual.
@@ -168,6 +187,7 @@ Criterios de aceptación 3.A:
 - [x] Tests: 18 nuevos (token, prepare-html, controller, worker actualizado) — full suite 142/142 ✅.
 
 **3.B.2 — Suppression + unsubscribe (✅ completada):**
+
 - [x] Schema: `SUPPRESSED` agregado a enum `EmailReportStatus` (migración `add_suppressed_status`).
 - [x] Permissions: subject `EmailSuppression` agregado, MEMBER tiene `read`.
 - [x] `SuppressionService.check({email, campaignId})`: chequea `EmailUnsubscribe` GLOBAL/CAMPAIGN matching + `EmailBounce` con `code='hard'`. Retorna `{suppressed, reason}`.
@@ -178,6 +198,7 @@ Criterios de aceptación 3.A:
 - [x] Tests: 17 nuevos (suppression service, unsubscribe controller, suppressions list, worker SUPPRESSED branch). Backend total: **159/159 ✅**.
 
 **3.B.3 — Webhook SES (✅ completada):**
+
 - [x] `SesSender.ensureConfigurationSet`: extiende para crear EventDestination tipo SNS (idempotente vía `GetConfigurationSetEventDestinationsCommand`) cuando hay `SES_EVENTS_SNS_TOPIC_ARN`. Eventos: BOUNCE, COMPLAINT, DELIVERY, OPEN, CLICK.
 - [x] `SnsValidatorAdapter`: wrapper Promise sobre `sns-validator` (callback API) para mock fácil en tests.
 - [x] `SesWebhookController` (`POST /webhooks/ses`, `@SkipTenantScope`): valida firma RSA, maneja SubscriptionConfirmation (auto-confirma vía fetch al SubscribeURL), UnsubscribeConfirmation (log) y Notification (parsea Message, delega).
@@ -189,6 +210,7 @@ Criterios de aceptación 3.A:
 **Sub-fase 3.C — Campañas + Unlayer + Frontend**:
 
 **3.C.1 — Backend campaigns CRUD + send + report (✅ completada):**
+
 - [x] DTOs (`email-campaigns.dto.ts`): `CreateEmailCampaignDto`, `UpdateEmailCampaignDto`, `CampaignContactDto`, `AddCampaignContactsDto` (max 5000 contacts, `@IsEmail` + normalización).
 - [x] `EmailCampaignsService`: create (DRAFT o SCHEDULED si `scheduledAt > now`), findAll/findOne con relaciones + `_count`, update/remove con guard de estados (`EDITABLE_STATUSES = DRAFT|SCHEDULED|PAUSED`, bloquea PROCESSING), `addContacts` con bulk `createMany`, `send` (valida ready → transiciona PROCESSING → `$transaction` crea `EmailReport[]` PENDING → enquola en BullMQ con `jobId=reportId`), `getReport` (groupBy status counts + opens/clicks/uniqueOpens/uniqueClicks).
 - [x] `EmailCampaignsController` (`/api/email/campaigns`): stack auth completo + `@CheckPolicies` por acción. `POST /:id/send` retorna 202 ACCEPTED. `DELETE /:id` retorna 204.
@@ -196,6 +218,7 @@ Criterios de aceptación 3.A:
 - [x] Tests: 12 nuevos en `email-campaigns.service.spec.ts` (create DRAFT/SCHEDULED/past, update DRAFT/Conflict, addContacts, send happy path + 4 edge cases, getReport). Backend total: **189/189 ✅**.
 
 **3.C.2 — Realtime events (✅ completada):**
+
 - [x] `EventsService.emitToTeamDebounced(teamId, event, key, payload, delayMs=1000)`: coalesce un burst de emisiones (mismo teamId+event+key) en 1 sola emisión que dispara tras `delayMs` sin nuevos eventos. Usa el payload de la llamada más reciente. `OnModuleDestroy` limpia timers pendientes.
 - [x] `EmailWorkerService` integra `EventsService` y emite `email.report.updated` con `{campaignId}` (debounce key=campaignId) en cada transición: SUPPRESSED, SENT, FAILED.
 - [x] `SesWebhookService` integra `EventsService` y emite `email.report.updated` en Bounce, Complaint, Open, Click. Delivery y eventos sin tenant resoluble NO emiten.
@@ -205,6 +228,7 @@ Criterios de aceptación 3.A:
 **3.C.3 — Frontend Unlayer + dashboard** (✅ completada):
 
 **3.C.3.a — Infra frontend (✅ completada):**
+
 - [x] `useApi()` hook (`apps/frontend/src/api/client.ts`): wrapper sobre fetch con base URL `VITE_API_URL`, adjunta `Authorization: Bearer <clerk-token>` y `x-team-id` (del TeamContext) automáticamente. Métodos `get/post/patch/delete`. Throw `ApiError(status, message, body)` en 4xx/5xx.
 - [x] `TeamContext` (`apps/frontend/src/team/TeamContext.tsx`): provider + `useActiveTeam()` con persistencia en `localStorage` y sync entre tabs vía `storage` event.
 - [x] `useTeamSocket()` hook (`apps/frontend/src/realtime/useTeamSocket.ts`): conecta socket.io con `auth: { token, teamId }`, reconnect cuando cambia team o user, cleanup en unmount.
@@ -212,21 +236,25 @@ Criterios de aceptación 3.A:
 - [x] Dep nueva: `socket.io-client@^4.8.3`.
 
 **3.C.3.b — Templates + Unlayer (✅ completada):**
+
 - [x] `TemplatesListPage` (`/dashboard/email/templates`): tabla con MUI con name/subject/updatedAt + acciones edit/delete + botón "Nuevo template". Confirm() antes de delete.
 - [x] `TemplateEditorPage` (`/dashboard/email/templates/new` y `/:id`): Unlayer embed (`react-email-editor`) con `onReady` → `loadDesign(design)` cuando se carga uno existente. Form con name + subject. Botón Guardar exporta `{design, html}` y POST/PATCH al backend. Redirige a la URL del id creado en modo new.
 - [x] Dep nueva: `react-email-editor@^1.8.0`.
 
 **3.C.3.c — Campaigns + contacts (✅ completada):**
+
 - [x] `CampaignsListPage` (`/dashboard/email/campaigns`): tabla con status chips, dialog de creación (name + template/smtp/scheduledAt opcionales), confirm() destructive en delete. Columnas secundarias hidden en xs/sm.
 - [x] `CampaignDetailPage` (`/dashboard/email/campaigns/:id`): edita name/template/smtp/scheduledAt solo si status ∈ {DRAFT, SCHEDULED, PAUSED}. CSV paste con detección de header `email,name` o filas planas, normalización lowercase+trim, máx 5000.
 - [x] Botón Enviar con confirm() → POST `/:id/send`. Panel de report con counts (PENDING/SENT/FAILED/BOUNCED/COMPLAINED/SUPPRESSED) + opens/clicks/uniqueOpens/uniqueClicks.
 - [x] Types compartidos en `features/email/campaigns/types.ts`.
 
 **3.C.3.d — Realtime dashboard (✅ completada):**
+
 - [x] `CampaignsListPage` suscrita a `email.report.updated` via `useTeamSocket()` → re-fetcha lista (debounce 1s ya en backend).
 - [x] `CampaignDetailPage` suscrita filtrando por `campaignId` del payload → re-fetcha report en cada update. Counts + opens/clicks live.
 
 **3.C.3.e — UX polish (✅ completada):**
+
 - [x] `NotifyProvider` (Snackbar global, hook `useNotify()`, errores 8s vs 4s normal).
 - [x] `ConfirmProvider` (hook `useConfirm()` Promise-based, soporta `destructive`/title/labels custom).
 - [x] Skeletons en listas durante loading inicial.
@@ -234,6 +262,7 @@ Criterios de aceptación 3.A:
 - [x] Provider order en `main.tsx`: `ColorModeProvider > MuiThemeWithMode > ClerkWithTheme > NotifyProvider > ConfirmProvider > TeamProvider > BrowserRouter > App`.
 
 **Extras (no estaban planificados, pero entraron en esta sesión):**
+
 - [x] **Landing page** (`HomePage.tsx`) estilo SaaS moderno con hero gradient, 6 features, CTA. Patrón SignedIn/SignedOut sibling para auto-redirect a /dashboard.
 - [x] **GitLab-style layout**: topbar full-width fijo (con UserButton top-right) + sidebar colapsable persistente desktop / Drawer mobile. `Sidebar` con NAV_GROUPS (General/Email/WhatsApp/Datos/Cuenta) + items disabled "pronto".
 - [x] **Clerk dark mode**: `ClerkWithTheme` sincroniza `baseTheme` de `@clerk/themes` con el modo MUI + variables custom (colorPrimary, colorBackground, colorText, colorInputBackground).
@@ -242,7 +271,7 @@ Criterios de aceptación 3.A:
 - [x] **Auth redirects**: `forceRedirectUrl`/`fallbackRedirectUrl="/dashboard"` en SignIn/SignUp.
 - [x] **`DashboardHome`** con greeting + ActionCards a Campaigns/Templates.
 - [x] Deps: `@clerk/themes`, `@clerk/localizations`.
-**3.C.4 — Frontend email features restantes (próximo paso):**
+      **3.C.4 — Frontend email features restantes (próximo paso):**
 - [x] **3.C.4.a — SMTP accounts UI** ✅ (2026-04-30): Página `/dashboard/email/smtp-accounts` con tabla + dialog crear/editar (provider smtp|ses, host, port, username, password opcional en edit, fromName, fromEmail, sesConfigSet?). Endpoint backend `POST /email/smtp-accounts/:id/test` + `TestSmtpAccountDto` que reusa `EmailSenderService.sendForAccount()`. UI con dialog "Enviar prueba" que pide email destinatario. NavRow en sidebar (icono `DnsIcon`). BLOCKER resuelto: ya no hace falta SQL para crear cuentas SMTP.
 - [x] **3.C.4.a' — Verify de credenciales SMTP** ✅ (2026-04-30): `EmailSenderService.verifyAccount()` (SMTP: `transporter.verify` de nodemailer; SES: `GetAccountCommand`). `SmtpAccountsService.create/update` corren verify y setean `isActive` automáticamente (true si OK, false si falla). `isActive` pasa a ser system-controlled (se sacó el switch manual del editor). Endpoint nuevo `POST /email/smtp-accounts/:id/verify` para reintentar bajo demanda + botón "Verificar conexión" en cada fila. Si está inactiva, el chip muestra el motivo del último fallo en tooltip. Tests del service: 14/14 ✅ (4 nuevos: create OK / create FAIL / verify OK / verify FAIL).
 - [x] **Fix: campaign queda en PROCESSING** ✅ (2026-04-30): el worker no transicionaba la campaign a `COMPLETED` cuando terminaba el último report. Agregado `EmailWorkerService.maybeCompleteCampaign()` (count PENDING → updateMany guarded por status) llamado tras cada transición terminal. Tests worker: 7/7 ✅ (sumamos 2 casos: "transiciona OK" y "no transiciona si quedan PENDING").
@@ -254,12 +283,15 @@ Criterios de aceptación 3.A:
 - [x] **3.C.4.f — Log en vivo por campaña + throttle fix** ✅ (2026-04-30): backend emite `email.report.log` por transición (SENT/FAILED/SUPPRESSED) con `{campaignId, reportId, email, status, messageId?, error?, ts}` — no throttleado, el filtrado lo hace el frontend. `EventsService.emitToTeamDebounced` reescrito a throttle leading+trailing (debounce puro nunca disparaba durante un burst → progreso pegado en 0%). Frontend `CampaignProcessingBanner` con panel "Log en vivo" colapsable estilo consola (monospace dark, scroll auto, filtro por status, ring buffer 200, botón limpiar). Multi-campaña: cada banner filtra por su `campaignId`, soporta hasta 5 campañas en paralelo sin cruzar logs. Tests: events 11/11 ✅, worker 7/7 ✅.
 
 **3.C.5 — Control actions de campaña (pausar / reanudar / forzar cierre):**
+
 - [x] **3.C.5 — Control actions completas** ✅ (2026-05-04): nuevo valor `CANCELED` en `EmailReportStatus` (migración `20260504181455_add_canceled_report_status`). Service: `pause` (PROCESSING→PAUSED), `resume` (PAUSED→PROCESSING + re-enqueue PENDING idempotente), `forceClose` (PROCESSING|PAUSED→COMPLETED + `updateMany` PENDING→CANCELED). Endpoints `POST /:id/pause | /resume | /force-close` con `@CheckPolicies('send', 'Campaign')`. Worker chequea `campaign.status` antes de procesar: PAUSED → `job.moveToDelayed(now+30s, token)` y exit; COMPLETED+PENDING → marca CANCELED y exit. Estrategia DB-flag + worker check (no se cancelan jobs en BullMQ → idempotente, sobrevive reinicios, sin race con jobs ya tomados). Frontend: `CampaignProcessingBanner` también se muestra en PAUSED (icono PauseCircle, color warning) y recibe `status` + handlers; tres botones nuevos (Pausar / Reanudar / Forzar cierre) con `useConfirm` destructive en force-close. Tests: campaigns 19/19 ✅ (7 nuevos para pause/resume/forceClose), worker 9/9 ✅ (2 nuevos para PAUSED y CANCELED por force-close), backend full **228/228 ✅**.
 
 **3.D — Reportes consolidados con export CSV/XLSX:**
+
 - [x] **3.D — Reportes consolidados completos** ✅ (2026-05-04): backend `ReportGeneratorService` con 4 generators (`campaign-summary` / `campaign-reports` / `bounces-complaints` / `suppressions`). Endpoint único `POST /api/email/reports/generate` (controller `ReportsController` con `@CheckPolicies` compuesto: `read Campaign` AND `read EmailSuppression`). DTO `GenerateReportDto` con `kind`/`format`/`campaignId?`/`status?`/`fromDate?`/`toDate?` (class-validator + `@Type(() => Date)`). Estrategia **sync-only** (single Buffer en memoria, ~50k filas máx) — async + S3 + scheduler diferido a Fase 8. Libs: `csv-stringify@^6.7.0` (sync API) + `exceljs@^4.4.0` (XLSX con header bold). Response binaria stream-friendly (Express `Response` con `Content-Type` + `Content-Disposition: attachment; filename="..."` + `Content-Length`). Frontend: nuevo `useApi.download()` + helper `triggerBlobDownload` (parsea `Content-Disposition`, dispara save dialog vía `<a>` temporal con `URL.createObjectURL`). Componente reutilizable `ExportReportButton` (split-button MUI con menu CSV / Excel + busy state + useNotify). Cableado en `CampaignDetailPage` (2 botones: Resumen + Detalle por contacto, ambos con `campaignId` filtro) y `SuppressionsPage` (2 botones: unsubs + bounces/complaints). Tests: 10 nuevos en `report-generator.service.spec.ts` (4 generators × CSV/XLSX, BadRequest/NotFound, date range filter precedence, parseback XLSX vía `ExcelJS.Workbook` para asertar header bold + numeric cells). Backend full **238/238 ✅**. Fix preexistente colateral: TS2742 (Prisma type portability) en `email-campaigns.controller.ts` resuelto con return types explícitos en `pause`/`resume`/`forceClose`.
 
 > Sub-tareas legacy del plan original (referencia, ya cubiertas en 3.A/3.B/3.C):
+
 - [x] Tracking JWT: payload `{ rid: reportId, oid: orgId, tid: teamId, cid: campaignId }` firmado con `EMAIL_TRACKING_JWT_SECRET`. Endpoints `GET /api/track/open.gif` (1×1 transparente, registra `EmailEvent` OPEN) y `GET /api/track/click` (registra CLICK + 302 al destino). Ambos públicos (sin Clerk) pero validan firma JWT y resuelven tenant del payload, no del header. **Cubierto en 3.B.**
 - [x] Webhook SES `POST /webhooks/ses`: valida firma SNS, resuelve tenant via `configurationSet` (lookup por prefijo `massivo-team-`) o vía `messageId` → `EmailReport`. Maneja `Bounce` / `Complaint` / `Delivery` / `Open` / `Click` idempotente. Endpoint público con `@SkipTenantScope()`. **Cubierto en 3.B + 3.B'.5 DSN parsing.**
 - [x] CRUD campañas email (`/api/email/campaigns`): create (DRAFT), update, schedule, `POST /api/email/campaigns/:id/send` que enquola jobs por contacto. Reportes: `GET /api/email/campaigns/:id/report` con conteos agregados. Stack auth completo y `@CheckPolicies` (`send Campaign`). **Cubierto en 3.C.1/.2.**
@@ -287,6 +319,7 @@ Criterios de aceptación 3.A:
 > Schema y CRUD mínimo (`WapiConfig`, `WapiTemplate`) ya hechos en 2.B. Faltan envío real, inbox conversacional, webhooks de Meta, sync de templates aprobados, encriptación KMS, UI frontend, opt-out, welcome message, live dashboard.
 
 **4.A — Infra de envío WAPI** (✅ completada — Sesión 17 / 2026-05-04):
+
 - [x] **WapiSenderService** ✅: cliente HTTP a Graph API v20+ `/messages` con `fetch` nativo (Node 22 / undici, sin deps). Métodos `sendText` / `sendTemplate` / `sendMedia`. `WapiSendException` con `{code, subCode, message, isRateLimit, isAuth, retryable, raw}` — el worker decide backoff vs FAILED. Códigos rate limit conocidos: 130429, 131048, 131056. Códigos auth: 190, 102, 10, 200. Override de URL base vía `WAPI_GRAPH_BASE_URL`.
 - [x] **WapiQueueService** ✅: BullMQ Queue `wapi-send` con `jobId=reportId` (idempotente). Mismo patrón que `email-send` (`attempts:3`, backoff exponencial, TTLs). Acepta `delayMs` opcional al enquolar.
 - [x] **WapiWorkerService** ✅: BullMQ Worker que reconstruye `TenantContext` desde el payload, carga report+contact+campaign(template, configRel) via `prisma.scoped`, chequea control actions (PAUSED → moveToDelayed; COMPLETED+PENDING → FAILED 'campaign-closed'), aplica daily limit per-config (cuenta SENT últimas 24h y compara con `WapiConfig.dailyLimit`), envía vía `WapiSenderService.sendTemplate`, marca SENT con `metaMessageId`/`sentAt`, emite `wapi.report.updated` (debounced) + `wapi.report.log`, llama `maybeCompleteCampaign`. **Jitter post-envío**: sleep `random(WAPI_DELAY_MIN_MS, WAPI_DELAY_MAX_MS)` (defaults 30s/60s) — con `concurrency=1` da rate limiting per-worker. **Backoff exponencial Meta rate-limit**: si `WapiSendException.isRateLimit`, NO marca FAILED — `moveToDelayed(now + min(60s × 2^attempt, 1h))`. Otros errores → FAILED + rethrow para retries de BullMQ.
@@ -294,10 +327,11 @@ Criterios de aceptación 3.A:
 - [x] **Tests** ✅: `wapi-sender.service.spec.ts` 8/8 (sendText/Template happy + 6 errores) + `wapi-worker.service.spec.ts` 9/9 (happy, cross-tenant, PAUSED, COMPLETED, dailyLimit, rate-limit, auth, components con bodyVars, transición a COMPLETED). Backend full **255/255 ✅**.
 
 **Pendientes de Fase 4 (próximos pasos):**
+
 - [x] **4.B — Encriptación de tokens at-rest** ✅ (Sesión 18 / 2026-05-04): `EncryptionService` abstracto + `AesGcmEncryptionService` concreto en `common/security/`, cloud-agnostic (sin acoplamiento a AWS/GCP/Vault). AES-256-GCM con master key desde `MASSIVO_ENCRYPTION_KEY` (hex/base64). Formato versionado `v1:<iv>:<ct>:<tag>` (base64url). Cache LRU TTL 5min, max 256 entries. Modo legacy: sin clave master, persiste plaintext; lee plaintext y `v1:` indistintamente. `WapiConfigsService.create/update` encriptan; `WapiWorkerService` decripta antes de enviar. Tests 11/11. Backend full 266/266 ✅.
 - [x] **4.C — Webhook Meta** ✅ (Sesión 19 / 2026-05-04): `GET /api/webhooks/wapi/:configId` verify (mode=subscribe + verify_token timing-safe), `POST` con HMAC-SHA256 sobre rawBody usando `appSecret` (sin appSecret → modo dev acepta sin validar + warn). Procesa `statuses[]` → WapiReport.DELIVERED/READ/FAILED por metaMessageId (no retrocede de READ a DELIVERED). Procesa `messages[]` entrantes → upsert `WapiConversation(teamId, configId, phone)` + crea `WapiMessage` con metaMessageId @unique (P2002 swallowed). Emite `wapi.report.updated` y `wapi.message.inbound`. Tests 20/20. Backend full 286/286 ✅. Pendiente: descarga de media → S3 (4.F), auto-reply welcome (4.I), keywords opt-out (4.H), `template_status_update`/`account_alerts`.
 - [x] **4.D — Sync de templates Meta** ✅ (Sesión 20 / 2026-05-04): `POST /api/wapi/templates/sync/:configId` en `WapiTemplatesController`. `WapiTemplatesSyncService` carga `WapiConfig` vía `prisma.scoped`, decripta `accessTokenEnc`, pagina Graph API v20 (`paging.next`) con safety guard `MAX_PAGES=5` (~500 templates), upsert idempotente por `(metaName, businessAccountId)` — skip si `(status, language, category, components)` no cambió, sino update con `syncedAt`. Errores: Forbidden sin context, NotFound config inexistente, ServiceUnavailable en Graph non-2xx. URL base override-able vía `WAPI_GRAPH_BASE_URL`. No remueve templates que Meta borró (queda último status conocido). Tests 9/9. Backend full **295/295 ✅**. Pendientes: cron semanal (Fase 8), procesar `template_status_update` desde webhook (4.C lo ignora).
-- [x] **4.E — Campañas WAPI** ✅ (Sesión 21 / 2026-05-04): migration `add_canceled_to_wapi_report_status` (enum `CANCELED`). DTOs `Create/Update/AddContacts/Contact` con phone E.164 lenient (`^\+?[0-9]{6,20}$`). `WapiCampaignsService` extendido con `create`/`findAll`/`findOne` (con includes template+configRel+_count)/`update`/`remove`/`addContacts`/`pause`/`resume`/`forceClose`/`listReports`/`getReport`. `forceClose` ahora marca PENDING como `CANCELED` (antes FAILED), funnel limpio. `getReport` devuelve counts por status + funnel `{sent,delivered,read,failed}` derivado de timestamps WapiReport. `WapiWorkerService` con early-exit si `report.status≠PENDING` (fix de bug latente: jobs huérfanos post-forceClose enviaban igual). Branch campaign COMPLETED|FAILED + report PENDING → ahora marca CANCELED. Endpoints completos en controller. Tests 24/24 (service) + 1 nuevo (worker). Backend full **325/325 ✅**. Pendientes: dedup de phone en `addContacts` (consistente con email), cron de campañas SCHEDULED (Fase 8).
+- [x] **4.E — Campañas WAPI** ✅ (Sesión 21 / 2026-05-04): migration `add_canceled_to_wapi_report_status` (enum `CANCELED`). DTOs `Create/Update/AddContacts/Contact` con phone E.164 lenient (`^\+?[0-9]{6,20}$`). `WapiCampaignsService` extendido con `create`/`findAll`/`findOne` (con includes template+configRel+\_count)/`update`/`remove`/`addContacts`/`pause`/`resume`/`forceClose`/`listReports`/`getReport`. `forceClose` ahora marca PENDING como `CANCELED` (antes FAILED), funnel limpio. `getReport` devuelve counts por status + funnel `{sent,delivered,read,failed}` derivado de timestamps WapiReport. `WapiWorkerService` con early-exit si `report.status≠PENDING` (fix de bug latente: jobs huérfanos post-forceClose enviaban igual). Branch campaign COMPLETED|FAILED + report PENDING → ahora marca CANCELED. Endpoints completos en controller. Tests 24/24 (service) + 1 nuevo (worker). Backend full **325/325 ✅**. Pendientes: dedup de phone en `addContacts` (consistente con email), cron de campañas SCHEDULED (Fase 8).
 - [ ] **4.F — Inbox conversacional** (modelos, endpoints take/assign/resolve/mark-read, send dentro de ventana 24h, media S3, realtime, frontend chat layout).
 - [ ] **4.G — Respuestas rápidas** (snippets `WapiQuickReply`, autocomplete `/atajo`).
 - [ ] **4.H — Bajas / opt-out** (auto desde keywords entrantes "BAJA"/"STOP", worker check pre-envío, UI). Requiere agregar `SUPPRESSED` al enum `WapiReportStatus`.
@@ -321,6 +355,7 @@ Criterios de aceptación 3.A:
 **Sub-fase 2.A — Email** (completada ✅)
 
 Checklist:
+
 - [x] Schema Prisma: `SmtpAccount`, `EmailTemplate`, `EmailCampaign`, `EmailContact`, `EmailReport`, `EmailEvent`, `EmailBounce`, `EmailUnsubscribe` con `organizationId` + `teamId` + índices.
 - [x] Enums: `EmailCampaignStatus`, `EmailReportStatus`, `EmailEventType`, `EmailUnsubscribeScope`.
 - [x] Registrar los 8 modelos en `TENANT_SCOPED_MODELS` (`apps/backend/src/common/prisma/tenant-models.ts`) para que la Prisma extension los enforce.
@@ -332,6 +367,7 @@ Checklist:
 - [x] Fix errores TypeScript en services: uso de `Prisma.*.UncheckedCreateInput` para `create()` + imports vía `@massivo/prisma`.
 
 Criterios de aceptación 2.A:
+
 - `pnpm --filter @massivo/backend test` verde con los nuevos specs incluidos.
 - Llamada autenticada `POST /api/email/smtp-accounts` (Tenant A) crea y devuelve registro con `organizationId`/`teamId` del JWT, sin que el cliente los pase en el body.
 - Llamada autenticada `GET /api/email/templates` con `X-Team-Id` de Tenant A devuelve solo templates de ese team (validado en suite isolation).
@@ -340,6 +376,7 @@ Criterios de aceptación 2.A:
 **Sub-fase 2.B — WhatsApp** (completada ✅)
 
 Checklist:
+
 - [x] Schema Prisma: `WapiConfig`, `WapiTemplate`, `WapiCampaign`, `WapiContact`, `WapiReport`, `WapiConversation`, `WapiMessage`, `WapiOptOut`. Todos tenant-aware.
 - [x] Registrar los 8 modelos en `TENANT_SCOPED_MODELS`.
 - [x] Migración Prisma `add_wapi_models`.
@@ -349,6 +386,7 @@ Checklist:
 - [x] Tests unitarios de los services + extensión de `tenant-isolation.spec.ts`.
 
 Criterios de aceptación 2.B:
+
 - `pnpm --filter @massivo/backend test` verde.
 - `POST /api/wapi/configs` autenticado guarda `accessToken` en `accessTokenEnc` (placeholder en claro hasta Fase 4) — verificado por test.
 - Cross-tenant access a `WapiConfig`/`WapiTemplate` retorna `404`.
@@ -356,6 +394,7 @@ Criterios de aceptación 2.B:
 **Sub-fase 2.C — Cross-cutting** (completada ✅)
 
 Checklist:
+
 - [x] Schema Prisma: `Contact` (unificado email+wapi con `email`, `phone`, `attributes` JSONB), `Tag`, `ContactTag` (M:N), `ContactList`, `ContactListMember`, `ScheduledTask` (cron, config, nextRunAt), `TaskExecution`, `CampaignLog`. Enums nuevos: `ChannelKind`, `ScheduledTaskKind`, `TaskExecutionStatus`, `CampaignLogLevel`.
 - [x] Registrar tenant-aware en `TENANT_SCOPED_MODELS` (Contact, Tag, ContactList, ScheduledTask, TaskExecution, CampaignLog). `ContactTag` y `ContactListMember` son tablas de unión sin orgId/teamId — heredan scope vía relaciones.
 - [x] Migración Prisma `add_crosscutting_models` aplicada contra DB local.
@@ -367,6 +406,7 @@ Checklist:
 - [x] Extender `tenant-isolation.spec.ts` con casos para `Contact` y `Tag`: 6 tests cross-tenant + 2 sin contexto.
 
 Criterios de aceptación 2.C:
+
 - `pnpm --filter @massivo/backend test` verde (104/104 ✅).
 - `pnpm typecheck` 8/8 ✅, `pnpm --filter @massivo/permissions test` 14/14 ✅.
 - Crear dos contacts con mismo email en distintos teams del mismo org **es válido** (`@@unique([teamId, email])` lo permite); en el mismo team retorna `409 Conflict`.
@@ -377,6 +417,7 @@ Criterios de aceptación 2.C:
 **Sub-fase 2.D — Sockets scopeados** (completada ✅)
 
 Checklist:
+
 - [x] Instalar `@nestjs/websockets` + `@nestjs/platform-socket.io` + `socket.io` + `socket.io-client` (devDep).
 - [x] `AppGateway` con auth handshake (vía `server.use(middleware)` para que el cliente reciba `connect_error`): valida JWT Clerk del `socket.handshake.auth.token` + `teamId`, resuelve `RequestContext` con `SocketContextResolver` (encapsula la misma lógica que `TenantContextGuard`) y lo guarda en `socket.data.context`.
 - [x] Suscripción automática del socket a rooms `org:{orgId}`, `team:{teamId}`, `user:{userId}` en `handleConnection`.
@@ -385,6 +426,7 @@ Checklist:
 - [x] Tests unit `events.service.spec.ts`: 5 casos (delegación correcta a `server.to(room).emit`, no rompe sin server, `roomsFor` orden esperado).
 
 Criterios de aceptación 2.D:
+
 - Test de aislamiento Socket.IO verde (cliente del Tenant B no recibe eventos del Tenant A) ✅.
 - Conexión sin `auth.token`, sin `auth.teamId`, o con token inválido retorna `connect_error` y no establece la conexión ✅.
 
@@ -410,7 +452,7 @@ Ver `MIGRATION_PLAN.md` sección **9. Plan de ejecución por fases → Fase 1**.
 
 - [x] Configurar Prisma 6 en `packages/prisma` con datasource Postgres.
 - [x] Schema Prisma inicial: `Organization`, `Team`, `User`, `OrgMembership`, `TeamMembership`, `Plan`, `Subscription`, `UsageCounter`, `AuditLog`, enums (ver MIGRATION_PLAN.md sección 2.3).
-- [x] Generar primera migración + seed de planes (FREE, STARTER, BUSINESS, ENTERPRISE). *(Nota: Se generó el esquema y script seed; la migración contra DB viva queda pendiente para correr localmente)*.
+- [x] Generar primera migración + seed de planes (FREE, STARTER, BUSINESS, ENTERPRISE). _(Nota: Se generó el esquema y script seed; la migración contra DB viva queda pendiente para correr localmente)_.
 - [x] Integrar `PrismaModule` en backend con cliente compartido desde `@massivo/prisma`.
 - [x] Crear cuenta en Clerk, configurar Organizations habilitadas, copiar keys a `.env`.
 - [x] Frontend: `<ClerkProvider>`, `<SignIn>`, `<OrganizationSwitcher>`, `<UserButton>`.
@@ -430,6 +472,7 @@ Ver `MIGRATION_PLAN.md` sección **9. Plan de ejecución por fases → Fase 1**.
 ### Criterio de aceptación de Fase 1
 
 Un usuario nuevo puede:
+
 1. Hacer signup vía Clerk.
 2. Crear una organización (= tenant).
 3. Ver el team "General" creado automáticamente.
@@ -442,20 +485,20 @@ Un usuario nuevo puede:
 
 ## Decisiones tomadas (no cambiar sin discusión)
 
-| # | Decisión | Razón |
-|---|----------|-------|
-| 1 | Repositorio nuevo separado de AMSA Sender | AMSA está vendido a Ana Maya SA y queda congelado. |
-| 2 | Opción A: empezar limpio, copiar lógica de AMSA selectivamente por fase | Codebase más limpio multi-tenant desde el primer commit, sin atajos heredados. |
-| 3 | Shared DB + `organizationId` + `teamId` | Más barato, escala bien hasta cientos/miles de tenants. |
-| 4 | Postgres 16 (cambio desde MySQL de AMSA) | Mejor RLS, índices parciales, JSONB, mejor encaje con multi-tenant. |
-| 5 | Jerarquía 3 niveles: Organization → Team → User | Estándar SaaS B2B. Org = billing, Team = aislamiento operativo. |
-| 6 | Auth tercerizada con Clerk | Ahorra 4-6 meses de auth, viene con Organizations + invitaciones + SSO. |
-| 7 | Authz con CASL | Permisos finos de dominio, integración limpia con NestJS y Prisma. |
-| 8 | Billing con Stripe (internacional) + MercadoPago (LATAM) | Cobertura de ambos mercados. |
-| 9 | Email con AWS SES (configuration set por tenant) | SMTP propio del SaaS; los clientes dan de alta cuentas remitentes para usar como `From`. |
-| 10 | WhatsApp solo Business API (Meta), NO Web.js | Web.js no escala bien en SaaS, alto costo operativo. |
-| 11 | Monorepo con pnpm + Turborepo | Estándar moderno, buena DX, builds incrementales. |
-| 12 | Node 22 LTS, pnpm 9.15 | LTS actuales. |
+| #   | Decisión                                                                | Razón                                                                                    |
+| --- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 1   | Repositorio nuevo separado de AMSA Sender                               | AMSA está vendido a Ana Maya SA y queda congelado.                                       |
+| 2   | Opción A: empezar limpio, copiar lógica de AMSA selectivamente por fase | Codebase más limpio multi-tenant desde el primer commit, sin atajos heredados.           |
+| 3   | Shared DB + `organizationId` + `teamId`                                 | Más barato, escala bien hasta cientos/miles de tenants.                                  |
+| 4   | Postgres 16 (cambio desde MySQL de AMSA)                                | Mejor RLS, índices parciales, JSONB, mejor encaje con multi-tenant.                      |
+| 5   | Jerarquía 3 niveles: Organization → Team → User                         | Estándar SaaS B2B. Org = billing, Team = aislamiento operativo.                          |
+| 6   | Auth tercerizada con Clerk                                              | Ahorra 4-6 meses de auth, viene con Organizations + invitaciones + SSO.                  |
+| 7   | Authz con CASL                                                          | Permisos finos de dominio, integración limpia con NestJS y Prisma.                       |
+| 8   | Billing con Stripe (internacional) + MercadoPago (LATAM)                | Cobertura de ambos mercados.                                                             |
+| 9   | Email con AWS SES (configuration set por tenant)                        | SMTP propio del SaaS; los clientes dan de alta cuentas remitentes para usar como `From`. |
+| 10  | WhatsApp solo Business API (Meta), NO Web.js                            | Web.js no escala bien en SaaS, alto costo operativo.                                     |
+| 11  | Monorepo con pnpm + Turborepo                                           | Estándar moderno, buena DX, builds incrementales.                                        |
+| 12  | Node 22 LTS, pnpm 9.15                                                  | LTS actuales.                                                                            |
 
 ## Decisiones pendientes
 
@@ -497,19 +540,20 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 
 ### Qué va en cada archivo
 
-| Archivo | Para qué |
-|---------|----------|
-| `MIGRATION_PLAN.md` | Plan maestro inmutable. Solo se modifica si cambia una decisión arquitectónica de fondo. |
-| `PROGRESS.md` | Estado actual, próximo paso, decisiones, bitácora. Se actualiza en cada sesión. |
-| `CHANGELOG.md` | Historial de cambios entregados (features, fixes, infra, docs). Se actualiza al completar funcionalidad. |
-| Commits | Detalle granular de cada cambio. Mensajes en español, descriptivos. |
+| Archivo             | Para qué                                                                                                 |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `MIGRATION_PLAN.md` | Plan maestro inmutable. Solo se modifica si cambia una decisión arquitectónica de fondo.                 |
+| `PROGRESS.md`       | Estado actual, próximo paso, decisiones, bitácora. Se actualiza en cada sesión.                          |
+| `CHANGELOG.md`      | Historial de cambios entregados (features, fixes, infra, docs). Se actualiza al completar funcionalidad. |
+| Commits             | Detalle granular de cada cambio. Mensajes en español, descriptivos.                                      |
 
 ---
 
 ## Bitácora de sesiones
 
 ### 2026-05-04 — Sesión 25 (Claude Opus 4.7) — Sub-fase 4.F.4 (frontend inbox) + 4.G (quick replies admin)
-- **Contexto**: continuación inmediata de 4.F.3 con autorización del dueño *"perfecto, avanza con la siguientefase"*. Backend del inbox ya estaba completo, había que armar la UI en React + MUI con look moderno (Front/Intercom/Chatwoot) y reutilizar patrones existentes (NotifyProvider, ConfirmProvider, useApi, useTeamSocket).
+
+- **Contexto**: continuación inmediata de 4.F.3 con autorización del dueño _"perfecto, avanza con la siguientefase"_. Backend del inbox ya estaba completo, había que armar la UI en React + MUI con look moderno (Front/Intercom/Chatwoot) y reutilizar patrones existentes (NotifyProvider, ConfirmProvider, useApi, useTeamSocket).
 - **Estructura de archivos** (`apps/frontend/src/features/wapi/inbox/`): `types.ts` (espejo de los DTOs del backend), `api.ts` (clientes `inboxApi` y `quickRepliesApi` con helper `qs`), `formatters.ts` (`formatPhone`, `formatRelative`, `formatTime`, `formatDateHeader` con Hoy/Ayer, `isWindowOpen`, `initials`), y los componentes:
   - **`ConversationList.tsx`** — sidebar 360px con título "Inbox", search `TextField`, scrollable Tabs, lista de filas con `Avatar`+`Badge` para unread, preview con check de fromMe, RESOLVED chip, campaignName subtitle, "Cargar más" para cursor.
   - **`ConversationThread.tsx`** — fondo WhatsApp (`#efeae2` light / `#0b141a` dark) con dotted radial, mensajes ordenados asc, date dividers tipo Hoy/Ayer/weekday, `MessageBubble` con tail logic (corner agudo cuando cambia el sender o pasan >60s), `ReceiptIcon` con doble check azul para `read`, fallback de italics + emoji para tipos no-texto, render del markdown WhatsApp via `renderWhatsAppMarkdown`. Auto-scroll al fondo al recibir nuevos mensajes (con `lastIdRef`).
@@ -545,7 +589,8 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
   3. Pendientes técnicos abiertos: deep links a la conversación (URL param), panel lateral de notas de cierre (endpoint `/notes` listo), historial de asignaciones, vista de detalle de contacto.
 
 ### 2026-05-04 — Sesión 24 (Claude Opus 4.7) — Sub-fase 4.F.3 (backend inbox WhatsApp)
-- **Contexto**: el dueño autorizó avanzar con el inbox conversacional con la siguiente directiva: *"que sea similar al de amsa sender, basandonos en la interfaz de whatsapp web, pero mejorando la UI, q sea mas moderno y segun estandares de inbox del mercado para el manejo de whatsapp, tene en cuenta la seccion de respuestas rapidas, poder marcar como leido o no leido el mensaje"*. Después agregó: *"el poder cerrar o resolver la conversacion con nota, q tambien esta en Amsa sender"*. Decidí splittar en backend (esta sesión) + frontend (próxima) para entregar la API completa antes de empezar a iterar UI.
+
+- **Contexto**: el dueño autorizó avanzar con el inbox conversacional con la siguiente directiva: _"que sea similar al de amsa sender, basandonos en la interfaz de whatsapp web, pero mejorando la UI, q sea mas moderno y segun estandares de inbox del mercado para el manejo de whatsapp, tene en cuenta la seccion de respuestas rapidas, poder marcar como leido o no leido el mensaje"_. Después agregó: _"el poder cerrar o resolver la conversacion con nota, q tambien esta en Amsa sender"_. Decidí splittar en backend (esta sesión) + frontend (próxima) para entregar la API completa antes de empezar a iterar UI.
 - **Modelos Prisma**: agregados `WapiQuickReply` y `WapiResolutionNote` en `packages/prisma/prisma/schema.prisma` con relaciones a Organization, Team y (sólo el segundo) WapiConversation. `WapiQuickReply` con `@@unique([teamId, shortcut])` para evitar colisiones de slug. `WapiResolutionNote` se modeló como tabla separada (no como columna de `WapiConversation`) porque el dueño puede resolver→reabrir→resolver la misma conversación N veces y queremos historial completo. Agregado también el índice compuesto `WapiConversation @@index([teamId, status, lastMessageAt])` para acelerar el listado por tab. Migración aplicada: `20260504232310_wapi_inbox_quick_replies_resolution_notes`. Tenant scoping: `WapiQuickReply` y `WapiResolutionNote` agregados a `TENANT_SCOPED_MODELS` en `tenant-models.ts`.
 - **Permisos CASL**: agregados subjects nuevos `Conversation` y `QuickReply` en `packages/permissions/src/subjects.ts`. En `ability.ts`, team `MEMBER` recibe `read/update/send` sobre `Conversation` (puede leer cualquier convo del team, asignarse, marcar leído, resolver, responder) y CRUD completo sobre `QuickReply`. Team `ADMIN` ya cubre estos via `manage all`. Tests existentes siguen verdes (14 ✅).
 - **Módulo `wapi/inbox`** (`apps/backend/src/modules/wapi/inbox/`):
@@ -575,6 +620,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso recomendado**: **4.F.4 — Frontend del inbox**. Layout 2 columnas (lista a la izq + thread a la der, con panel de detalles colapsable opcional a la derecha estilo Front/Intercom). Lista con tabs (Mías / Sin asignar / Otras / Resueltas), search, filtro por config. Thread con burbujas tipo WhatsApp Web (markdown re-usando `whatsappMarkdown.tsx` de 4.F.2.c), agrupación por fecha, grupos por sender, indicador de read receipt en mensajes salientes (estado del WapiReport), banner cuando la ventana 24h está cerrada (con CTA a iniciar campaña con template). Composer con: textarea, dropdown de quick replies (trigger con `/`, fetch al endpoint nuevo), emoji picker, botón attach (placeholder/disabled hasta media upload), draft persistido en localStorage. Header de la conversación con acciones: Tomar / Asignar (modal con lista del team) / Resolver (dialog con nota opcional) / Marcar como leído/no leído. Listeners de socket sobre `wapi.message.new` y `wapi.conversation.updated`. Página separada `/dashboard/wapi/quick-replies` para CRUD admin (4.G).
 
 ### 2026-05-04 — Sesión 23 (Claude Opus 4.7) — Mapeo CSV→vars del template + markdown preview + dark mode fixes (4.F.1.c + 4.F.2.c)
+
 - **Contexto**: smoke test del dueño post-4.F.2.b detectó dos issues bloqueantes/UX: (a) la preview del template se veía mal en dark mode (burbujas con colores light) y no soportaba markdown WhatsApp; (b) al asignar un template con `{{N}}` a una campaña, no había forma de mapear las columnas del CSV a las variables — el envío fallaba con Meta error #132000 ("Number of parameters does not match").
 - **4.F.2.c — Markdown WhatsApp en preview + dark mode**:
   - Helper nuevo `apps/frontend/src/features/wapi/templates/whatsappMarkdown.tsx` que tokeniza el subset oficial de WhatsApp en dos pasadas (mono/bloque primero, sin nesting; después negrita/cursiva/tachado, anidables vía `findEarliestInline`). Render con `<strong>`, `<em>`, `<span>` con line-through, `<Box component="code">` y `<Box component="pre">` con `bgcolor` theme-aware.
@@ -589,7 +635,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Errores Meta resueltos**:
   - **#132000 (parameter count mismatch)**: el frontend no permitía mapear vars y el worker mandaba template sin parameters. Resuelto end-to-end con la sección de mapping + persistencia.
   - **#131008 (required parameter is missing)**: el worker mandaba `text: ''` cuando la columna estaba ausente. `buildTemplateComponents` ahora throwea `Variable {{N}} (columna "X") está vacía o no existe en este contacto` con índice y nombre — visible en la columna error de la sección de envíos. Fallback agregado: si la spec es `name`/`nombre` y `data[spec]` está vacío, usa `contact.name` (rescata contactos cargados antes del fix del parser, sin tener que re-cargar CSV).
-- **Verificación**: `tsc -b --noEmit` ✅ en backend y frontend (los 2 errores TS pre-existentes en `email/CampaignDetailPage` siguen ahí, no nuestros). Smoke test del dueño confirmado: *"funciono de 10!"* tras todos los fixes.
+- **Verificación**: `tsc -b --noEmit` ✅ en backend y frontend (los 2 errores TS pre-existentes en `email/CampaignDetailPage` siguen ahí, no nuestros). Smoke test del dueño confirmado: _"funciono de 10!"_ tras todos los fixes.
 - **Pendientes intencionales en 4.F.1.c / 4.F.2.c**:
   - **Header con vars**: el worker hoy sólo arma component `body`. Si un template tiene `{{N}}` en el header, no se manda el parameter del header. Es nicho — la mayoría de los templates tienen vars sólo en el body. Cuando se necesite, agregar `headerVars` al `campaign.config` y otro componente `{ type: 'header', parameters }` en `buildTemplateComponents`.
   - **Tests del posting + mapping**: no hay tests automáticos del nuevo `getContactDataKeys` ni de la integración worker→Meta con vars. El flow está cubierto por specs existentes de send + el smoke test manual; agregar tests cuando estabilicemos el shape final del config (cuando se sume header vars).
@@ -597,7 +643,8 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso recomendado**: **4.F.3-4 — Inbox conversacional WAPI**. Modelos `WapiConversation` y `WapiMessage` ya existen desde 2.B; el inbound webhook (4.C) ya populea `WapiMessage` con direction=INBOUND. Falta: (a) endpoint backend `GET /api/wapi/conversations` (lista paginada con last message preview), (b) `GET /api/wapi/conversations/:id/messages` (thread paginado), (c) `POST /api/wapi/conversations/:id/messages` (send dentro de ventana 24h, valida que el último mensaje INBOUND fue ≤ 24h), (d) frontend `/dashboard/wapi/inbox` con lista lateral + thread + composer estilo WhatsApp Web. Alternativa: **4.F.2.d media upload** (3-step Resumable Upload), pero es más nicho — el inbox desbloquea casos de uso completos (responder consultas en vivo). Mi voto: inbox.
 
 ### 2026-05-04 — Sesión 22 (Claude Opus 4.7) — Sub-fase 4.F.1 (frontend de campañas WAPI)
-- **Decisión de scope**: tras cerrar 4.E el dueño autorizó arrancar el frontend con la directiva *"q sea lo mas simple e intuitivo de usar. Siguiendo con el mismo estilo q ya le estamos dando a massivo app en el modulo de los mails"*. También adelantó un requerimiento de 4.F.2: *"los templates se puedan crear desde massivo app y postearlos en meta, quiero q sea con todas las posbilidades de templates para el uusuario, facil y sencillo. A futuro, incluir sugerencia de IA"*. Decidí dividir 4.F en sub-sub-fases para entregar valor incremental: **4.F.1** (esta sesión: listado + creación + detalle + processing banner + sends section + carga CSV de contactos), **4.F.2** (templates con creación desde Massivo + post a Meta + preview + AI placeholder), **4.F.3-4.F.4** (inbox conversacional).
+
+- **Decisión de scope**: tras cerrar 4.E el dueño autorizó arrancar el frontend con la directiva _"q sea lo mas simple e intuitivo de usar. Siguiendo con el mismo estilo q ya le estamos dando a massivo app en el modulo de los mails"_. También adelantó un requerimiento de 4.F.2: _"los templates se puedan crear desde massivo app y postearlos en meta, quiero q sea con todas las posbilidades de templates para el uusuario, facil y sencillo. A futuro, incluir sugerencia de IA"_. Decidí dividir 4.F en sub-sub-fases para entregar valor incremental: **4.F.1** (esta sesión: listado + creación + detalle + processing banner + sends section + carga CSV de contactos), **4.F.2** (templates con creación desde Massivo + post a Meta + preview + AI placeholder), **4.F.3-4.F.4** (inbox conversacional).
 - **Tipos** (`apps/frontend/src/features/wapi/campaigns/types.ts`): adapté el espejo de `email/campaigns/types.ts` al modelo WAPI. Cambios clave: `phone` en lugar de `email` en `WapiCampaignContactInput`; `configId` en lugar de `smtpAccountId`; `template` con `{ id, metaName, language, category }` en lugar de `{ id, name, subject }`; `configRel` con `{ id, name, phoneNumberId }` en lugar de `smtpAccount`; `WapiCampaignReport` con `funnel: { sent, delivered, read, failed }` derivado de timestamps en backend (sin `events` porque WAPI no tiene EmailEvent); `WapiReportStatus` con `CANCELED` (vs `BOUNCED|COMPLAINED|SUPPRESSED` de email). `WapiCampaignReportRow` lista los 4 timestamps `sentAt/deliveredAt/readAt/failedAt` directos en lugar de `firstOpenedAt/firstClickedAt`.
 - **`WapiCampaignsListPage`** (`/dashboard/wapi/campaigns`): mejora UX sobre email — agregué tabs por estado (`Todas / Borradores / Programadas / En envío / Pausadas / Completadas / Fallidas`) con counts client-side. Empty state con ícono de WhatsApp. Modal de creación pidiendo solo el nombre. Skeleton loaders. Suscribe a `wapi.report.updated` para refrescar la lista en vivo cuando una campaña cambia de estado.
 - **`WapiCampaignDetailPage`** (`/dashboard/wapi/campaigns/:id`): header con botón "← Campañas" + ícono WhatsApp + chip de status. Si la campaña está PROCESSING/PAUSED, renderiza el `WapiCampaignProcessingBanner`. Si tiene reports, muestra bloque "Resultados" con los 6 stat boxes (Pendientes, Enviados, Entregados, Leídos, Fallidos, Cancelados) + 2 KPIs derivados (tasa entrega = `delivered/sent` y tasa lectura = `read/delivered`). Form de configuración (nombre / template / número origen / scheduledAt) editable solo en `DRAFT|SCHEDULED|PAUSED`. Después la `WapiCampaignSendsSection` y el bloque de carga de contactos.
@@ -613,6 +660,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **4.F.2 — Templates con creación desde Massivo + posting a Meta**.
 
 ### 2026-05-04 — Sesión 22 (continuación 3) — Sub-fase 4.F.2.b (frontend editor de templates)
+
 - **Decisión de scope**: con 10% de tokens restantes, el dueño autorizó intentar 4.F.2.b. Apunté a entregar el editor funcional con preview en vivo + submit, sin tests automáticos (form complejo, prioridad smoke test del dueño primero).
 - **`WapiTemplateEditorPage`** (`/dashboard/wapi/templates/new`): form en 2 columnas (form izq, preview sticky der) usando Box flex porque la versión de MUI Grid del proyecto exige `component` prop y rompe con `item xs md` syntax (TS2769). Migré a `Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}`.
   - **Detección de vars**: helper `detectVars(text)` con regex `/\{\{(\d+)\}\}/g` busca el N máximo. Effect sincroniza `headerTextExamples`/`bodyExamples` arrays cuando cambia el count, generando inputs de sample dinámicamente.
@@ -632,7 +680,8 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **smoke test del dueño** + decidir si seguir con 4.F.2.c (media upload) o saltar a 4.F.3 (inbox conversacional). Mi voto: **inbox** — los media headers son nicho y el inbox desbloquea casos de uso completos. La directiva del dueño manda.
 
 ### 2026-05-04 — Sesión 22 (continuación 2) — Sub-fase 4.F.2.a (backend templates Massivo→Meta)
-- **Decisión de scope**: tras smoke-test exitoso del golden path (crear config → sync templates → crear campaña → enviar) confirmado por el dueño, autorizó arrancar 4.F.2 con la directiva *"hace todo el backend y cuando termines vemos si llegamos con el frontend"*. Le advertí honestamente que 4.F.2 entera (backend + frontend del editor) no entra en lo que queda de sesión sin riesgo de quedar a la mitad. Subdividí en **4.F.2.a** (esta — backend posting service + endpoint + tests), **4.F.2.b** (frontend editor + preview + AI placeholder, sesión nueva), **4.F.2.c** (Resumable Upload para media headers, futura).
+
+- **Decisión de scope**: tras smoke-test exitoso del golden path (crear config → sync templates → crear campaña → enviar) confirmado por el dueño, autorizó arrancar 4.F.2 con la directiva _"hace todo el backend y cuando termines vemos si llegamos con el frontend"_. Le advertí honestamente que 4.F.2 entera (backend + frontend del editor) no entra en lo que queda de sesión sin riesgo de quedar a la mitad. Subdividí en **4.F.2.a** (esta — backend posting service + endpoint + tests), **4.F.2.b** (frontend editor + preview + AI placeholder, sesión nueva), **4.F.2.c** (Resumable Upload para media headers, futura).
 - **`CreateWapiTemplateMetaDto`** + tipos componentes (`templates-posting/wapi-templates-posting.dto.ts`):
   - `name` con regex `^[a-z0-9_]{1,512}$` — Meta exige lowercase + underscores. Validar acá ahorra un round-trip Meta para el error más común.
   - `language` (e.g. `es_AR`, `en_US`) y `category` (`MARKETING|UTILITY|AUTHENTICATION`).
@@ -662,7 +711,8 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **4.F.2.b — Frontend del editor de templates** (sesión nueva con contexto fresco).
 
 ### 2026-05-04 — Sesión 22 (continuación) — Sub-fases 4.F.1.a + 4.F.1.b (admin de WapiConfigs + catálogo de Templates con sync)
-- **Decisión de scope**: tras cerrar 4.F.1, el dueño avisó *"no puedo crear campaña completa xq aun no tengo como crear una config y ver templates, asi q avancemos con eso primero, nose como sigue el plan"*. Propuse sub-dividir 4.F en **4.F.1.a** (CRUD de configs/números — sin esto no se puede sincronizar templates ni elegir desde dónde mandar), **4.F.1.b** (catálogo read-only + sync — con esto el usuario ya puede operar el golden path completo) y dejar **4.F.2** (editor de templates con posting a Meta) como sub-fase posterior. Aceptado *"perfecto avanza dale"* + warning de uso de tokens al 78% — bundleé las dos en una sola sesión para no quedar a la mitad.
+
+- **Decisión de scope**: tras cerrar 4.F.1, el dueño avisó _"no puedo crear campaña completa xq aun no tengo como crear una config y ver templates, asi q avancemos con eso primero, nose como sigue el plan"_. Propuse sub-dividir 4.F en **4.F.1.a** (CRUD de configs/números — sin esto no se puede sincronizar templates ni elegir desde dónde mandar), **4.F.1.b** (catálogo read-only + sync — con esto el usuario ya puede operar el golden path completo) y dejar **4.F.2** (editor de templates con posting a Meta) como sub-fase posterior. Aceptado _"perfecto avanza dale"_ + warning de uso de tokens al 78% — bundleé las dos en una sola sesión para no quedar a la mitad.
 - **4.F.1.a — `WapiConfigsPage`** (`/dashboard/wapi/configs`):
   - **Tipos** (`apps/frontend/src/features/wapi/configs/types.ts`): `WapiConfigListItem` (id, name, phoneNumberId, businessAccountId, isActive, createdAt). `WapiConfigDetail` extiende con `welcomeMessage, optOutConfirmMessage, dailyLimit, updatedAt`. Los 3 secrets cifrados (`accessToken`, `webhookVerifyToken`, `appSecret`) **NO** existen en `WapiConfigDetail` porque el backend nunca los devuelve en `findOne` — se setean sólo en payloads de create/update. `CreateWapiConfigPayload` con phoneNumberId/businessAccountId/accessToken/webhookVerifyToken obligatorios; `UpdateWapiConfigPayload` con todos opcionales + `isActive` boolean. Los secrets en update son `string | null | undefined` (`undefined` = no tocar, `null` = limpiar — sólo aplicable a `appSecret`).
   - **Modal único** (`editing: WapiConfigDetail | null` decide create vs edit). En edit, los secrets son opcionales con placeholder `••••••••` y helper "dejar vacío para no cambiar"; sólo se incluyen en el PATCH si el usuario tipeó algo (lookup vía `if (form.accessToken) payload.accessToken = form.accessToken`). Esto resuelve la asimetría de que el backend no devuelve los valores actuales — sin esta lógica, abrir el form en edit y guardar borraría los secrets.
@@ -690,8 +740,9 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **4.F.2 — Templates con creación desde Massivo + posting a Meta** (header text/image/video/document, body con `{{1}}…{{N}}`, footer, botones quick-reply/URL/phone, preview en vivo, AI suggestion como placeholder).
 
 ### 2026-05-04 — Sesión 21 (Claude Opus 4.7) — Sub-fase 4.E (CRUD completo de campañas WAPI)
-- **Decisión de scope**: el dueño autorizó *"si dale"* sobre 4.E después de cerrar Sesión 20 (4.D + 4.C.1). Paridad con email 3.C: cierre del CRUD que en 4.A quedó como placeholder send-only. La infra de envío (`WapiQueueService`/`WapiWorkerService`) ya estaba — faltaba wiring del CRUD + control actions con el patrón de 3.C.5.
-- **Migration `add_canceled_to_wapi_report_status`** — `WapiReportStatus` enum ahora tiene `PENDING/SENT/DELIVERED/READ/FAILED/CANCELED`. Decisión consultada al dueño antes de tocar schema: *"si por A"*. Opción A elegida (enum dedicado) sobre opción B (reutilizar `FAILED` + `error='force-closed'`) porque ensucia los counts de fallas reales del envío — un `forceClose` no es una falla, es una cancelación administrativa, y al ver el funnel `FAILED:50` no querés tener que segregar entre fallas Meta vs cancelaciones tuyas.
+
+- **Decisión de scope**: el dueño autorizó _"si dale"_ sobre 4.E después de cerrar Sesión 20 (4.D + 4.C.1). Paridad con email 3.C: cierre del CRUD que en 4.A quedó como placeholder send-only. La infra de envío (`WapiQueueService`/`WapiWorkerService`) ya estaba — faltaba wiring del CRUD + control actions con el patrón de 3.C.5.
+- **Migration `add_canceled_to_wapi_report_status`** — `WapiReportStatus` enum ahora tiene `PENDING/SENT/DELIVERED/READ/FAILED/CANCELED`. Decisión consultada al dueño antes de tocar schema: _"si por A"_. Opción A elegida (enum dedicado) sobre opción B (reutilizar `FAILED` + `error='force-closed'`) porque ensucia los counts de fallas reales del envío — un `forceClose` no es una falla, es una cancelación administrativa, y al ver el funnel `FAILED:50` no querés tener que segregar entre fallas Meta vs cancelaciones tuyas.
 - **DTOs** (`wapi-campaigns.dto.ts`):
   - `phone` con regex E.164 lenient `^\+?[0-9]{6,20}$` — no usé `IsPhoneNumber` (de class-validator/libphonenumber) porque Meta acepta formatos que libphonenumber rechaza (números de prueba, números de países raros) y queremos que la validación sea permisiva: el sender tirará error si Meta no lo acepta.
   - `ArrayMaxSize(5000)` — mismo cap que email para no romper el `createMany` con payloads gigantes.
@@ -718,7 +769,8 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **4.F — UI frontend (admin de campañas WAPI + Inbox conversacional)**. Includes: páginas `/wapi/campaigns` (list + form de create/edit + addContacts CSV + control actions toolbar como en email), `/wapi/inbox` (chat layout: lista conversations + thread por phone + send dentro de ventana 24h + media S3 con URL firmada). El inbound ya entra desde 4.C webhook, los modelos `WapiConversation`/`WapiMessage` ya existen desde 2.B. Alternativa: **4.G snippets** o **4.H opt-out** si el dueño quiere priorizar features antes que UI.
 
 ### 2026-05-04 — Sesión 20 (Claude Opus 4.7) — Sub-fase 4.D (sync de templates Meta)
-- **Decisión de scope**: el dueño dijo *"avanza"* después de 4.C, así que continué en orden con 4.D. La idea: Massivo necesita conocer los `WapiTemplate` aprobados antes de poder lanzar campañas, y crearlos a mano vía CRUD existente es frágil (cambios de status en Meta — APPROVED/REJECTED — no se ven). 4.D agrega un sync explícito tirando del Graph API.
+
+- **Decisión de scope**: el dueño dijo _"avanza"_ después de 4.C, así que continué en orden con 4.D. La idea: Massivo necesita conocer los `WapiTemplate` aprobados antes de poder lanzar campañas, y crearlos a mano vía CRUD existente es frágil (cambios de status en Meta — APPROVED/REJECTED — no se ven). 4.D agrega un sync explícito tirando del Graph API.
 - **`WapiTemplatesSyncService`** (`apps/backend/src/modules/wapi/templates-sync/wapi-templates-sync.service.ts`):
   - `sync(configId)` — `prisma.scoped.wapiConfig.findFirst({ where: { id: configId } })` (cross-tenant 404 natural por la extension), decripta `accessTokenEnc` con `EncryptionService`, pagina Meta hasta `MAX_PAGES=5` (~500 templates con `PAGE_SIZE=100`), llama `upsertOne` por cada template y agrega al `SyncSummary { fetched, created, updated, skipped, pages }`.
   - **Pagination**: arranca con `firstPageUrl(businessAccountId)` (`<base>/v20.0/<biz>/message_templates?fields=name,status,language,category,components,id&limit=100`) y avanza por `paging.next` que viene en cada response (Meta da la URL completa con cursor `after`). El loop `while (url && pages < MAX_PAGES)` corta solo si Meta devuelve un `paging.next` malformado o si ya hay más de 500 templates (caso patológico — el log warn lo deja explícito en `pages=5 fetched=500`). Tests cubren explícitamente el caso de `paging.next` infinito.
@@ -744,7 +796,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
   - decripta accessToken con EncryptionService antes de fetch — verifica `encrypt.decrypt('enc(real-token)')` y que el header sea `Bearer real-token`.
   - Backend full: **295/295 ✅** (286 anteriores + 9 nuevos de 4.D, 0 regresiones).
 - **Verificación**: `tsc --noEmit` ✅ (0 errores), `jest` 295/295 ✅. Frontend no tocado (4.D es backend puro).
-- **Sub-fase 4.C.1 (refactor in-session)** — Antes de commitear, el dueño preguntó: *"el webhook va a ser un webhook x config? imaginando q alguien puede subir 2 numeros de 2 apps distintas o 2 numeros de la misma app entonces el webhook es el mismo"*. Acertó: el diseño original `/api/webhooks/wapi/:configId` solo soporta 1 config = 1 Meta App. Si dos configs comparten App, Meta solo permite registrar una webhook URL en la App, así que pierde eventos del segundo config. Refactor in-session a URL única:
+- **Sub-fase 4.C.1 (refactor in-session)** — Antes de commitear, el dueño preguntó: _"el webhook va a ser un webhook x config? imaginando q alguien puede subir 2 numeros de 2 apps distintas o 2 numeros de la misma app entonces el webhook es el mismo"_. Acertó: el diseño original `/api/webhooks/wapi/:configId` solo soporta 1 config = 1 Meta App. Si dos configs comparten App, Meta solo permite registrar una webhook URL en la App, así que pierde eventos del segundo config. Refactor in-session a URL única:
   - **`GET /api/webhooks/wapi`** (sin `:configId`): escanea todas las `WapiConfig` activas, decripta `webhookVerifyTokenEnc` de cada una, compara timing-safe contra `hub.verify_token`. Primera que matchea gana. Es one-shot (registro de webhook), N decrypts cacheados por LRU del `EncryptionService`.
   - **`POST /api/webhooks/wapi`** (sin `:configId`): parsea rawBody, extrae los `phone_number_id` únicos (`entry[].changes[].value.metadata.phone_number_id`), `findMany({ phoneNumberId: { in: [...] } })` para resolver configs. Valida HMAC con el `appSecret` del primer config — todos los configs de la misma App comparten ese secreto, así que cualquiera sirve. Le pasa al service un `Map<phoneNumberId, ResolvedWebhookConfig>`. Sin matches → 404.
   - **`WapiWebhookService.process(payload, configByPhoneNumberId)`**: itera entry-by-entry, resuelve config por `phone_number_id`, corre cada `value` en su propio `TenantContext.run`. Si Meta batchea events de N números en un mismo POST, cada uno se procesa contra su tenant correcto (caso real cuando un team tiene 2 números bajo la misma App).
@@ -754,7 +806,8 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **4.E — CRUD completo de campañas WAPI**. Paridad con email 3.C: create/update/addContacts/control actions (PAUSE/RESUME/FORCE_CLOSE)/getReport/realtime. La infra de envío (`WapiQueueService` + `WapiWorkerService`) ya está de 4.A — falta el wiring del CRUD y los control actions con el patrón de 3.C.5. Alternativa: **4.F — Inbox conversacional** (modelos ya existen de 2.B, el inbound ya entra de 4.C, falta UI + take/assign/resolve + media S3).
 
 ### 2026-05-04 — Sesión 19 (Claude Opus 4.7) — Sub-fase 4.C (webhook Meta WhatsApp Cloud API)
-- **Decisión de scope**: continuar Fase 4 en orden — el dueño dijo *"perfecto, avanza con el 4C"* después de 4.B. 4.C cubre el inbound del canal WAPI: verify del registro del webhook + recepción de `statuses` (delivered/read/failed) y `messages[]` entrantes (base del inbox que viene en 4.F).
+
+- **Decisión de scope**: continuar Fase 4 en orden — el dueño dijo _"perfecto, avanza con el 4C"_ después de 4.B. 4.C cubre el inbound del canal WAPI: verify del registro del webhook + recepción de `statuses` (delivered/read/failed) y `messages[]` entrantes (base del inbox que viene en 4.F).
 - **Endpoint**: `GET /api/webhooks/wapi/:configId` (verify) + `POST /api/webhooks/wapi/:configId` (events). Bajo `@SkipTenantScope` — Meta no manda Authorization. La confianza es:
   - **GET**: `hub.mode=subscribe` + `hub.verify_token` matchea el `webhookVerifyTokenEnc` decriptado de la WapiConfig identificada por `:configId`. Devuelve `hub.challenge` o 403. Comparación `timingSafeEqual` para evitar timing attacks.
   - **POST**: header `X-Hub-Signature-256` = `sha256=<hex>` con HMAC-SHA256 sobre el rawBody usando `appSecret` decriptado. `main.ts` ya tiene `rawBody:true`, así que `@Req() req: RawBodyRequest<Request>` da `req.rawBody`. Verificación con `timingSafeEqual` sobre buffers de igual longitud.
@@ -787,7 +840,8 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **4.D — Sync de templates Meta** (`POST /api/wapi/templates/:configId/sync` — pull de templates aprobados desde Graph API, persiste `metaName`, `language`, `category`, `status`, `components`). Alternativa: **4.E — CRUD completo de campañas WAPI** (paridad con email 3.C: create/update/addContacts/control actions/getReport/realtime). Para tener un flujo end-to-end testeable, lo natural sería 4.D primero (templates aprobados) → 4.E (campañas) → 4.F (inbox que ya recibe inbound vía 4.C).
 
 ### 2026-05-04 — Sesión 18 (Claude Opus 4.7) — Sub-fase 4.B (encriptación at-rest AES-256-GCM)
-- **Decisión arquitectónica del dueño**: cloud-agnostic. La frase exacta fue *"no quiero que massivo app quede acoplado solo a soluciones de AWS, xq si en un momento tendria q cambiar de entorno, complicaria las cosas. Quiero quedar lo mas abstracto e independiente posible"*. Descartado AWS KMS-only; elegido AES-256-GCM con master key en env detrás de una abstracción `EncryptionService` (clase abstracta) — el día que se quiera swapear a KMS / Vault / GCP, sólo cambia el `useExisting` del `SecurityModule`, los call sites no se tocan.
+
+- **Decisión arquitectónica del dueño**: cloud-agnostic. La frase exacta fue _"no quiero que massivo app quede acoplado solo a soluciones de AWS, xq si en un momento tendria q cambiar de entorno, complicaria las cosas. Quiero quedar lo mas abstracto e independiente posible"_. Descartado AWS KMS-only; elegido AES-256-GCM con master key en env detrás de una abstracción `EncryptionService` (clase abstracta) — el día que se quiera swapear a KMS / Vault / GCP, sólo cambia el `useExisting` del `SecurityModule`, los call sites no se tocan.
 - **`EncryptionService`** (`apps/backend/src/common/security/encryption.service.ts`): clase abstracta con `encrypt(plaintext): string`, `decrypt(value): string`, `isEncrypted(value): boolean`. Impl concreta `AesGcmEncryptionService`:
   - Master key desde `MASSIVO_ENCRYPTION_KEY` (hex, 64 chars) o `MASSIVO_ENCRYPTION_KEY_B64` (base64, 44 chars). Validación de tamaño: 32 bytes exactos o el `onModuleInit` tira al boot.
   - Algoritmo: AES-256-GCM via `node:crypto`. IV random 12 bytes per-encrypt. AuthTag 16 bytes detecta tampering.
@@ -819,6 +873,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **4.C — Webhook Meta** (`POST /webhooks/wapi/:configId` público, `@SkipTenantScope`, verify_token + firma con `appSecret`, procesa `messages` entrantes y `statuses` delivered/read/failed). Alternativa: **4.D — Sync de templates Meta** si se quiere armar primero el flujo completo de outbound (templates aprobados desde Graph API).
 
 ### 2026-05-04 — Sesión 17 (Claude Opus 4.7) — Sub-fase 4.A (infra de envío WAPI)
+
 - **Decisión de scope**: arrancar Fase 4 (WhatsApp Cloud API) en lugar de cerrar 3.E inbound de mails — el dueño priorizó WAPI. 3.E queda postergado al final de Fase 3 (después de 4 entera).
 - **Cleanup previo**: las 7 sub-tareas legacy bajo "Sub-tareas legacy del plan original (referencia, ya cubiertas en 3.A/3.B/3.C)" de la sección Fase 3 estaban con `[ ]` aunque el header decía que ya estaban cubiertas. Marcadas como `[x]` con referencia a la sub-fase exacta donde se implementó cada una. Commit `abbe371`.
 - **WapiSenderService** (`apps/backend/src/modules/wapi/sender/wapi-sender.service.ts`): cliente HTTP a Graph API v20+ `/messages` usando `fetch` nativo (Node 22 / undici bundled — sin agregar `@nestjs/axios` ni `undici` como dep). Métodos `sendText` / `sendTemplate` / `sendMedia`. Errores Meta normalizados en `WapiSendException` con flags `isRateLimit` / `isAuth` / `retryable` para que el worker pueda decidir backoff vs FAILED definitivo. Códigos rate limit conocidos del API: 130429, 131048, 131056. Códigos auth: 190, 102, 10, 200. Override de URL base vía env `WAPI_GRAPH_BASE_URL` (mocks/staging).
@@ -847,6 +902,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **4.B — Encriptación KMS de tokens** (`accessTokenEnc` / `webhookVerifyTokenEnc` / `appSecretEnc` quedaron en claro). Decisión a tomar: AWS KMS vs `crypto.subtle` con clave maestra en env vs Vault. Alternativa: arrancar **4.C — Webhook Meta** primero para tener inbound completo (mensajes entrantes + statuses delivered/read/failed) antes de invertir en KMS — depende de qué se pueda probar end-to-end primero.
 
 ### 2026-05-04 — Sesión 16 (Claude Opus 4.7) — Sub-fase 3.D (reportes consolidados con export CSV/XLSX)
+
 - **Backend**: nuevo módulo `apps/backend/src/modules/email/reports/` con `ReportGeneratorService` (4 generators: `campaign-summary` / `campaign-reports` / `bounces-complaints` / `suppressions`), `GenerateReportDto` (class-validator: `@IsIn(REPORT_KINDS)`, `@IsIn(REPORT_FORMATS)`, `campaignId?` / `status?` / `fromDate?` / `toDate?` con `@Type(() => Date)`) y `ReportsController` con un único endpoint `POST /api/email/reports/generate`.
 - **Auth**: `@CheckPolicies` compuesto sobre el endpoint (`read Campaign` AND `read EmailSuppression`) en lugar de splittear en dos endpoints — ambas abilities ya las tiene MEMBER+ADMIN, simpler de mantener.
 - **Estrategia de export**: sync-only — single Buffer en memoria, target ~50k filas máx por reporte. Para cargas mayores, async + S3 + scheduler quedan diferidos a **Fase 8** (notifications/scheduling). Formato seleccionable por el cliente (CSV o XLSX) en el body del POST.
@@ -867,6 +923,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: arrancar **Fase 4 — Canal WhatsApp Cloud API** (4.A → 4.K, ver MIGRATION_PLAN). Alternativamente, si el dueño prioriza cerrar Fase 3 antes de saltar de canal: **3.E inbound** (parsing IMAP / forwarders) — postergado en sesiones anteriores. Antes de pasar a Fase 4, **el sender SES en producción aún no fue verificado end-to-end con tracking real (cloudflared)** — sigue diferido si el dueño prioriza otras cosas.
 
 ### 2026-05-04 — Sesión 15 (Claude Opus 4.7) — Sub-fase 3.C.5 (control actions de campaña)
+
 - **Schema**: nuevo valor `CANCELED` en `EmailReportStatus`. Migración `20260504181455_add_canceled_report_status` aplicada en Postgres local vía WSL (workaround de Git-Bash MSYS path conversion: script en `/mnt/c/...` invocado con `MSYS_NO_PATHCONV=1 wsl.exe`).
 - **Backend service**: `EmailCampaignsService.pause` (PROCESSING→PAUSED, Conflict en otros estados), `resume` (PAUSED→PROCESSING + re-enqueue PENDING idempotente vía `jobId=reportId`), `forceClose` (PROCESSING|PAUSED→COMPLETED + `updateMany` PENDING→CANCELED con `error='force-closed'`). Cada acción notifica via `events.emitToTeamDebounced` para que dashboards/banner/lista refresquen.
 - **Endpoints**: `POST /api/email/campaigns/:id/pause | /resume | /force-close`, todos con `@CheckPolicies((a) => a.can('send', 'Campaign'))`.
@@ -880,6 +937,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **3.D — Reportes consolidados** (vistas globales cross-campañas). Implica: tablero de reportes por team con filtros por rango de fechas/canal, drill-down por campaña, export CSV/XLSX, scheduler genérico de reportes (Fase 9 dependency: cualquier reporte agendable + entrega por mail con adjunto). Antes de eso, sumar al Sender SES verificación real de tracking en producción (cloudflared) — diferido si lo prioriza el dueño.
 
 ### 2026-04-30 — Sesión 14 (Claude Opus 4.7) — Cierre sub-fase 3.C.4 (frontend email features)
+
 - **3.C.4.c — Suppressions UI** ✅: backend con endpoints separados unsubscribes/bounces (cursor + filtro email), POST manual, DELETE de ambos. Frontend `/dashboard/email/suppressions` con Tabs, search, dialog "Agregar manual". Tests: 25/25 ✅.
 - **3.C.4.d — Métricas globales** ✅: `EmailMetricsService.getOverview(7|30)` con groupBy + aperturas/clicks únicos + top 5 campañas. Frontend `/dashboard/email/metrics` con KpiCards, distribución, tabla top campañas. Tests: 3/3 ✅.
 - **3.C.4.e — Live processing view** ✅: `CampaignProcessingBanner` con LinearProgress determinate, contador procesados/total, throughput hook 60s, breakdown chips. Pause/resume diferido a 3.C.5.
@@ -893,6 +951,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: **3.C.5 — Control actions de campaña** (pausar / reanudar / forzar cierre durante PROCESSING). Implica: endpoint backend `POST /api/email/campaigns/:id/pause` (transiciona a PAUSED, cancela jobs pendientes en BullMQ o setea flag que el worker chequea antes de procesar), `POST /:id/resume` (vuelve a PROCESSING + re-enqueue), `POST /:id/cancel` (force-close → COMPLETED con flag canceled). Frontend: botones en `CampaignProcessingBanner`. Decidir estrategia: cancelar jobs de la queue vs flag en BD chequeado por worker. Después de 3.C.5 viene **3.D — Reports consolidados**.
 
 ### 2026-04-30 — Sesión 13 (Claude Opus 4.7) — Reescritura `MIGRATION_PLAN.md` v2.0
+
 - **Audit exhaustivo de AMSA Sender** (vía Explore agent): listado feature-por-feature de backend modules, workers, frontend features, Prisma models, crons, capacidades cross-cutting.
 - **Gaps detectados** que el plan v1 no cubría: One-Click unsubscribe RFC 8058, bounce DSN parsing, EmailEvent metadata extendida, manual send, test send/preview, acciones de control campaña (pausar/reanudar/forzar cierre), inbox WAPI full feature (asignar/tomar/resolver/búsqueda/sin asignar/resueltas/media), respuestas rápidas, bajas WAPI, mensaje bienvenida, daily limit per-config, detección rate-limit codes Meta, live dashboard WAPI, scheduler genérico de reportes, contacts unificados con `externalId` + timeline cross-canal, dev simulator, AI provider switcheable.
 - **Decisiones del usuario** sobre features ambiguas:
@@ -915,6 +974,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: 3.C.4.a (SMTP accounts UI + test send) — el BLOCKER actual ya identificado.
 
 ### 2026-04-30 — Sesión 12 (Claude Opus 4.7) — Sub-fase 3.C.3.c/.d/.e + landing + GitLab layout + Clerk theming
+
 - **3.C.3.c — Frontend campaigns**: `CampaignsListPage` (tabla con chips de status, dialog de creación, confirm() destructive en delete) y `CampaignDetailPage` (edit metadata si DRAFT/SCHEDULED/PAUSED, CSV paste con header detection, send con confirm, panel de report con counts + opens/clicks).
 - **3.C.3.d — Realtime dashboard**: ambas páginas suscriptas al socket `email.report.updated` (filtra por campaignId en detail) → re-fetcha el agregado.
 - **3.C.3.e — UX polish**: `NotifyProvider` (Snackbar global con hook `useNotify`), `ConfirmProvider` (Promise-based con destructive), skeletons, responsive tables, AppLayout con Drawer mobile.
@@ -928,6 +988,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: 3.C.4.c — Suppressions UI (`/dashboard/email/suppressions` con `EmailUnsubscribe` + `EmailBounce` paginados). Después: métricas globales, live processing view, manual send, preview test send.
 
 ### 2026-04-30 — Sesión 11 (Claude Opus 4.7) — Sub-fases 3.B + 3.C.1/.2/.3.a/.3.b
+
 - **🏁 Sub-fase 3.B completa**: tracking saliente + suppression + webhook SES.
 - **3.C.1 — Backend campaigns**: CRUD + send (BullMQ enqueue por contacto) + getReport (groupBy + opens/clicks).
 - **3.C.2 — Realtime**: `EventsService.emitToTeamDebounced` + integración en `EmailWorker` y `SesWebhookService` con event `email.report.updated`.
@@ -937,6 +998,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso**: 3.C.3.c (frontend campaigns).
 
 ### 2026-04-30 — Sesión 10 (Claude Opus 4.7) — Sub-fase 3.A
+
 - **Sub-fase 3.A — Infra de envío email completada** ✅.
 - Decisión arquitectónica: driver-based (`EmailSender` interface). `SmtpSender` (nodemailer, default — Mailpit en dev / SMTP de cliente en prod) y `SesSender` (`@aws-sdk/client-sesv2`, prod). Selección por `SmtpAccount.provider`. Migración `add_smtp_provider_field` (campos `provider`, `sesConfigSet`).
 - `EmailQueueService` (BullMQ, queue `email-send`, jobId=reportId para idempotencia). `EmailWorkerService` reconstruye `TenantContext.run` con role sintético OWNER/ADMIN, render Handlebars desde `contact.data`, persiste SENT/FAILED.
@@ -944,7 +1006,6 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - Verificación: typecheck 8/8 ✅, backend 124/124 ✅ (+10 vs Fase 2), permissions 14/14 ✅.
 - **Pendiente dev local** (no en CI): instalar Mailpit + Redis en WSL para test E2E manual. Comandos en sección "Setup dev local".
 - **Próximo paso**: 3.B (tracking pixel + webhook SES + suppression + unsubscribe).
-
 
 - **Sub-fase 2.D — Sockets scopeados completada** y con ello **🏁 Fase 2 completada**.
 - `EventsModule` con `EventsService` (helpers `emitToTeam`/`emitToOrg`/`emitToUser`), `SocketContextResolver` (encapsula la lógica de `TenantContextGuard` para handshake) y `AppGateway` con auth vía `server.use(middleware)` (necesario para que el cliente reciba `connect_error`; emitir manualmente `connect_error` está reservado por Socket.IO). Rooms `org:{id}`, `team:{id}`, `user:{id}` por socket.
@@ -955,6 +1016,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Próximo paso:** Fase 3 — Canal Email envío real.
 
 ### 2026-04-28 — Sesión 1 (Claude Opus 4.7)
+
 - Generado `MIGRATION_PLAN.md` (plan maestro completo: arquitectura, modelo de tenancy, fases, criterios, riesgos).
 - Decidida arquitectura: shared DB + Postgres + Clerk + CASL + Stripe/MP + AWS SES + Meta WAPI.
 - Decidido modelo Organization → Team → User con roles separados a cada nivel.
@@ -965,10 +1027,12 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - Creado `PROGRESS.md` (este archivo) para continuidad entre sesiones / IAs.
 
 ### 2026-04-29 — Sesión 5 (Claude Opus 4.7)
+
 - Implementado endpoint `GET /api/me/context` (`MeModule` con `MeService` + `MeController`). Devuelve user + orgs + teams + plan + roles del usuario logueado, sin requerir team elegido. Filtra teams a los que el user es miembro. Tipos en `@massivo/shared-types`. Auth: `ClerkAuthGuard`. Tests unitarios 3/3 ✅.
 - `permissions: {}` queda como placeholder hasta integrar CASL en la próxima tarea.
 
 ### 2026-04-29 — Sesión 4 (Claude Opus 4.7)
+
 - Implementada la **Prisma extension `tenant-scope`** (modo strict): auto-inyecta `organizationId` (y `teamId` cuando el modelo es tenant-scoped) en `where`/`data` de operaciones de read/write/upsert. Tira error si se hace una query a un modelo scoped sin `TenantContext`.
 - Categorización de modelos en `tenant-models.ts`: `TENANT_SCOPED` (vacío — se llena en Fase 2 con WapiConfig, EmailTemplate, Campaign, etc.), `ORG_SCOPED` (Subscription, UsageCounter, AuditLog), globales (Organization, Team, User, memberships, Plan).
 - `PrismaService` expone `prisma.scoped` (cliente con extension aplicada). El cliente raíz se reserva para `TenantContextGuard`, webhooks Clerk y onboarding que deben operar pre-contexto.
@@ -976,6 +1040,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - Suite de tests unitarios de la extension (10/10 ✅): aislamiento, strict mode, skip, inject en read/create/upsert, distinción org vs tenant scoped.
 
 ### 2026-04-29 — Sesión 3 (Claude Opus 4.7)
+
 - Centralizada la carga de `.env` en la raíz del monorepo (backend, Vite, `prisma.config.ts`).
 - **Downgrade de Prisma 7 → 6.16** (alineado con `MIGRATION_PLAN.md`): Prisma 7 obliga a usar driver adapter o Accelerate, lo que rompía el arranque de `PrismaService`. Se ajustó `schema.prisma` con `url = env("DATABASE_URL")` y se simplificó `prisma.config.ts`.
 - Aplicada la migración inicial contra Postgres local en WSL y ejecutado el seed de planes (FREE, STARTER, BUSINESS, ENTERPRISE).
@@ -983,6 +1048,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - Confirmado que el backend levanta sin Redis (BullMQ entra recién en Fase 3).
 
 ### 2026-04-28 — Sesión 2 (Antigravity)
+
 - Configuración de Prisma 7 (`packages/prisma`) con esquema base (Postgres) y script de seed.
 - Integración de `PrismaModule` en el backend.
 - Configuración de llaves de Clerk en `.env` provistas por el usuario.
@@ -992,6 +1058,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - Implementación de `TenantContextGuard` y `TenantContextInterceptor` con `AsyncLocalStorage` para manejar el scope de tenants en las peticiones.
 
 ### 2026-04-29 — Sesión 6 (Antigravity — Opus 4.6)
+
 - Completada integración CASL end-to-end: `@massivo/permissions` package (ya existente) → backend `AbilityFactory` + `PoliciesGuard` + `@CheckPolicies` (ya existentes) → wiring verificado.
 - `TenantContextGuard` ya cargaba `planFeatures` desde `org.plan.features` en `request.planFeatures` (confirmado, no requirió cambio).
 - Implementada **Opción A para plan flags** en `GET /api/me/context`: cada org ahora devuelve `permissions: { hasAi, canCreateTeam, canSso }` usando `computePlanFlags()`. Removido `permissions: {}` top-level del response.
@@ -1003,6 +1070,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - Verificación: typecheck 8/8 ✅, build 5/5 ✅, tests backend 25/25 ✅, tests permissions 11/11 ✅.
 
 ### 2026-04-29 — Sesión 6b (Antigravity — Opus 4.6)
+
 - **Webhook Clerk hardening**: eliminados todos los `any`, tipado con `ClerkWebhookEvent`. Org creation ahora idempotente (upsert). Creator se asigna como OWNER + ADMIN del team General. Role mapping mejorado con `mapClerkRoleToOrgRole` y protección contra degradación de OWNER.
 - **CRUD de Teams** (`TeamsModule`): primer consumer completo del auth chain `ClerkAuthGuard → TenantContextGuard → PoliciesGuard + @CheckPolicies`. Endpoints: `GET /api/teams`, `GET /api/teams/:id`, `POST /api/teams`, `PATCH /api/teams/:id`, `DELETE /api/teams/:id`. Plan-gate `create Team` via CASL ability. Default team no se puede eliminar.
 - DTOs con `class-validator` (`CreateTeamDto`, `UpdateTeamDto`).
@@ -1010,6 +1078,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - Verificación: typecheck 8/8 ✅, build 5/5 ✅, tests backend 33/33 ✅, tests permissions 11/11 ✅.
 
 ### 2026-04-30 — Sesión 8 (Claude Opus 4.7)
+
 - **Sub-fase 2.C — Cross-cutting completada**. 6 modelos tenant-aware (`Contact`, `Tag`, `ContactList`, `ScheduledTask`, `TaskExecution`, `CampaignLog`) + 2 tablas de unión (`ContactTag`, `ContactListMember`) + 4 enums (`ChannelKind`, `ScheduledTaskKind`, `TaskExecutionStatus`, `CampaignLogLevel`).
 - Migración `add_crosscutting_models` aplicada. Modelos registrados en `TENANT_SCOPED_MODELS`.
 - Subjects CASL: agregados `Tag` y `ContactList`. Rules MEMBER ahora cubren `Contact/ContactList/Tag` (CRUD + delete).
@@ -1020,12 +1089,14 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - **Nota**: `ContactList`/`ContactListMember` quedaron en schema sin CRUD — no estaba en "servicios mínimos" del plan, se completará junto con el UI de listas en Fase 5/6.
 
 ### 2026-04-30 — Sesión 7 (Claude Opus 4.7)
+
 - **Inicio Fase 2 — sub-A: Email**. Schema Prisma con 8 modelos nuevos (`SmtpAccount`, `EmailTemplate`, `EmailCampaign`, `EmailContact`, `EmailReport`, `EmailEvent`, `EmailBounce`, `EmailUnsubscribe`) tenant-scoped (`organizationId` + `teamId` + índices). 4 enums nuevos (`EmailCampaignStatus`, `EmailReportStatus`, `EmailEventType`, `EmailUnsubscribeScope`). Migración `add_email_models` aplicada contra DB local.
 - Modelos registrados en `TENANT_SCOPED_MODELS` → la Prisma extension los enforce automáticamente.
 - **Fix de `pnpm dev` que rompía el backend** (`ERR_MODULE_NOT_FOUND` en `@massivo/permissions`): se descartaron los cambios uncommitted previos (que rompían jest), y se aplicó la solución correcta: `package.json` de los 3 packages workspace ahora apunta a `./dist/index.js` y `./dist/index.d.ts`; `tsconfig.json` de los 3 packages cambia a `module: CommonJS` + `moduleResolution: Node`; `turbo.json` agrega `dependsOn: ["^build"]` al task `dev`.
 - Verificación: typecheck 8/8 ✅, build 5/5 ✅, tests backend 49/49 ✅, tests permissions 11/11 ✅, `pnpm --filter @massivo/backend dev` arranca y `GET /api/health` responde `{"status":"ok"}`.
 
 ### 2026-04-29 — Sesión 6c (Antigravity — Opus 4.6)
+
 - **TeamMembersService**: CRUD de miembros de team (`GET/POST/PATCH/DELETE /api/teams/:teamId/members`). Valida pertenencia a la org antes de agregar, protege contra eliminar último admin, cross-org isolation.
 - DTOs `AddTeamMemberDto` / `UpdateTeamMemberRoleDto` con `class-validator`.
 - Tests `TeamMembersService`: 6 tests.
@@ -1034,6 +1105,7 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 - Verificación final: typecheck 8/8 ✅, build 5/5 ✅, tests backend 49/49 ✅, tests permissions 11/11 ✅.
 
 ### 2026-04-30 — Sesión 8 (Antigravity — Opus 4.6 Thinking)
+
 - **🏁 Sub-fase 2.A Email COMPLETADA**: todos los ítems del checklist verificados.
 - Fix de 2 errores TypeScript en `SmtpAccountsService` y `EmailTemplatesService`: uso de `Prisma.*.UncheckedCreateInput` (la extension inyecta orgId/teamId en runtime, el tipo `CreateInput` exige relaciones que no se pasan manualmente).
 - Fix imports `@prisma/client` → `@massivo/prisma` (convención del monorepo).

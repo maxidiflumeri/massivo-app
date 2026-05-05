@@ -1,4 +1,7 @@
-import { type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
+import { Collapse } from '@mui/material';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { NavLink } from 'react-router-dom';
 import {
   Box,
@@ -28,6 +31,7 @@ import { OrganizationSwitcher } from '@clerk/clerk-react';
 
 export const SIDEBAR_WIDTH = 248;
 export const SIDEBAR_COLLAPSED_WIDTH = 64;
+const GROUP_STATE_KEY = 'massivo:sidebarGroups';
 
 interface NavItemSpec {
   to?: string;
@@ -129,6 +133,23 @@ export function Sidebar({
   onNavigate,
   showCollapseButton = true,
 }: SidebarProps) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem(GROUP_STATE_KEY);
+      if (raw) return JSON.parse(raw) as Record<string, boolean>;
+    } catch {
+      // no-op
+    }
+    return Object.fromEntries(NAV_GROUPS.map((g) => [g.label, true]));
+  });
+
+  useEffect(() => {
+    localStorage.setItem(GROUP_STATE_KEY, JSON.stringify(openGroups));
+  }, [openGroups]);
+
+  const toggleGroup = (label: string) =>
+    setOpenGroups((prev) => ({ ...prev, [label]: !(prev[label] ?? true) }));
+
   return (
     <Box
       sx={{
@@ -173,37 +194,81 @@ export function Sidebar({
       {/* Nav */}
       <Box sx={{ flex: 1, overflowY: 'auto', py: 1.5, px: collapsed ? 0.75 : 1.25 }}>
         <Stack spacing={collapsed ? 0.5 : 2}>
-          {NAV_GROUPS.map((group, idx) => (
-            <Box key={group.label}>
-              {!collapsed && (
-                <Typography
-                  variant="overline"
-                  sx={{
-                    px: 1.5,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: 0.6,
-                    color: 'text.secondary',
-                    display: 'block',
-                    mb: 0.5,
-                  }}
-                >
-                  {group.label}
-                </Typography>
-              )}
-              {collapsed && idx > 0 && <Divider sx={{ my: 0.75, mx: 0.5 }} />}
-              <Stack spacing={0.25}>
-                {group.items.map((item) => (
-                  <NavRow
-                    key={item.label}
-                    item={item}
-                    collapsed={collapsed}
-                    onNavigate={onNavigate}
-                  />
-                ))}
-              </Stack>
-            </Box>
-          ))}
+          {NAV_GROUPS.map((group, idx) => {
+            const isOpen = openGroups[group.label] ?? true;
+            return (
+              <Box key={group.label}>
+                {!collapsed && (
+                  <Box
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleGroup(group.label)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleGroup(group.label);
+                      }
+                    }}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      px: 1.5,
+                      mb: 0.5,
+                      cursor: 'pointer',
+                      borderRadius: 1,
+                      userSelect: 'none',
+                      '&:hover': { bgcolor: 'action.hover' },
+                    }}
+                  >
+                    <Typography
+                      variant="overline"
+                      sx={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        letterSpacing: 0.6,
+                        color: 'text.secondary',
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      {group.label}
+                    </Typography>
+                    {isOpen ? (
+                      <ExpandLessIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                    ) : (
+                      <ExpandMoreIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                    )}
+                  </Box>
+                )}
+                {collapsed && idx > 0 && <Divider sx={{ my: 0.75, mx: 0.5 }} />}
+                {collapsed ? (
+                  <Stack spacing={0.25}>
+                    {group.items.map((item) => (
+                      <NavRow
+                        key={item.label}
+                        item={item}
+                        collapsed={collapsed}
+                        onNavigate={onNavigate}
+                      />
+                    ))}
+                  </Stack>
+                ) : (
+                  <Collapse in={isOpen} timeout={180} unmountOnExit>
+                    <Stack spacing={0.25}>
+                      {group.items.map((item) => (
+                        <NavRow
+                          key={item.label}
+                          item={item}
+                          collapsed={collapsed}
+                          onNavigate={onNavigate}
+                        />
+                      ))}
+                    </Stack>
+                  </Collapse>
+                )}
+              </Box>
+            );
+          })}
         </Stack>
       </Box>
 
