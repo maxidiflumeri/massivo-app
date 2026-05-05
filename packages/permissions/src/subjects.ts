@@ -6,6 +6,8 @@ export type SubjectName =
   | 'Template'
   | 'WapiConfig'
   | 'WapiTemplate'
+  | 'Conversation'
+  | 'QuickReply'
   | 'SmtpAccount'
   | 'EmailSuppression'
   | 'Team'

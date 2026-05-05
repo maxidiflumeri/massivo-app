@@ -18,6 +18,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'WapiConversation',
   'WapiMessage',
   'WapiOptOut',
+  'WapiQuickReply',
+  'WapiResolutionNote',
   // Cross-cutting (Fase 2.C)
   'Contact',
   'Tag',

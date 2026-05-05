@@ -46,6 +46,8 @@ export function defineAbilityFor(ctx: AbilityContext): AppAbility {
     can(['create', 'read', 'update', 'send'], ['Campaign', 'Template', 'Contact', 'ContactList', 'Tag', 'WapiTemplate'], { teamId });
     can('delete', ['Contact', 'ContactList', 'Tag'], { teamId });
     can('read', ['WapiConfig', 'SmtpAccount', 'Analytics', 'EmailSuppression'], { teamId });
+    can(['read', 'update', 'send'], 'Conversation', { teamId });
+    can(['create', 'read', 'update', 'delete'], 'QuickReply', { teamId });
   }
 
   if (teamRole === 'VIEWER') {

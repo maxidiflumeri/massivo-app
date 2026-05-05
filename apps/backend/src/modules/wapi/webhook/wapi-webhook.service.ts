@@ -183,12 +183,17 @@ export class WapiWebhookService {
         window24hAt: new Date(ts.getTime() + 24 * 60 * 60_000),
         unreadCount: { increment: 1 },
         ...(profileName ? { name: profileName } : {}),
+        // Si la conversación estaba RESOLVED y entra un mensaje nuevo, la
+        // reabrimos automáticamente (mantiene assignedUserId si lo tenía).
+        ...(await this.shouldReopen(tenant.teamId, tenant.configId, phone)),
       },
-      select: { id: true },
+      select: { id: true, status: true, assignedUserId: true, unreadCount: true },
     });
 
+    let createdMessageId: string | null = null;
+    let storedContent: unknown = null;
     try {
-      await this.prisma.scoped.wapiMessage.create({
+      const created = await this.prisma.scoped.wapiMessage.create({
         data: {
           organizationId: tenant.organizationId,
           teamId: tenant.teamId,
@@ -200,7 +205,10 @@ export class WapiWebhookService {
           status: 'received',
           timestamp: ts,
         },
+        select: { id: true, content: true },
       });
+      createdMessageId = created.id;
+      storedContent = created.content;
     } catch (err) {
       // Duplicado por unique(metaMessageId) — Meta a veces re-envía. Log y seguir.
       const code = (err as { code?: string }).code;
@@ -211,6 +219,7 @@ export class WapiWebhookService {
       throw err;
     }
 
+    // Evento legacy (3.E inbound).
     this.events.emitToTeam(tenant.teamId, 'wapi.message.inbound', {
       conversationId: conversation.id,
       configId: tenant.configId,
@@ -218,6 +227,53 @@ export class WapiWebhookService {
       type: msg.type,
       ts: ts.toISOString(),
     });
+
+    // Eventos del inbox (4.F.3): el frontend usa estos para append a la lista
+    // y a la conversación abierta sin necesidad de re-fetchear.
+    this.events.emitToTeam(tenant.teamId, 'wapi.message.new', {
+      conversationId: conversation.id,
+      configId: tenant.configId,
+      phone,
+      message: {
+        id: createdMessageId,
+        fromMe: false,
+        type: msg.type,
+        content: storedContent,
+        status: 'received',
+        timestamp: ts.toISOString(),
+        metaMessageId: msg.id,
+      },
+    });
+    this.events.emitToTeam(tenant.teamId, 'wapi.conversation.updated', {
+      id: conversation.id,
+      configId: tenant.configId,
+      phone,
+      status: conversation.status,
+      assignedUserId: conversation.assignedUserId,
+      lastMessageAt: ts.toISOString(),
+      unreadCount: conversation.unreadCount,
+    });
+  }
+
+  /**
+   * Si la conversación viene de RESOLVED, la reabrimos: ASSIGNED si tenía
+   * dueño, UNASSIGNED si no. Devolvemos el patch para mergear en `update` del
+   * upsert. Si no está RESOLVED, devolvemos {} y no toca status.
+   */
+  private async shouldReopen(
+    teamId: string,
+    configId: string,
+    phone: string,
+  ): Promise<Record<string, unknown>> {
+    const existing = await this.prisma.scoped.wapiConversation.findFirst({
+      where: { teamId, configId, phone },
+      select: { status: true, assignedUserId: true },
+    });
+    if (!existing || existing.status !== 'RESOLVED') return {};
+    return {
+      status: existing.assignedUserId ? 'ASSIGNED' : 'UNASSIGNED',
+      resolvedAt: null,
+    };
   }
 }
 

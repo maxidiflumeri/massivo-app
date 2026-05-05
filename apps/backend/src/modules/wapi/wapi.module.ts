@@ -13,6 +13,10 @@ import { WapiTemplatesSyncService } from './templates-sync/wapi-templates-sync.s
 import { WapiTemplatesPostingService } from './templates-posting/wapi-templates-posting.service';
 import { WapiWebhookController } from './webhook/wapi-webhook.controller';
 import { WapiWebhookService } from './webhook/wapi-webhook.service';
+import { WapiInboxController } from './inbox/wapi-inbox.controller';
+import { WapiInboxService } from './inbox/wapi-inbox.service';
+import { WapiQuickRepliesController } from './quick-replies/wapi-quick-replies.controller';
+import { WapiQuickRepliesService } from './quick-replies/wapi-quick-replies.service';
 
 @Module({
   imports: [EventsModule],
@@ -21,6 +25,8 @@ import { WapiWebhookService } from './webhook/wapi-webhook.service';
     WapiTemplatesController,
     WapiCampaignsController,
     WapiWebhookController,
+    WapiInboxController,
+    WapiQuickRepliesController,
   ],
   providers: [
     WapiConfigsService,
@@ -32,6 +38,8 @@ import { WapiWebhookService } from './webhook/wapi-webhook.service';
     WapiWebhookService,
     WapiTemplatesSyncService,
     WapiTemplatesPostingService,
+    WapiInboxService,
+    WapiQuickRepliesService,
   ],
   exports: [WapiQueueService, WapiSenderService],
 })

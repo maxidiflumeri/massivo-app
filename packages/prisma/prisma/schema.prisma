@@ -125,14 +125,16 @@ model Organization {
   emailEvents       EmailEvent[]
   emailBounces      EmailBounce[]
   emailUnsubscribes EmailUnsubscribe[]
-  wapiConfigs       WapiConfig[]
-  wapiTemplates     WapiTemplate[]
-  wapiCampaigns     WapiCampaign[]
-  wapiContacts      WapiContact[]
-  wapiReports       WapiReport[]
-  wapiConversations WapiConversation[]
-  wapiMessages      WapiMessage[]
-  wapiOptOuts       WapiOptOut[]
+  wapiConfigs         WapiConfig[]
+  wapiTemplates       WapiTemplate[]
+  wapiCampaigns       WapiCampaign[]
+  wapiContacts        WapiContact[]
+  wapiReports         WapiReport[]
+  wapiConversations   WapiConversation[]
+  wapiMessages        WapiMessage[]
+  wapiOptOuts         WapiOptOut[]
+  wapiQuickReplies    WapiQuickReply[]
+  wapiResolutionNotes WapiResolutionNote[]
 
   contacts       Contact[]
   tags           Tag[]
@@ -163,14 +165,16 @@ model Team {
   emailEvents       EmailEvent[]
   emailBounces      EmailBounce[]
   emailUnsubscribes EmailUnsubscribe[]
-  wapiConfigs       WapiConfig[]
-  wapiTemplates     WapiTemplate[]
-  wapiCampaigns     WapiCampaign[]
-  wapiContacts      WapiContact[]
-  wapiReports       WapiReport[]
-  wapiConversations WapiConversation[]
-  wapiMessages      WapiMessage[]
-  wapiOptOuts       WapiOptOut[]
+  wapiConfigs         WapiConfig[]
+  wapiTemplates       WapiTemplate[]
+  wapiCampaigns       WapiCampaign[]
+  wapiContacts        WapiContact[]
+  wapiReports         WapiReport[]
+  wapiConversations   WapiConversation[]
+  wapiMessages        WapiMessage[]
+  wapiOptOuts         WapiOptOut[]
+  wapiQuickReplies    WapiQuickReply[]
+  wapiResolutionNotes WapiResolutionNote[]
 
   contacts       Contact[]
   tags           Tag[]
@@ -667,16 +671,18 @@ model WapiConversation {
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  team         Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  config       WapiConfig    @relation(fields: [configId], references: [id], onDelete: Cascade)
-  messages     WapiMessage[]
+  organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team            Team                 @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  config          WapiConfig           @relation(fields: [configId], references: [id], onDelete: Cascade)
+  messages        WapiMessage[]
+  resolutionNotes WapiResolutionNote[]
 
   @@unique([teamId, configId, phone])
   @@index([organizationId])
   @@index([teamId])
   @@index([assignedUserId])
   @@index([status])
+  @@index([teamId, status, lastMessageAt])
 }
 
 model WapiMessage {
@@ -719,6 +725,42 @@ model WapiOptOut {
   @@unique([teamId, phoneHash, scope, campaignId])
   @@index([organizationId])
   @@index([teamId, phoneHash])
+}
+
+model WapiQuickReply {
+  id              String   @id @default(cuid())
+  organizationId  String
+  teamId          String
+  shortcut        String
+  body            String
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, shortcut])
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model WapiResolutionNote {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  conversationId String
+  authorUserId   String?
+  note           String
+  createdAt      DateTime @default(now())
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  conversation WapiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([conversationId, createdAt])
 }
 
 // ============================================================
