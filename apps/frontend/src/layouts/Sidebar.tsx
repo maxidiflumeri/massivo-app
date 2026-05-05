@@ -20,6 +20,8 @@ import DnsIcon from '@mui/icons-material/Dns';
 import BlockIcon from '@mui/icons-material/Block';
 import InsightsIcon from '@mui/icons-material/Insights';
 import HomeIcon from '@mui/icons-material/Home';
+import InboxIcon from '@mui/icons-material/Inbox';
+import BoltIcon from '@mui/icons-material/Bolt';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { OrganizationSwitcher } from '@clerk/clerk-react';
@@ -78,6 +80,11 @@ const NAV_GROUPS: NavGroupSpec[] = [
     label: 'WhatsApp',
     items: [
       {
+        to: '/dashboard/wapi/inbox',
+        label: 'Inbox',
+        icon: <InboxIcon fontSize="small" />,
+      },
+      {
         to: '/dashboard/wapi/campaigns',
         label: 'Campañas',
         icon: <WhatsAppIcon fontSize="small" />,
@@ -86,6 +93,11 @@ const NAV_GROUPS: NavGroupSpec[] = [
         to: '/dashboard/wapi/templates',
         label: 'Templates',
         icon: <DescriptionIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/wapi/quick-replies',
+        label: 'Respuestas rápidas',
+        icon: <BoltIcon fontSize="small" />,
       },
       {
         to: '/dashboard/wapi/configs',

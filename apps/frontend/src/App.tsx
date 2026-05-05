@@ -17,6 +17,8 @@ import { WapiCampaignDetailPage } from './features/wapi/campaigns/WapiCampaignDe
 import { WapiConfigsPage } from './features/wapi/configs/WapiConfigsPage';
 import { WapiTemplatesListPage } from './features/wapi/templates/WapiTemplatesListPage';
 import { WapiTemplateEditorPage } from './features/wapi/templates/WapiTemplateEditorPage';
+import { WapiInboxPage } from './features/wapi/inbox/WapiInboxPage';
+import { WapiQuickRepliesPage } from './features/wapi/quick-replies/WapiQuickRepliesPage';
 
 export function App() {
   return (
@@ -52,6 +54,8 @@ export function App() {
         <Route path="wapi/campaigns" element={<WapiCampaignsListPage />} />
         <Route path="wapi/campaigns/:id" element={<WapiCampaignDetailPage />} />
         <Route path="wapi/configs" element={<WapiConfigsPage />} />
+        <Route path="wapi/inbox" element={<WapiInboxPage />} />
+        <Route path="wapi/quick-replies" element={<WapiQuickRepliesPage />} />
         <Route path="wapi/templates" element={<WapiTemplatesListPage />} />
         <Route path="wapi/templates/new" element={<WapiTemplateEditorPage />} />
       </Route>

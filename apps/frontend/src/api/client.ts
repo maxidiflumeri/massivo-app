@@ -1,5 +1,5 @@
 import { useAuth } from '@clerk/clerk-react';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useActiveTeam } from '../team/TeamContext';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
@@ -103,16 +103,19 @@ export function useApi(): ApiClient {
     [getToken, activeTeamId],
   );
 
-  return {
-    baseUrl: API_BASE_URL,
-    get: (path, init) => request(path, { ...init, method: 'GET' }),
-    post: (path, body, init) =>
-      request(path, { ...init, method: 'POST', body: body !== undefined ? JSON.stringify(body) : undefined }),
-    patch: (path, body, init) =>
-      request(path, { ...init, method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
-    delete: (path, init) => request(path, { ...init, method: 'DELETE' }),
-    download,
-  };
+  return useMemo<ApiClient>(
+    () => ({
+      baseUrl: API_BASE_URL,
+      get: (path, init) => request(path, { ...init, method: 'GET' }),
+      post: (path, body, init) =>
+        request(path, { ...init, method: 'POST', body: body !== undefined ? JSON.stringify(body) : undefined }),
+      patch: (path, body, init) =>
+        request(path, { ...init, method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
+      delete: (path, init) => request(path, { ...init, method: 'DELETE' }),
+      download,
+    }),
+    [request, download],
+  );
 }
 
 /**

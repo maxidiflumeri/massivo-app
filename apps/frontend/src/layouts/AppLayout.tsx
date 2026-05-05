@@ -14,7 +14,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { UserButton } from '@clerk/clerk-react';
 import { Sidebar, SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from './Sidebar';
 import { useColorMode } from '../theme/ThemeProvider';
@@ -26,7 +26,9 @@ export function AppLayout() {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
   const navigate = useNavigate();
+  const location = useLocation();
   const { mode, toggleMode } = useColorMode();
+  const isFullBleed = location.pathname.startsWith('/dashboard/wapi/inbox');
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     return localStorage.getItem(COLLAPSED_KEY) === '1';
@@ -153,13 +155,27 @@ export function AppLayout() {
           sx={{
             flexGrow: 1,
             minWidth: 0,
-            px: { xs: 2, sm: 3, md: 4 },
-            py: { xs: 2, sm: 3, md: 4 },
+            ...(isFullBleed
+              ? {
+                  height: `calc(100vh - ${TOPBAR_HEIGHT}px)`,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  p: { xs: 1, sm: 1.5, md: 2 },
+                }
+              : {
+                  px: { xs: 2, sm: 3, md: 4 },
+                  py: { xs: 2, sm: 3, md: 4 },
+                }),
           }}
         >
-          <Box sx={{ maxWidth: 1400, mx: 'auto' }}>
+          {isFullBleed ? (
             <Outlet />
-          </Box>
+          ) : (
+            <Box sx={{ maxWidth: 1400, mx: 'auto' }}>
+              <Outlet />
+            </Box>
+          )}
         </Box>
       </Box>
     </Box>
