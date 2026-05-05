@@ -14,14 +14,21 @@ import { EventsService } from '../../events/events.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
 import {
   WapiSendException,
+  type SendMediaByIdInput,
   type SendTextInput,
 } from '../sender/wapi-sender.types';
+import { WapiMediaService } from '../media/wapi-media.service';
+import {
+  WapiMediaException,
+  type WapiMediaType,
+} from '../media/wapi-media.types';
 import type {
   AssignWapiConversationDto,
   InboxTab,
   ListWapiConversationsQueryDto,
   ListWapiMessagesQueryDto,
   ResolveWapiConversationDto,
+  SendWapiInboxMediaDto,
   SendWapiInboxTextDto,
 } from './wapi-inbox.dto';
 
@@ -56,6 +63,10 @@ export interface MessagePayload {
   status: string;
   timestamp: Date;
   metaMessageId: string | null;
+  mediaMime?: string | null;
+  mediaSize?: number | null;
+  mediaFilename?: string | null;
+  mediaCaption?: string | null;
 }
 
 @Injectable()
@@ -67,6 +78,7 @@ export class WapiInboxService {
     private readonly sender: WapiSenderService,
     private readonly events: EventsService,
     private readonly encryption: EncryptionService,
+    private readonly media: WapiMediaService,
   ) {}
 
   private requireContext() {
@@ -259,6 +271,10 @@ export class WapiInboxService {
       status: row.status,
       timestamp: row.timestamp,
       metaMessageId: row.metaMessageId,
+      mediaMime: row.mediaMime,
+      mediaSize: row.mediaSize,
+      mediaFilename: row.mediaFilename,
+      mediaCaption: row.mediaCaption,
     }));
 
     return { items, nextCursor };
@@ -299,6 +315,7 @@ export class WapiInboxService {
         {
           phoneNumberId: cfg.phoneNumberId,
           accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
+          isTestMode: cfg.isTestMode,
         },
         sendInput,
       );
@@ -363,6 +380,182 @@ export class WapiInboxService {
       status: 'sent',
       timestamp: ts,
       metaMessageId,
+    };
+  }
+
+  async sendMedia(
+    conversationId: string,
+    dto: SendWapiInboxMediaDto,
+    file: { buffer: Buffer; mimetype: string; originalname: string; size: number },
+  ): Promise<MessagePayload> {
+    const ctx = this.requireContext();
+    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+      where: { id: conversationId },
+    });
+    if (!conv) throw new NotFoundException(`Conversación ${conversationId} no encontrada`);
+    if (conv.status === 'RESOLVED') {
+      throw new ConflictException('No se puede responder una conversación resuelta — reabrila primero');
+    }
+    const window24hAt = conv.window24hAt;
+    if (!window24hAt || window24hAt.getTime() < Date.now()) {
+      throw new BadRequestException(
+        'Ventana de 24h cerrada — sólo se puede responder con plantilla.',
+      );
+    }
+
+    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
+      where: { id: conv.configId },
+    });
+    if (!cfg) throw new ConflictException('La config WhatsApp asociada ya no existe');
+    if (!cfg.isActive) throw new ConflictException('La config WhatsApp está deshabilitada');
+
+    const type: WapiMediaType = dto.type;
+    let upload;
+    try {
+      upload = await this.media.uploadToMeta({
+        configId: cfg.id,
+        type,
+        buffer: file.buffer,
+        mime: file.mimetype,
+        filename: file.originalname,
+        caption: dto.caption,
+      });
+    } catch (err) {
+      if (err instanceof WapiMediaException) {
+        if (err.code === 'INVALID_MIME' || err.code === 'TOO_LARGE') {
+          throw new BadRequestException(err.message);
+        }
+        throw new BadRequestException(`Media: ${err.message}`);
+      }
+      throw err;
+    }
+
+    const sendInput: SendMediaByIdInput = {
+      to: conv.phone,
+      type,
+      mediaId: upload.mediaId,
+      caption: dto.caption,
+      filename: type === 'document' ? file.originalname : undefined,
+    };
+
+    let metaMessageId: string;
+    try {
+      const result = await this.sender.sendMediaById(
+        {
+          phoneNumberId: cfg.phoneNumberId,
+          accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
+          isTestMode: cfg.isTestMode,
+        },
+        sendInput,
+      );
+      metaMessageId = result.metaMessageId;
+    } catch (err) {
+      if (err instanceof WapiSendException) {
+        throw new BadRequestException(`Meta API: ${err.detail.message}`);
+      }
+      throw err;
+    }
+
+    const ts = new Date();
+    const contentMedia: Record<string, unknown> = { id: upload.mediaId };
+    if (dto.caption) contentMedia.caption = dto.caption;
+    if (type === 'document') contentMedia.filename = file.originalname;
+    const message = await this.prisma.scoped.wapiMessage.create({
+      data: {
+        conversationId: conv.id,
+        metaMessageId,
+        fromMe: true,
+        type,
+        content: { [type]: contentMedia } as Prisma.InputJsonValue,
+        status: 'sent',
+        timestamp: ts,
+        mediaId: upload.mediaId,
+        mediaMime: file.mimetype,
+        mediaSha256: upload.sha256,
+        mediaSize: upload.size,
+        mediaFilename: file.originalname,
+        mediaCaption: dto.caption ?? null,
+        mediaLocalPath: upload.localPath,
+      } as never,
+    });
+
+    const becomesAssigned = conv.status === 'UNASSIGNED' && !conv.assignedUserId;
+    const updated = await this.prisma.scoped.wapiConversation.update({
+      where: { id: conv.id },
+      data: {
+        lastMessageAt: ts,
+        firstReplyAt: conv.firstReplyAt ?? ts,
+        ...(becomesAssigned
+          ? { status: 'ASSIGNED', assignedUserId: ctx.userId }
+          : {}),
+      } as never,
+    });
+
+    this.events.emitToTeam(ctx.teamId, 'wapi.message.new', {
+      conversationId: conv.id,
+      configId: conv.configId,
+      message: {
+        id: message.id,
+        fromMe: true,
+        type,
+        content: message.content,
+        status: 'sent',
+        timestamp: ts.toISOString(),
+        metaMessageId,
+        mediaMime: file.mimetype,
+        mediaSize: upload.size,
+        mediaFilename: file.originalname,
+        mediaCaption: dto.caption ?? null,
+      },
+    });
+    this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+      id: updated.id,
+      status: updated.status,
+      assignedUserId: updated.assignedUserId,
+      lastMessageAt: updated.lastMessageAt?.toISOString() ?? null,
+    });
+
+    return {
+      id: message.id,
+      fromMe: true,
+      type,
+      content: message.content,
+      status: 'sent',
+      timestamp: ts,
+      metaMessageId,
+    };
+  }
+
+  /**
+   * Resuelve un WapiMessage por id y devuelve la metadata necesaria para que el
+   * controller streamee el binario local. No expone el path absoluto.
+   */
+  async getMessageMediaMeta(messageId: string): Promise<{
+    localPath: string;
+    mime: string;
+    filename: string;
+    size: number;
+  }> {
+    this.requireContext();
+    const msg = await this.prisma.scoped.wapiMessage.findFirst({
+      where: { id: messageId },
+      select: {
+        mediaLocalPath: true,
+        mediaMime: true,
+        mediaFilename: true,
+        mediaSize: true,
+        type: true,
+      },
+    });
+    if (!msg) throw new NotFoundException(`Mensaje ${messageId} no encontrado`);
+    if (!msg.mediaLocalPath) {
+      throw new NotFoundException(`Mensaje ${messageId} no tiene media adjunto`);
+    }
+    return {
+      localPath: msg.mediaLocalPath,
+      mime: msg.mediaMime ?? 'application/octet-stream',
+      filename: msg.mediaFilename ?? 'media',
+      size: msg.mediaSize ?? 0,
     };
   }
 

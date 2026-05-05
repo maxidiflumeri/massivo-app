@@ -14,6 +14,7 @@ import { EmailModule } from './modules/email/email.module';
 import { WapiModule } from './modules/wapi/wapi.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { EventsModule } from './modules/events/events.module';
+import { DevModule } from './modules/dev/dev.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { EventsModule } from './modules/events/events.module';
     WapiModule,
     ContactsModule,
     EventsModule,
+    DevModule,
   ],
   controllers: [HealthController],
   providers: [],

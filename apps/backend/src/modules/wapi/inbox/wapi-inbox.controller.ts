@@ -1,15 +1,22 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
   Post,
   Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import type { AppAbility } from '@massivo/permissions';
 import { ClerkAuthGuard } from '../../../common/auth/clerk-auth.guard';
 import { TenantContextGuard } from '../../../common/auth/tenant-context.guard';
@@ -17,20 +24,30 @@ import { TenantContextInterceptor } from '../../../common/auth/tenant-context.in
 import { PoliciesGuard } from '../../../common/auth/policies.guard';
 import { CheckPolicies } from '../../../common/auth/check-policies.decorator';
 import { WapiInboxService } from './wapi-inbox.service';
+import { WapiMediaService } from '../media/wapi-media.service';
+import { MEDIA_LIMITS_BY_TYPE } from '../media/wapi-media.types';
 import {
   AssignWapiConversationDto,
   ListWapiConversationsQueryDto,
   ListWapiMessagesQueryDto,
   MarkReadStateDto,
   ResolveWapiConversationDto,
+  SendWapiInboxMediaDto,
   SendWapiInboxTextDto,
 } from './wapi-inbox.dto';
+
+// Cap superior global para multer (100 MB = el mayor de los limites por tipo).
+// La validación fina por tipo la hace WapiMediaService.validateUpload.
+const MAX_UPLOAD_BYTES = Math.max(...Object.values(MEDIA_LIMITS_BY_TYPE));
 
 @Controller('wapi/inbox')
 @UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
 export class WapiInboxController {
-  constructor(private readonly service: WapiInboxService) {}
+  constructor(
+    private readonly service: WapiInboxService,
+    private readonly mediaService: WapiMediaService,
+  ) {}
 
   @Get('conversations')
   @CheckPolicies((a: AppAbility) => a.can('read', 'Conversation'))
@@ -55,6 +72,52 @@ export class WapiInboxController {
   @CheckPolicies((a: AppAbility) => a.can('send', 'Conversation'))
   sendText(@Param('id') id: string, @Body() dto: SendWapiInboxTextDto) {
     return this.service.sendText(id, dto);
+  }
+
+  @Post('conversations/:id/media')
+  @HttpCode(HttpStatus.CREATED)
+  @CheckPolicies((a: AppAbility) => a.can('send', 'Conversation'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }))
+  sendMedia(
+    @Param('id') id: string,
+    @Body() dto: SendWapiInboxMediaDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Falta el archivo (campo "file" multipart)');
+    }
+    return this.service.sendMedia(id, dto, {
+      buffer: file.buffer,
+      mimetype: file.mimetype,
+      originalname: file.originalname,
+      size: file.size,
+    });
+  }
+
+  @Get('messages/:id/media')
+  @CheckPolicies((a: AppAbility) => a.can('read', 'Conversation'))
+  @Header('Cache-Control', 'private, max-age=86400')
+  async getMessageMedia(
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const meta = await this.service.getMessageMediaMeta(id);
+    const opened = await this.mediaService.openLocal(meta.localPath);
+    res.setHeader('Content-Type', meta.mime);
+    res.setHeader('Content-Length', String(opened.size));
+    // Inline para imágenes/videos/audio (los renderiza el browser); attachment
+    // para documentos (descarga directa).
+    const disposition =
+      meta.mime.startsWith('image/') ||
+      meta.mime.startsWith('audio/') ||
+      meta.mime.startsWith('video/')
+        ? 'inline'
+        : 'attachment';
+    res.setHeader(
+      'Content-Disposition',
+      `${disposition}; filename="${encodeURIComponent(meta.filename)}"`,
+    );
+    return new StreamableFile(opened.stream);
   }
 
   @Post('conversations/:id/read')

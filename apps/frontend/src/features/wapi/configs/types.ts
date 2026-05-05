@@ -4,6 +4,7 @@ export interface WapiConfigListItem {
   phoneNumberId: string;
   businessAccountId: string;
   isActive: boolean;
+  isTestMode: boolean;
   createdAt: string;
 }
 
@@ -24,6 +25,7 @@ export interface CreateWapiConfigPayload {
   welcomeMessage?: string;
   optOutConfirmMessage?: string;
   dailyLimit?: number;
+  isTestMode?: boolean;
 }
 
 export interface UpdateWapiConfigPayload {
@@ -37,4 +39,5 @@ export interface UpdateWapiConfigPayload {
   optOutConfirmMessage?: string | null;
   dailyLimit?: number;
   isActive?: boolean;
+  isTestMode?: boolean;
 }

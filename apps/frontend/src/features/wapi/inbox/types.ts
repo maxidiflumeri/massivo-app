@@ -36,7 +36,14 @@ export interface WapiInboxMessage {
   status: string;
   timestamp: string;
   metaMessageId: string | null;
+  mediaMime?: string | null;
+  mediaSize?: number | null;
+  mediaFilename?: string | null;
+  mediaCaption?: string | null;
 }
+
+export const WAPI_INBOX_MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'] as const;
+export type WapiInboxMediaType = (typeof WAPI_INBOX_MEDIA_TYPES)[number];
 
 export interface WapiResolutionNoteItem {
   id: string;

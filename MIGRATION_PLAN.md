@@ -635,6 +635,35 @@ Monorepo con **pnpm workspaces** + **Turborepo**.
 #### 4.K — Botones de templates (INBOX/BAJA/IGNORAR)
 - [ ] Templates aprobados con quick-reply buttons. Webhook procesa `interactive.button_reply` → matching del payload → acción: agregar a inbox priorizado / opt-out / ignorar (log).
 
+#### 4.L — Dev Simulator de chat WhatsApp (focused inbox QA) 🆕
+> Sub-fase específica para QA del inbox conversacional: testear ida/vuelta de mensajes sin cuenta Meta real. Reusa la infra de Fase 9 (Dev Simulator) pero presenta una UI de chat tipo two-pane (cliente virtual ↔ inbox del operador).
+>
+> Activado por `ENABLE_DEV_SIMULATOR=true` (backend) + `VITE_ENABLE_DEV_SIMULATOR=true` (frontend). Solo aplica a entornos dev/staging.
+
+- [ ] **4.L.1** — Modelo `WapiSimulatorVirtualNumber` (id, teamId, configId, phone, displayName) — números virtuales asociados a un `WapiConfig` real del team. CRUD `/api/dev/wapi/virtual-numbers`. *(diferido — el MVP usa `fromPhone` libre como input del operador)*.
+- [x] **4.L.2** — Endpoint `POST /api/dev/wapi/simulate/inbound/{text,media,reaction}` (gated). Construye payload Meta-compatible y lo inyecta en `WapiWebhookService.process(...)`. Para media, acepta upload multipart → guarda local con `WapiMediaService.persistInboundLocal` + genera `mediaId` falso `sim-${randomBytes(8).hex}` + pasa `mediaOverrides` map al webhook para que use el binario local en vez de Meta Graph.
+- [x] **4.L.3** — Endpoint `POST /api/dev/wapi/simulate/status` (gated). Construye un `statuses[]` payload (sent/delivered/read/failed) → inyecta en webhook → actualiza `WapiMessage.status`. Status `failed` agrega un error sintético al payload.
+- [x] **4.L.4** — UI `/dashboard/dev/wapi/simulator` (visible solo con flag): 4 cards apiladas (texto / media / reacción / status) + selector de WapiConfig. Cubre el use case "inyectar payload puntual".
+- [x] **4.L.6** — UI `/dashboard/dev/wapi/chat` (chat ida-vuelta): split layout two-pane. Pane izq "cliente virtual" con composer custom que dispara `/api/dev/wapi/simulate/inbound/{text,media}`; pane der reusa `ConversationHeader/Thread/MessageComposer` del inbox real. La conv se resuelve por `inboxApi.listConversations({tab:'all', configId, search:phone})`. Estado de la sesión persistido en `localStorage`. Requiere una `WapiConfig` con `isTestMode=true` (ver 4.M).
+- [ ] **4.L.5** — Audit log de cada evento simulado (quién, cuándo, virtualNumber, payload). Reusa la tabla `AuditLog` (ver 9.C / 10.C). *(diferido)*.
+
+#### 4.L.1 — Filtro de inbox por línea (multi-WapiConfig) ✅
+- [x] `ToggleButtonGroup` "Todas / &lt;cada config activa&gt;" en `ConversationList` (sólo aparece con 2+ configs activas), persistido en `localStorage['massivo:wapi-inbox-configId']`. El filtro se aplica a `inboxApi.listConversations` y a los handlers de `wapi.message.new` / `wapi.conversation.updated`. En modo "Todas" multi-config, cada item lleva un Chip outlined con el label de la línea.
+
+#### 4.M — `WapiConfig.isTestMode` (sender short-circuit + chat simulado ida-vuelta) ✅
+> Permite tener configs de "test" donde los envíos del operador NO pegan a Meta. Combinado con 4.L.6 da un loop completo de QA sin cuenta Meta real.
+
+- [x] Campo nuevo `WapiConfig.isTestMode: Boolean @default(false)` (migration `20260505180000_wapi_config_is_test_mode`).
+- [x] `WapiSenderService.post()` short-circuita si `cfg.isTestMode` → devuelve `wamid.SIM_<base36>_<random>` y `raw: { simulated: true, body }` sin HTTP. Cobertura: text + template + media link + media-by-id (todos pasan por el único `post()`).
+- [x] `WapiSenderConfig.isTestMode?` en la interfaz; los 3 callers que arman el config (`wapi-inbox.service.sendText`, `wapi-inbox.service.sendMedia`, `wapi-worker.service` para campañas) lo leen del row de DB.
+- [x] DTOs `Create/UpdateWapiConfigDto` aceptan `isTestMode?`. `wapi-configs.service` lo persiste y lo expone en `WapiConfigListItem`/`Detail`.
+- [x] UI `WapiConfigsPage`: Switch "Modo test" en el dialog de crear/editar (caja warning con descripción) + Chip "Test" outlined warning en la fila de la tabla.
+
+**Aceptación 4.L:**
+- Crear un virtual number `+5491100000001` ligado a un `WapiConfig` de prueba.
+- Desde el chat-simulator: el cliente virtual escribe "hola" → aparece en el inbox real del team. El operador responde con texto / foto / audio / documento → el simulator muestra el mensaje en la vista cliente con caption + media renderizada. Reacciones (cliente → operador) y botones (template inbound) funcionan end-to-end. Statuses delivered/read se reflejan en los checks azules del operador.
+- Con `ENABLE_DEV_SIMULATOR=false`, los endpoints devuelven 404 y la UI no aparece en el sidebar.
+
 **Aceptación Fase 4:**
 - Dos tenants con cuentas Meta distintas envían campañas en paralelo sin interferencia, webhooks llegan al tenant correcto.
 - Inbox: asesor ve solo conversaciones del team, admin ve cola sin asignar, asignar+resolver funciona, media sube/baja con URL firmada.
@@ -917,7 +946,7 @@ Antes de declarar Massivo App listo para vender:
 - **Cambios v2.0**:
   - Fases 0/1/2 marcadas ✅ con detalle.
   - Fase 3 reorganizada en sub-fases granulares (3.A/3.B/3.B'/3.C/3.D/3.E) con estado real.
-  - Fase 4 expandida con 11 sub-fases (4.A → 4.K) cubriendo envío, KMS, webhook, sync, campañas, inbox full, quick replies, opt-out, welcome msg, dashboard, buttons.
+  - Fase 4 expandida con 12 sub-fases (4.A → 4.L) cubriendo envío, KMS, webhook, sync, campañas, inbox full, quick replies, opt-out, welcome msg, dashboard, buttons, dev chat-simulator.
   - Fase 5 nueva: **Contacts unificados con `externalId` + Timeline cross-canal** (reemplaza módulo `Deudores` de AMSA).
   - Fase 7 nueva (ex Fase 6): IA con `LlmProvider` switcheable Gemini/Bedrock por feature flag + env.
   - Fase 8 nueva: **Scheduler genérico de reportes** (cualquier reporte, agendable, llega por mail con CSV/XLSX).

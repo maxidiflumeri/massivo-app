@@ -538,6 +538,10 @@ model WapiConfig {
   optOutConfirmMessage  String?
   dailyLimit            Int      @default(200)
   isActive              Boolean  @default(true)
+  // Si true, el sender NO pega a Meta — devuelve un wamid SIM_ y persiste el
+  // mensaje como si Meta hubiera respondido OK. Usado por la página
+  // /dashboard/dev/wapi/chat para simular ida-vuelta completo sin tocar Meta.
+  isTestMode            Boolean  @default(false)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -698,6 +702,16 @@ model WapiMessage {
   timestamp      DateTime
   createdAt      DateTime @default(now())
 
+  // Media (4.F.2.d). NULL para mensajes de texto puros.
+  // mediaLocalPath = path relativo al WAPI_MEDIA_DIR (no exponer al cliente).
+  mediaId        String?
+  mediaMime      String?
+  mediaSha256    String?
+  mediaSize      Int?
+  mediaFilename  String?
+  mediaCaption   String?
+  mediaLocalPath String?
+
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
   conversation WapiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -705,6 +719,7 @@ model WapiMessage {
   @@index([organizationId])
   @@index([teamId])
   @@index([conversationId, timestamp])
+  @@index([teamId, mediaSha256])
 }
 
 model WapiOptOut {

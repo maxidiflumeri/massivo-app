@@ -27,7 +27,11 @@ import InboxIcon from '@mui/icons-material/Inbox';
 import BoltIcon from '@mui/icons-material/Bolt';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ScienceIcon from '@mui/icons-material/Science';
+import ForumIcon from '@mui/icons-material/Forum';
 import { OrganizationSwitcher } from '@clerk/clerk-react';
+
+const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
 
 export const SIDEBAR_WIDTH = 248;
 export const SIDEBAR_COLLAPSED_WIDTH = 64;
@@ -118,6 +122,25 @@ const NAV_GROUPS: NavGroupSpec[] = [
     label: 'Cuenta',
     items: [{ label: 'Configuración', icon: <SettingsIcon fontSize="small" />, disabled: true }],
   },
+  ...(DEV_SIMULATOR_ENABLED
+    ? [
+        {
+          label: 'Dev',
+          items: [
+            {
+              to: '/dashboard/dev/wapi/chat',
+              label: 'Chat simulado',
+              icon: <ForumIcon fontSize="small" />,
+            },
+            {
+              to: '/dashboard/dev/wapi/simulator',
+              label: 'Simulador WhatsApp',
+              icon: <ScienceIcon fontSize="small" />,
+            },
+          ],
+        } as NavGroupSpec,
+      ]
+    : []),
 ];
 
 interface SidebarProps {

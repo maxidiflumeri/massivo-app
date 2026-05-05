@@ -90,3 +90,17 @@ export class MarkReadStateDto {
   @IsBoolean()
   read!: boolean;
 }
+
+export const WAPI_INBOX_MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'] as const;
+export type WapiInboxMediaType = (typeof WAPI_INBOX_MEDIA_TYPES)[number];
+
+export class SendWapiInboxMediaDto {
+  /** Tipo declarado por el cliente. El service revalida con `detectTypeFromMime`. */
+  @IsIn(WAPI_INBOX_MEDIA_TYPES as unknown as string[])
+  type!: WapiInboxMediaType;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  caption?: string;
+}

@@ -19,6 +19,10 @@ import { WapiTemplatesListPage } from './features/wapi/templates/WapiTemplatesLi
 import { WapiTemplateEditorPage } from './features/wapi/templates/WapiTemplateEditorPage';
 import { WapiInboxPage } from './features/wapi/inbox/WapiInboxPage';
 import { WapiQuickRepliesPage } from './features/wapi/quick-replies/WapiQuickRepliesPage';
+import { WapiSimulatorPage } from './features/dev/WapiSimulatorPage';
+import { WapiSimulatorChatPage } from './features/dev/WapiSimulatorChatPage';
+
+const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
 
 export function App() {
   return (
@@ -58,6 +62,12 @@ export function App() {
         <Route path="wapi/quick-replies" element={<WapiQuickRepliesPage />} />
         <Route path="wapi/templates" element={<WapiTemplatesListPage />} />
         <Route path="wapi/templates/new" element={<WapiTemplateEditorPage />} />
+        {DEV_SIMULATOR_ENABLED && (
+          <Route path="dev/wapi/simulator" element={<WapiSimulatorPage />} />
+        )}
+        {DEV_SIMULATOR_ENABLED && (
+          <Route path="dev/wapi/chat" element={<WapiSimulatorChatPage />} />
+        )}
       </Route>
 
       {/* Fallback */}

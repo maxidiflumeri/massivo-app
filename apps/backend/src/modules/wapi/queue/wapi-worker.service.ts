@@ -252,6 +252,7 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
           {
             phoneNumberId: cfg.phoneNumberId,
             accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
+            isTestMode: cfg.isTestMode,
           },
           sendInput,
         );

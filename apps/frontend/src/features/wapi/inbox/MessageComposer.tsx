@@ -2,9 +2,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   List,
   ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Paper,
   Popper,
   Stack,
@@ -14,8 +24,14 @@ import {
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import BoltIcon from '@mui/icons-material/Bolt';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import ImageIcon from '@mui/icons-material/Image';
+import DescriptionIcon from '@mui/icons-material/Description';
+import AudiotrackIcon from '@mui/icons-material/Audiotrack';
+import VideocamIcon from '@mui/icons-material/Videocam';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { isWindowOpen } from './formatters';
-import type { WapiQuickReply } from './types';
+import type { WapiInboxMediaType, WapiQuickReply } from './types';
 
 interface Props {
   conversationId: string;
@@ -23,6 +39,30 @@ interface Props {
   isResolved: boolean;
   quickReplies: WapiQuickReply[];
   onSend: (body: string) => Promise<void>;
+  onSendMedia: (file: File, type: WapiInboxMediaType, caption?: string) => Promise<void>;
+}
+
+// Límites en MB que muestra el front (deben matchear MEDIA_LIMITS_BY_TYPE backend).
+const MEDIA_LIMITS_MB: Record<WapiInboxMediaType, number> = {
+  image: 5,
+  audio: 16,
+  video: 16,
+  document: 100,
+  sticker: 0.5,
+};
+
+const ACCEPT_BY_TYPE: Record<WapiInboxMediaType, string> = {
+  image: 'image/jpeg,image/png,image/webp',
+  audio: 'audio/aac,audio/mp4,audio/mpeg,audio/amr,audio/ogg,audio/webm',
+  video: 'video/mp4,video/3gpp',
+  document: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain',
+  sticker: 'image/webp',
+};
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 const DRAFT_KEY = (id: string) => `massivo:wapi:draft:${id}`;
@@ -33,6 +73,7 @@ export function MessageComposer({
   isResolved,
   quickReplies,
   onSend,
+  onSendMedia,
 }: Props) {
   const [value, setValue] = useState('');
   const [sending, setSending] = useState(false);
@@ -40,6 +81,16 @@ export function MessageComposer({
   const [quickQuery, setQuickQuery] = useState('');
   const [quickIndex, setQuickIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+
+  // Attach: menú de tipo + file input oculto + dialog de preview
+  const [attachAnchor, setAttachAnchor] = useState<HTMLElement | null>(null);
+  const [pendingType, setPendingType] = useState<WapiInboxMediaType | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingCaption, setPendingCaption] = useState('');
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const open = isWindowOpen(window24hAt);
   const blocked = isResolved || !open;
@@ -106,6 +157,66 @@ export function MessageComposer({
     });
   }
 
+  // Limpieza del object URL del preview
+  useEffect(() => {
+    if (!pendingFile) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(pendingFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFile]);
+
+  function pickType(type: WapiInboxMediaType) {
+    setAttachAnchor(null);
+    setPendingType(type);
+    // El input file se monta condicionalmente: lo disparamos en el siguiente tick.
+    requestAnimationFrame(() => fileInputRef.current?.click());
+  }
+
+  function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !pendingType) return;
+    const limit = MEDIA_LIMITS_MB[pendingType] * 1024 * 1024;
+    if (file.size > limit) {
+      setUploadError(
+        `Archivo demasiado grande para ${pendingType} (máx ${MEDIA_LIMITS_MB[pendingType]} MB).`,
+      );
+      setPendingType(null);
+      return;
+    }
+    setUploadError(null);
+    setPendingCaption('');
+    setPendingFile(file);
+  }
+
+  function cancelPreview() {
+    setPendingFile(null);
+    setPendingType(null);
+    setPendingCaption('');
+    setUploadError(null);
+  }
+
+  async function confirmUpload() {
+    if (!pendingFile || !pendingType || uploading) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const captionAllowed = pendingType !== 'audio' && pendingType !== 'sticker';
+      const caption = captionAllowed ? pendingCaption.trim() || undefined : undefined;
+      await onSendMedia(pendingFile, pendingType, caption);
+      cancelPreview();
+    } catch (e) {
+      setUploadError((e as Error).message || 'No se pudo enviar el archivo');
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function handleSend() {
     const trimmed = value.trim();
     if (!trimmed || blocked || sending) return;
@@ -163,6 +274,17 @@ export function MessageComposer({
         </Alert>
       )}
       <Stack direction="row" gap={1} alignItems="flex-end" sx={{ px: 1.5, py: 1 }}>
+        <Tooltip title="Adjuntar archivo">
+          <span>
+            <IconButton
+              size="small"
+              onClick={(e) => setAttachAnchor(e.currentTarget)}
+              disabled={blocked}
+            >
+              <AttachFileIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
         <Tooltip title="Respuestas rápidas (escribí / para abrir)">
           <span>
             <IconButton
@@ -214,6 +336,81 @@ export function MessageComposer({
           </span>
         </Tooltip>
       </Stack>
+      <Menu
+        anchorEl={attachAnchor}
+        open={Boolean(attachAnchor)}
+        onClose={() => setAttachAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      >
+        <MenuItem onClick={() => pickType('image')}>
+          <ListItemIcon><ImageIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primary="Imagen" secondary="JPG, PNG, WEBP — máx 5 MB" />
+        </MenuItem>
+        <MenuItem onClick={() => pickType('document')}>
+          <ListItemIcon><DescriptionIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primary="Documento" secondary="PDF, DOC, XLS… — máx 100 MB" />
+        </MenuItem>
+        <MenuItem onClick={() => pickType('audio')}>
+          <ListItemIcon><AudiotrackIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primary="Audio" secondary="MP3, OGG, AAC… — máx 16 MB" />
+        </MenuItem>
+        <MenuItem onClick={() => pickType('video')}>
+          <ListItemIcon><VideocamIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primary="Video" secondary="MP4, 3GPP — máx 16 MB" />
+        </MenuItem>
+      </Menu>
+      {pendingType && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPT_BY_TYPE[pendingType]}
+          style={{ display: 'none' }}
+          onChange={onFileChosen}
+        />
+      )}
+      <Dialog
+        open={Boolean(pendingFile)}
+        onClose={uploading ? undefined : cancelPreview}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Enviar {pendingType ?? 'archivo'}</DialogTitle>
+        <DialogContent dividers>
+          {pendingFile && (
+            <Stack gap={1.5}>
+              <MediaPreview file={pendingFile} type={pendingType} url={previewUrl} />
+              <Typography variant="caption" color="text.secondary">
+                {pendingFile.name} — {formatBytes(pendingFile.size)}
+              </Typography>
+              {pendingType !== 'audio' && pendingType !== 'sticker' && (
+                <TextField
+                  label="Caption (opcional)"
+                  size="small"
+                  fullWidth
+                  multiline
+                  maxRows={4}
+                  value={pendingCaption}
+                  onChange={(e) => setPendingCaption(e.target.value.slice(0, 1024))}
+                  helperText={`${pendingCaption.length}/1024`}
+                />
+              )}
+              {uploadError && <Alert severity="error">{uploadError}</Alert>}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancelPreview} disabled={uploading}>Cancelar</Button>
+          <Button
+            variant="contained"
+            onClick={confirmUpload}
+            disabled={uploading || !pendingFile}
+            startIcon={uploading ? <CircularProgress size={14} /> : <SendIcon fontSize="small" />}
+          >
+            {uploading ? 'Enviando…' : 'Enviar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Popper
         open={quickOpen && filteredReplies.length > 0}
         anchorEl={inputRef.current}
@@ -258,5 +455,65 @@ export function MessageComposer({
         </Paper>
       </Popper>
     </Box>
+  );
+}
+
+function MediaPreview({
+  file,
+  type,
+  url,
+}: {
+  file: File;
+  type: WapiInboxMediaType | null;
+  url: string | null;
+}) {
+  if (!url) return null;
+  if (type === 'image' || type === 'sticker') {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          bgcolor: (t) => (t.palette.mode === 'dark' ? 'grey.900' : 'grey.100'),
+          borderRadius: 1,
+          p: 1,
+        }}
+      >
+        <Box
+          component="img"
+          src={url}
+          alt={file.name}
+          sx={{ maxHeight: 320, maxWidth: '100%', borderRadius: 1, objectFit: 'contain' }}
+        />
+      </Box>
+    );
+  }
+  if (type === 'video') {
+    return (
+      <Box component="video" src={url} controls sx={{ width: '100%', maxHeight: 320, borderRadius: 1 }} />
+    );
+  }
+  if (type === 'audio') {
+    return <Box component="audio" src={url} controls sx={{ width: '100%' }} />;
+  }
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      gap={1.5}
+      sx={{
+        p: 1.5,
+        bgcolor: (t) => (t.palette.mode === 'dark' ? 'grey.900' : 'grey.100'),
+        borderRadius: 1,
+      }}
+    >
+      <InsertDriveFileIcon color="action" />
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="body2" noWrap>{file.name}</Typography>
+        <Typography variant="caption" color="text.secondary">
+          {file.type || 'application/octet-stream'}
+        </Typography>
+      </Box>
+    </Stack>
   );
 }

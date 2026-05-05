@@ -40,3 +40,6 @@ temp/
 
 # Prisma
 **/prisma/migrations/dev.db*
+
+# Wapi media (binarios subidos/descargados durante dev)
+apps/backend/uploads/

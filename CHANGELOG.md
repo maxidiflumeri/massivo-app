@@ -21,6 +21,63 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.M MVP — `WapiConfig.isTestMode` + Chat simulado ida-vuelta + filtro inbox por línea
+
+#### Added
+- **`WapiConfig.isTestMode: Boolean @default(false)`** (migration `20260505180000_wapi_config_is_test_mode`). Si está activo, `WapiSenderService.post()` short-circuita: NO pega a Meta, devuelve `metaMessageId = wamid.SIM_<base36>_<random>` y `raw: { simulated: true, body }`. La capa superior persiste el mensaje como si Meta hubiera respondido OK. Cobertura: text + template + media link + media-by-id (todos pasan por `post()`). Plumbed en los 3 callers que arman `WapiSenderConfig` desde DB (`wapi-inbox.service.sendText` / `sendMedia` y `wapi-worker.service` para campañas), todos leen `cfg.isTestMode` del row.
+- **DTOs + UI de configs** — `CreateWapiConfigDto` y `UpdateWapiConfigDto` aceptan `isTestMode?: boolean`. `wapi-configs.service` lo persiste en create/update y lo expone en `WapiConfigListItem`/`Detail`. Página de Configs WhatsApp: nuevo Switch "Modo test" con caja amarilla y descripción ("envíos NO van a Meta"); chip "Test" outlined warning en la fila de la tabla cuando está activo.
+- **Página `/dashboard/dev/wapi/chat`** (`apps/frontend/src/features/dev/WapiSimulatorChatPage.tsx`) — chat ida-vuelta para dev: split layout 1:1. Top bar: select de WapiConfigs **filtrado a `isTestMode=true`** + inputs de phone/nombre del cliente (persistidos en `localStorage['massivo:dev-chat:state']`). Pane izq "Cliente virtual": composer de texto + adjuntar archivo (auto-detecta type por mime), envíos posten a `/api/dev/wapi/simulate/inbound/text|media`; thread renderizado con `ConversationThread` pero `fromMe` invertido (lo que el operador escribió = incoming para el cliente). Pane der: inbox real reutilizando `ConversationHeader` + `ConversationThread` + `MessageComposer`, con la conversación resuelta por `inboxApi.listConversations({tab:'all', configId, search:phone})`. Socket `wapi.message.new` listener appendea a la conv abierta y re-resuelve si la conv aún no existe (primer inbound). Banner warning si no hay configs en modo test.
+- **Sidebar entry "Chat simulado"** (icon `ForumIcon`) en grupo Dev, gated por `VITE_ENABLE_DEV_SIMULATOR=true`. Ruta declarada bajo el guard en `App.tsx`.
+
+### 4.L.1 — Filtro de inbox por WapiConfig (multi-línea)
+
+#### Added
+- **`ToggleButtonGroup` "Todas / &lt;cada config&gt;"** en `ConversationList` (sólo se muestra si hay 2+ configs activas). Selección persistida en `localStorage['massivo:wapi-inbox-configId']`. Aplica el filtro `configId` a `inboxApi.listConversations` y al socket: ambos handlers (`wapi.message.new` / `wapi.conversation.updated`) chequean `selectedConfigRef.current` y descartan eventos de otras líneas. Cuando "Todas" está activo en multi-config, cada item lleva un Chip outlined con el label de la línea (deriva de `configLabelById` map).
+- **`WapiInboxPage` con `selectedConfigId` state** — carga `/api/wapi/configs`, filtra `isActive`, mapea a `InboxConfigOption[]` y limpia el persistido si la config ya no existe / está inactiva. Cambiar de filtro resetea `selectedId` para evitar mostrar una conv que ya no entra en la vista.
+
+### 4.L MVP — Dev Simulator de WhatsApp (inyectar webhooks sin Meta ni ngrok)
+
+#### Added
+- **Módulo `dev`** (`apps/backend/src/modules/dev/`) con endpoints `POST /api/dev/wapi/simulate/inbound/text|media|reaction` y `POST /api/dev/wapi/simulate/status`. Cada uno construye un payload Meta-shaped (`whatsapp_business_account` → `entry[].changes[].value` con `messages` o `statuses`) y lo inyecta en `WapiWebhookService.process(...)` saltando HMAC y la URL pública del webhook. Para media: el archivo viaja por multipart (`FileInterceptor`, cap 100MB), se persiste localmente con `WapiMediaService.persistInboundLocal`, se genera un `mediaId` sintético `sim-${randomBytes(8).hex}` y se pasa al webhook un `mediaOverrides` map para que el handler use el binario local en vez de pegarle a Meta Graph. Wamids generados con prefijo `wamid.SIM_…` para distinguir simulaciones de mensajes reales en logs/DB.
+- **`DevSimulatorEnabledGuard`** — devuelve **404** si `ENABLE_DEV_SIMULATOR !== 'true'` (404 en vez de 403 para que el endpoint sea indistinguible de "no existe" en prod). Stack de guards: `DevSimulatorEnabledGuard → ClerkAuthGuard → TenantContextGuard` + `TenantContextInterceptor`.
+- **`WapiMediaService.persistInboundLocal(configId, buffer, mime)`** — método público que escribe un buffer al storage local del tenant (`<orgId>/<teamId>/<sha256>.<ext>`) sin tocar Meta. Devuelve el mismo shape que `fetchInboundMedia` para reusar el pipeline.
+- **`WapiWebhookService` con `mediaOverrides`** — interfaz `InboundMediaOverride { sha256, size, localPath, mime }` exportada del service. `process(payload, configByPhoneNumberId, mediaOverrides?)` acepta tercer parámetro opcional plumbed via `processValue` → `handleInboundMessage`. En el handler, si hay override para el `mediaId`, se usa directamente (skip `fetchInboundMedia`).
+- **UI `/dashboard/dev/wapi/simulator`** (`apps/frontend/src/features/dev/WapiSimulatorPage.tsx`) — selector de `WapiConfig` + 4 cards apiladas (texto / media / reacción / status). Cada card con su submit + feedback banner. Caption disabled para audio/sticker. File input con `accept` por tipo. Reset del file input post-submit en media.
+- **Sidebar y router gateados** por `VITE_ENABLE_DEV_SIMULATOR=true` — sección "Dev" con item "Simulador WhatsApp" (icon Science) sólo si la env está activa; ruta sólo se monta si está activa.
+
+#### Changed
+- **`WapiModule`** ahora exporta también `WapiWebhookService` (antes sólo `WapiQueueService/SenderService/MediaService`) para que `DevModule` pueda inyectarlo.
+
+#### Notes
+- **Tests**: no se agregaron specs para el simulator (utilidad de dev, se prueba manualmente vía la UI). Se corrió la suite completa y los cambios en `WapiWebhookService` (firma con tercer parámetro opcional) y `WapiMediaService` no rompen nada: **359/359 tests backend ✅**.
+- **Pendientes 4.L**: modelo `WapiSimulatorVirtualNumber` (perfiles fake reusables), vista chat split (`/dashboard/dev/wapi/chat-simulator` two-pane), audit log de payloads inyectados.
+
+### 4.F.2.d — Media WhatsApp end-to-end (upload Meta + storage local + render por tipo)
+
+#### Added
+- **`WapiMediaService`** (`apps/backend/src/modules/wapi/media/`) centraliza todo el lifecycle de media de WhatsApp. `validateUpload(buffer, mime, type?)` chequea mime contra whitelist por tipo y tamaño contra `MEDIA_LIMITS_BY_TYPE` (image 5MB, audio/video 16MB, document 100MB, sticker 100KB/500KB). `uploadToMeta(cfg, file, type)` postea a `POST /v{ver}/{phoneNumberId}/media` con multipart (Buffer + Blob + FormData nativo de Node 22), persiste localmente bajo `<orgId>/<teamId>/<sha256>.<ext>` (idempotente — si el archivo ya existe no se reescribe, mtime preservado) y devuelve `{ mediaId, sha256, size, localPath }`. `fetchInboundMedia(cfg, mediaId)` resuelve URL Meta + sha256 (`GET /v{ver}/{mediaId}`), descarga el binario con Bearer header y persiste local. `openLocal(localPath)` devuelve `{ stream, size }` para `StreamableFile`. Path traversal prevenido en `resolveAbs` (rechaza `..` o paths absolutos).
+- **`WapiSenderService.sendMediaById(cfg, input)`** — envío de media usando `media: { id }` (vs `link`). Caption excluido para audio/sticker (regla Meta), filename solo para document.
+- **Endpoint `POST /api/wapi/inbox/conversations/:id/media`** — multipart con `FileInterceptor('file', { limits: { fileSize: 100MB } })`. DTO `SendWapiInboxMediaDto` (`type` + `caption?`). Service `sendMedia` valida ventana 24h → `uploadToMeta` → `sendMediaById` → persiste `WapiMessage` con campos media → emite `wapi.message.new` y `wapi.conversation.updated`.
+- **Endpoint `GET /api/wapi/inbox/messages/:id/media`** — devuelve `StreamableFile` con `Cache-Control: private, max-age=86400`. Content-Disposition `inline` para image/audio/video, `attachment` para documentos.
+- **Webhook descarga inbound automática** — `handleInboundMessage` extrae `mediaId/mime/sha256/caption/filename` per type via `extractMediaInfo(msg)`, llama `media.fetchInboundMedia` para image/audio/video/document/sticker. Falla gracefully: si la descarga revienta (timeout, 404, URL Meta expirada a los 5min), persiste el mensaje sin `mediaLocalPath` con warning. Reactions sólo metadata.
+- **Modelo `WapiMessage`** extendido con `mediaId/mediaMime/mediaSha256/mediaSize/mediaFilename/mediaCaption/mediaLocalPath` (todos nullable) + índice `@@index([teamId, mediaSha256])` para queries de dedup. Migración `20260505100000_wapi_message_media_fields`.
+- **`ApiClient` (frontend)** — métodos nuevos `postForm<T>(path, FormData)` (no setea Content-Type, lo agrega el browser con boundary) y `getBlob(path)` (GET autenticado que devuelve Blob — necesario porque `<img src>` no carga Authorization headers).
+- **`MessageComposer`** — botón AttachFile con `Menu` de tipos (Imagen/Documento/Audio/Video). Click dispara `<input type="file">` oculto con `accept` por tipo. Validación client de tamaño contra los límites de Meta. Si pasa, abre `Dialog` con preview (img/video/audio/icon-card según type) + caption opcional (oculto para audio/sticker) + Cancelar/Enviar. Submit llama `inboxApi.sendMedia(api, id, file, type, caption?)`.
+- **`MessageBubble`** extraído a archivo propio con renderers por tipo. Imagen/sticker: hook `useMediaBlobUrl` descarga el blob y crea object URL revocado al desmontar; click abre `Modal` zoom full-screen. Video y audio: `<video controls>` / `<audio controls>` con object URL. Documento: tarjeta clickeable con icon + filename + size; click descarga (no carga blob hasta que el usuario lo pide). Sticker: imagen chica (140px) sin background. Reacción: pill compacto con emoji + timestamp.
+- **`.env.example`** — `WAPI_MEDIA_DIR=./uploads/wapi-media`.
+- **Tests** — nuevo `wapi-media.service.spec.ts` (5 casos: validateUpload INVALID_MIME / TOO_LARGE; uploadToMeta happy path; uploadToMeta META_UPLOAD_FAILED; fetchInboundMedia happy path; idempotencia). `wapi-inbox.service.spec.ts` con caso `sendMedia happy path`. `wapi-webhook.service.spec.ts` con 2 casos extra de media inbound (happy path con sha256/localPath; failure con localPath null).
+
+#### Changed
+- **`WapiInboxService.MessagePayload`** ahora incluye `mediaMime/mediaSize/mediaFilename/mediaCaption` opcionales. `listMessages` los incluye en el `select`.
+- **`WapiModule`** registra y exporta `WapiMediaService`.
+- **`WapiSenderConfig`/`SendMediaByIdInput`** — tipos nuevos en `wapi-sender.types.ts`.
+
+#### Fixed
+- **Tests de webhook 4 casos rotos pre-existentes (Sesión 24)**: faltaba mock de `wapiConversation.findFirst` (usado por `shouldReopen`) y `toHaveBeenCalledWith({ data: ... })` era demasiado estricto sobre el shape top-level del call (la llamada real incluye `select`). Reemplazados por `expect.objectContaining({ data: ... })`. **359/359 tests backend ✅**.
+
+#### Migration
+- `20260505100000_wapi_message_media_fields` — `ALTER TABLE WapiMessage ADD COLUMN` para los 7 campos media + `CREATE INDEX WapiMessage_teamId_mediaSha256_idx`. Escrita a mano (Postgres no estaba up al momento del cambio). **Aplicar con `pnpm --filter @massivo/prisma migrate:deploy` antes de probar el feature**.
+
 ### 4.F.4 — Inbox conversacional WhatsApp (frontend) + 4.G Quick replies admin
 
 #### Added

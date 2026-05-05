@@ -27,20 +27,29 @@ describe('WapiWebhookService', () => {
 
   let prismaScoped: {
     wapiReport: { findFirst: jest.Mock; update: jest.Mock };
-    wapiConversation: { upsert: jest.Mock };
+    wapiConversation: { upsert: jest.Mock; findFirst: jest.Mock };
     wapiMessage: { create: jest.Mock };
   };
   let events: { emitToTeamDebounced: jest.Mock; emitToTeam: jest.Mock };
+  let media: { fetchInboundMedia: jest.Mock };
   let svc: WapiWebhookService;
 
   beforeEach(() => {
     prismaScoped = {
       wapiReport: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
-      wapiConversation: { upsert: jest.fn().mockResolvedValue({ id: 'conv-1' }) },
+      wapiConversation: {
+        upsert: jest.fn().mockResolvedValue({ id: 'conv-1' }),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       wapiMessage: { create: jest.fn().mockResolvedValue({}) },
     };
     events = { emitToTeamDebounced: jest.fn(), emitToTeam: jest.fn() };
-    svc = new WapiWebhookService({ scoped: prismaScoped } as never, events as never);
+    media = { fetchInboundMedia: jest.fn() };
+    svc = new WapiWebhookService(
+      { scoped: prismaScoped } as never,
+      events as never,
+      media as never,
+    );
   });
 
   function statusPayload(
@@ -176,16 +185,18 @@ describe('WapiWebhookService', () => {
         create: expect.objectContaining({ phone: '5491100', name: 'Ana', unreadCount: 1 }),
       }),
     );
-    expect(prismaScoped.wapiMessage.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        conversationId: 'conv-1',
-        metaMessageId: 'wamid.IN',
-        fromMe: false,
-        type: 'text',
-        content: { text: { body: 'hola' } },
-        status: 'received',
+    expect(prismaScoped.wapiMessage.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          conversationId: 'conv-1',
+          metaMessageId: 'wamid.IN',
+          fromMe: false,
+          type: 'text',
+          content: { text: { body: 'hola' } },
+          status: 'received',
+        }),
       }),
-    });
+    );
     expect(events.emitToTeam).toHaveBeenCalledWith(
       'team-a', 'wapi.message.inbound',
       expect.objectContaining({ conversationId: 'conv-1', phone: '5491100', type: 'text' }),
@@ -206,7 +217,13 @@ describe('WapiWebhookService', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('mensaje image incluye sub-objeto image en content', async () => {
+  it('mensaje image: descarga media + persiste content + campos media', async () => {
+    media.fetchInboundMedia.mockResolvedValue({
+      sha256: 'sha-image-1',
+      size: 1234,
+      mime: 'image/jpeg',
+      localPath: 'org-a/team-a/sha-image-1.jpg',
+    });
     await svc.process(
       inboundPayload({
         id: 'wamid.IM', from: '5491100', timestamp: '1714780000', type: 'image',
@@ -214,11 +231,30 @@ describe('WapiWebhookService', () => {
       }),
       mapA,
     );
+    expect(media.fetchInboundMedia).toHaveBeenCalledWith('cfg-1', 'media-1');
     const data = prismaScoped.wapiMessage.create.mock.calls[0]![0].data;
     expect(data.content).toEqual({
       image: { id: 'media-1', mime_type: 'image/jpeg', caption: 'foto' },
     });
     expect(data.type).toBe('image');
+    expect(data.mediaId).toBe('media-1');
+    expect(data.mediaSha256).toBe('sha-image-1');
+    expect(data.mediaLocalPath).toBe('org-a/team-a/sha-image-1.jpg');
+    expect(data.mediaCaption).toBe('foto');
+  });
+
+  it('mensaje image: si fetchInboundMedia falla, persiste sin localPath y no tira', async () => {
+    media.fetchInboundMedia.mockRejectedValue(new Error('boom'));
+    await svc.process(
+      inboundPayload({
+        id: 'wamid.IM2', from: '5491100', timestamp: '1714780000', type: 'image',
+        image: { id: 'media-2', mime_type: 'image/jpeg' },
+      }),
+      mapA,
+    );
+    const data = prismaScoped.wapiMessage.create.mock.calls[0]![0].data;
+    expect(data.mediaId).toBe('media-2');
+    expect(data.mediaLocalPath).toBeNull();
   });
 
   it('multi-config: payload con dos phone_number_ids → cada entry usa su tenant', async () => {

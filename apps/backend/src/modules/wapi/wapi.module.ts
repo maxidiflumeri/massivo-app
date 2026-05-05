@@ -15,6 +15,7 @@ import { WapiWebhookController } from './webhook/wapi-webhook.controller';
 import { WapiWebhookService } from './webhook/wapi-webhook.service';
 import { WapiInboxController } from './inbox/wapi-inbox.controller';
 import { WapiInboxService } from './inbox/wapi-inbox.service';
+import { WapiMediaService } from './media/wapi-media.service';
 import { WapiQuickRepliesController } from './quick-replies/wapi-quick-replies.controller';
 import { WapiQuickRepliesService } from './quick-replies/wapi-quick-replies.service';
 
@@ -39,8 +40,9 @@ import { WapiQuickRepliesService } from './quick-replies/wapi-quick-replies.serv
     WapiTemplatesSyncService,
     WapiTemplatesPostingService,
     WapiInboxService,
+    WapiMediaService,
     WapiQuickRepliesService,
   ],
-  exports: [WapiQueueService, WapiSenderService],
+  exports: [WapiQueueService, WapiSenderService, WapiMediaService, WapiWebhookService],
 })
 export class WapiModule {}

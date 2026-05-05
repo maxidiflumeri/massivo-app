@@ -22,10 +22,20 @@ export interface ApiClient {
   patch<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
   delete<T>(path: string, init?: RequestInit): Promise<T>;
   /**
+   * POST multipart/form-data. No setea Content-Type (lo agrega el browser con
+   * el boundary). Útil para subir archivos con FormData.
+   */
+  postForm<T>(path: string, form: FormData): Promise<T>;
+  /**
    * POST que devuelve un archivo binario (CSV, XLSX, PDF…). Lee el filename
    * del header `Content-Disposition` si está presente, si no usa el fallback.
    */
   download(path: string, body?: unknown, fallbackFilename?: string): Promise<DownloadedFile>;
+  /**
+   * GET de un binario autenticado (ej: media). Devuelve un Blob para construir
+   * un object URL del lado del consumidor.
+   */
+  getBlob(path: string): Promise<Blob>;
   baseUrl: string;
 }
 
@@ -103,6 +113,46 @@ export function useApi(): ApiClient {
     [getToken, activeTeamId],
   );
 
+  const postForm = useCallback(
+    async <T>(path: string, form: FormData): Promise<T> => {
+      const token = await getToken();
+      const headers = new Headers();
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      if (activeTeamId) headers.set('x-team-id', activeTeamId);
+      // No setear Content-Type: el browser lo agrega con el boundary del FormData.
+      const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
+      const res = await fetch(url, { method: 'POST', headers, body: form });
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      const body = isJson ? await res.json().catch(() => null) : await res.text().catch(() => null);
+      if (!res.ok) {
+        const msg =
+          (body && typeof body === 'object' && 'message' in body && String((body as { message: unknown }).message)) ||
+          res.statusText ||
+          `HTTP ${res.status}`;
+        throw new ApiError(res.status, msg, body);
+      }
+      return body as T;
+    },
+    [getToken, activeTeamId],
+  );
+
+  const getBlob = useCallback(
+    async (path: string): Promise<Blob> => {
+      const token = await getToken();
+      const headers = new Headers();
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      if (activeTeamId) headers.set('x-team-id', activeTeamId);
+      const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
+      const res = await fetch(url, { method: 'GET', headers });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new ApiError(res.status, text || res.statusText || `HTTP ${res.status}`);
+      }
+      return res.blob();
+    },
+    [getToken, activeTeamId],
+  );
+
   return useMemo<ApiClient>(
     () => ({
       baseUrl: API_BASE_URL,
@@ -112,9 +162,11 @@ export function useApi(): ApiClient {
       patch: (path, body, init) =>
         request(path, { ...init, method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
       delete: (path, init) => request(path, { ...init, method: 'DELETE' }),
+      postForm,
       download,
+      getBlob,
     }),
-    [request, download],
+    [request, postForm, download, getBlob],
   );
 }
 

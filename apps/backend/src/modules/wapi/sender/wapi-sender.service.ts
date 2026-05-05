@@ -4,6 +4,7 @@ import {
   META_AUTH_CODES,
   META_RATE_LIMIT_CODES,
   WapiSendException,
+  type SendMediaByIdInput,
   type SendMediaInput,
   type SendResult,
   type SendTemplateInput,
@@ -83,7 +84,33 @@ export class WapiSenderService {
     });
   }
 
+  /**
+   * Envío de media usando media_id ya subido (vs `link` público). Es la ruta
+   * que usa el inbox: el operador adjunta un archivo, lo subimos a Meta con
+   * `WapiMediaService.uploadToMeta`, y acá lo referenciamos por `id`.
+   */
+  async sendMediaById(cfg: WapiSenderConfig, input: SendMediaByIdInput): Promise<SendResult> {
+    const media: Record<string, unknown> = { id: input.mediaId };
+    if (input.caption && input.type !== 'audio' && input.type !== 'sticker') {
+      media.caption = input.caption;
+    }
+    if (input.filename && input.type === 'document') {
+      media.filename = input.filename;
+    }
+    return this.post(cfg, {
+      messaging_product: 'whatsapp',
+      to: input.to,
+      type: input.type,
+      [input.type]: media,
+    });
+  }
+
   private async post(cfg: WapiSenderConfig, body: Record<string, unknown>): Promise<SendResult> {
+    if (cfg.isTestMode) {
+      const simId = `wamid.SIM_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+      this.logger.debug(`[isTestMode] short-circuit phoneNumberId=${cfg.phoneNumberId} → ${simId}`);
+      return { metaMessageId: simId, raw: { simulated: true, body } };
+    }
     const res = await fetch(this.baseUrl(cfg), {
       method: 'POST',
       headers: {

@@ -49,6 +49,10 @@ export class CreateWapiConfigDto {
   @IsInt()
   @Min(1)
   dailyLimit?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isTestMode?: boolean;
 }
 
 export class UpdateWapiConfigDto {
@@ -100,4 +104,8 @@ export class UpdateWapiConfigDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isTestMode?: boolean;
 }

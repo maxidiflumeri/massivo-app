@@ -8,6 +8,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   Paper,
@@ -50,6 +51,7 @@ interface FormState {
   welcomeMessage: string;
   optOutConfirmMessage: string;
   dailyLimit: string;
+  isTestMode: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -62,6 +64,7 @@ const EMPTY_FORM: FormState = {
   welcomeMessage: '',
   optOutConfirmMessage: '',
   dailyLimit: '',
+  isTestMode: false,
 };
 
 export function WapiConfigsPage() {
@@ -114,6 +117,7 @@ export function WapiConfigsPage() {
         welcomeMessage: detail.welcomeMessage ?? '',
         optOutConfirmMessage: detail.optOutConfirmMessage ?? '',
         dailyLimit: String(detail.dailyLimit),
+        isTestMode: detail.isTestMode ?? false,
       });
       setError(null);
       setShowSecrets(false);
@@ -146,6 +150,7 @@ export function WapiConfigsPage() {
           welcomeMessage: form.welcomeMessage.trim() || null,
           optOutConfirmMessage: form.optOutConfirmMessage.trim() || null,
           dailyLimit: form.dailyLimit ? Number(form.dailyLimit) : undefined,
+          isTestMode: form.isTestMode,
         };
         if (form.accessToken.trim()) payload.accessToken = form.accessToken.trim();
         if (form.webhookVerifyToken.trim())
@@ -164,6 +169,7 @@ export function WapiConfigsPage() {
           welcomeMessage: form.welcomeMessage.trim() || undefined,
           optOutConfirmMessage: form.optOutConfirmMessage.trim() || undefined,
           dailyLimit: form.dailyLimit ? Number(form.dailyLimit) : undefined,
+          isTestMode: form.isTestMode,
         };
         await api.post('/api/wapi/configs', payload);
         notify.success('Config creada');
@@ -270,9 +276,14 @@ export function WapiConfigsPage() {
               {items.map((c) => (
                 <TableRow key={c.id} hover>
                   <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {c.name ?? <em style={{ opacity: 0.6 }}>(sin nombre)</em>}
-                    </Typography>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {c.name ?? <em style={{ opacity: 0.6 }}>(sin nombre)</em>}
+                      </Typography>
+                      {c.isTestMode && (
+                        <Chip size="small" label="Test" color="warning" variant="outlined" />
+                      )}
+                    </Stack>
                   </TableCell>
                   <TableCell>
                     <Chip
@@ -414,6 +425,37 @@ export function WapiConfigsPage() {
               onChange={(e) => update('optOutConfirmMessage', e.target.value)}
               helperText="Pendiente — se aplicará en 4.H"
             />
+            <Box
+              sx={{
+                p: 1.5,
+                borderRadius: 1,
+                border: 1,
+                borderColor: form.isTestMode ? 'warning.main' : 'divider',
+                bgcolor: form.isTestMode ? 'warning.50' : 'transparent',
+              }}
+            >
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={form.isTestMode}
+                    onChange={(e) => update('isTestMode', e.target.checked)}
+                    color="warning"
+                  />
+                }
+                label={
+                  <Stack>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      Modo test
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Si está activo, los envíos NO van a Meta — devuelven un wamid simulado y
+                      quedan persistidos como "sent". Usalo con la suite Dev (chat simulado) para
+                      probar ida-vuelta sin un número real.
+                    </Typography>
+                  </Stack>
+                }
+              />
+            </Box>
           </Stack>
         </DialogContent>
         <DialogActions>

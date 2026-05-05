@@ -4,12 +4,24 @@ import type { RequestContext } from '@massivo/shared-types';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EventsService } from '../../events/events.service';
+import { WapiMediaService } from '../media/wapi-media.service';
+import { WapiMediaException } from '../media/wapi-media.types';
 import type {
   WapiWebhookMessage,
   WapiWebhookPayload,
   WapiWebhookStatus,
   WapiWebhookValue,
 } from './wapi-webhook.types';
+
+const MEDIA_TYPES_WITH_BINARY = new Set(['image', 'audio', 'video', 'document', 'sticker']);
+
+interface InboundMediaInfo {
+  mediaId: string;
+  mime?: string;
+  sha256FromMeta?: string;
+  caption?: string;
+  filename?: string;
+}
 
 /**
  * Resolución de config por phone_number_id. El controller carga los configs en
@@ -20,6 +32,19 @@ export interface ResolvedWebhookConfig {
   configId: string;
   organizationId: string;
   teamId: string;
+}
+
+/**
+ * Override de descarga de media usado por el Dev Simulator (4.L). Cuando
+ * `process(...)` recibe un map keyed por `mediaId`, el handler skipea la
+ * llamada a Meta y usa estos datos directos. El binario debe haber sido
+ * persistido localmente antes (via `WapiMediaService.persistInboundLocal`).
+ */
+export interface InboundMediaOverride {
+  sha256: string;
+  size: number;
+  localPath: string;
+  mime: string;
 }
 
 /**
@@ -50,11 +75,13 @@ export class WapiWebhookService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventsService,
+    private readonly media: WapiMediaService,
   ) {}
 
   async process(
     payload: WapiWebhookPayload,
     configByPhoneNumberId: Map<string, ResolvedWebhookConfig>,
+    mediaOverrides?: Map<string, InboundMediaOverride>,
   ): Promise<void> {
     for (const entry of payload.entry ?? []) {
       for (const change of entry.changes ?? []) {
@@ -74,12 +101,16 @@ export class WapiWebhookService {
           orgRole: 'OWNER',
           teamRole: 'ADMIN',
         };
-        await TenantContext.run(ctx, () => this.processValue(change.value, cfg));
+        await TenantContext.run(ctx, () => this.processValue(change.value, cfg, mediaOverrides));
       }
     }
   }
 
-  private async processValue(value: WapiWebhookValue, tenant: ResolvedWebhookConfig): Promise<void> {
+  private async processValue(
+    value: WapiWebhookValue,
+    tenant: ResolvedWebhookConfig,
+    mediaOverrides?: Map<string, InboundMediaOverride>,
+  ): Promise<void> {
     if (Array.isArray(value.statuses)) {
       for (const st of value.statuses) {
         await this.handleStatus(st, tenant);
@@ -88,7 +119,7 @@ export class WapiWebhookService {
     if (Array.isArray(value.messages)) {
       const contactName = value.contacts?.[0]?.profile?.name ?? null;
       for (const msg of value.messages) {
-        await this.handleInboundMessage(msg, contactName, tenant);
+        await this.handleInboundMessage(msg, contactName, tenant, mediaOverrides);
       }
     }
   }
@@ -155,6 +186,7 @@ export class WapiWebhookService {
     msg: WapiWebhookMessage,
     profileName: string | null,
     tenant: ResolvedWebhookConfig,
+    mediaOverrides?: Map<string, InboundMediaOverride>,
   ): Promise<void> {
     const phone = msg.from;
     const tsMs = Number(msg.timestamp) * 1000;
@@ -190,6 +222,64 @@ export class WapiWebhookService {
       select: { id: true, status: true, assignedUserId: true, unreadCount: true },
     });
 
+    // Si el mensaje trae media (image/audio/video/document/sticker), descargamos
+    // el binario de Meta y lo cacheamos local. Las URLs de Meta expiran en ~5min;
+    // sin caché, abrir el thread más tarde rompe. Reacciones no traen binario.
+    const mediaInfo = extractMediaInfo(msg);
+    let mediaPersisted: {
+      mediaId: string;
+      mediaMime: string | null;
+      mediaSha256: string | null;
+      mediaSize: number | null;
+      mediaFilename: string | null;
+      mediaCaption: string | null;
+      mediaLocalPath: string | null;
+    } | null = null;
+    if (mediaInfo && MEDIA_TYPES_WITH_BINARY.has(msg.type)) {
+      const override = mediaOverrides?.get(mediaInfo.mediaId);
+      if (override) {
+        mediaPersisted = {
+          mediaId: mediaInfo.mediaId,
+          mediaMime: override.mime,
+          mediaSha256: override.sha256,
+          mediaSize: override.size,
+          mediaFilename: mediaInfo.filename ?? null,
+          mediaCaption: mediaInfo.caption ?? null,
+          mediaLocalPath: override.localPath,
+        };
+      } else try {
+        const dl = await this.media.fetchInboundMedia(tenant.configId, mediaInfo.mediaId);
+        mediaPersisted = {
+          mediaId: mediaInfo.mediaId,
+          mediaMime: dl.mime,
+          mediaSha256: dl.sha256,
+          mediaSize: dl.size,
+          mediaFilename: mediaInfo.filename ?? null,
+          mediaCaption: mediaInfo.caption ?? null,
+          mediaLocalPath: dl.localPath,
+        };
+      } catch (err) {
+        // No bloqueamos la persistencia del mensaje si falla la descarga: el
+        // operador igual ve la entrada en el thread (con caption si vino) y
+        // puede reintentar. Loggeamos y seguimos.
+        const code = err instanceof WapiMediaException ? err.code : 'unknown';
+        this.logger.warn(
+          `Media download falló para metaMessageId=${msg.id} mediaId=${mediaInfo.mediaId} code=${code}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        mediaPersisted = {
+          mediaId: mediaInfo.mediaId,
+          mediaMime: mediaInfo.mime ?? null,
+          mediaSha256: null,
+          mediaSize: null,
+          mediaFilename: mediaInfo.filename ?? null,
+          mediaCaption: mediaInfo.caption ?? null,
+          mediaLocalPath: null,
+        };
+      }
+    }
+
     let createdMessageId: string | null = null;
     let storedContent: unknown = null;
     try {
@@ -204,6 +294,7 @@ export class WapiWebhookService {
           content: extractContent(msg) as Prisma.InputJsonValue,
           status: 'received',
           timestamp: ts,
+          ...(mediaPersisted ?? {}),
         },
         select: { id: true, content: true },
       });
@@ -242,6 +333,14 @@ export class WapiWebhookService {
         status: 'received',
         timestamp: ts.toISOString(),
         metaMessageId: msg.id,
+        ...(mediaPersisted
+          ? {
+              mediaMime: mediaPersisted.mediaMime,
+              mediaSize: mediaPersisted.mediaSize,
+              mediaFilename: mediaPersisted.mediaFilename,
+              mediaCaption: mediaPersisted.mediaCaption,
+            }
+          : {}),
       },
     });
     this.events.emitToTeam(tenant.teamId, 'wapi.conversation.updated', {
@@ -274,6 +373,51 @@ export class WapiWebhookService {
       status: existing.assignedUserId ? 'ASSIGNED' : 'UNASSIGNED',
       resolvedAt: null,
     };
+  }
+}
+
+function extractMediaInfo(msg: WapiWebhookMessage): InboundMediaInfo | null {
+  switch (msg.type) {
+    case 'image':
+      if (!msg.image) return null;
+      return {
+        mediaId: msg.image.id,
+        mime: msg.image.mime_type,
+        sha256FromMeta: msg.image.sha256,
+        caption: msg.image.caption,
+      };
+    case 'audio':
+      if (!msg.audio) return null;
+      return {
+        mediaId: msg.audio.id,
+        mime: msg.audio.mime_type,
+        sha256FromMeta: msg.audio.sha256,
+      };
+    case 'video':
+      if (!msg.video) return null;
+      return {
+        mediaId: msg.video.id,
+        mime: msg.video.mime_type,
+        sha256FromMeta: msg.video.sha256,
+        caption: msg.video.caption,
+      };
+    case 'document':
+      if (!msg.document) return null;
+      return {
+        mediaId: msg.document.id,
+        mime: msg.document.mime_type,
+        caption: msg.document.caption,
+        filename: msg.document.filename,
+      };
+    case 'sticker':
+      if (!msg.sticker) return null;
+      return {
+        mediaId: msg.sticker.id,
+        mime: msg.sticker.mime_type,
+        sha256FromMeta: msg.sticker.sha256,
+      };
+    default:
+      return null;
   }
 }
 

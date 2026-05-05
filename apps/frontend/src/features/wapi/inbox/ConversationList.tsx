@@ -12,6 +12,8 @@ import {
   Tab,
   Tabs,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
@@ -19,6 +21,11 @@ import DoneIcon from '@mui/icons-material/Done';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import { formatPhone, formatRelative, initials } from './formatters';
 import type { InboxTab, WapiConversationListItem } from './types';
+
+export interface InboxConfigOption {
+  id: string;
+  label: string;
+}
 
 interface Props {
   tab: InboxTab;
@@ -32,6 +39,9 @@ interface Props {
   hasMore: boolean;
   onLoadMore: () => void;
   loadingMore: boolean;
+  configs: InboxConfigOption[];
+  selectedConfigId: string | null;
+  onConfigChange: (id: string | null) => void;
 }
 
 const TABS: Array<{ value: InboxTab; label: string }> = [
@@ -53,8 +63,18 @@ export function ConversationList({
   hasMore,
   onLoadMore,
   loadingMore,
+  configs,
+  selectedConfigId,
+  onConfigChange,
 }: Props) {
   const empty = !loading && items.length === 0;
+  const showConfigSelector = configs.length > 1;
+  const showLineLabel = showConfigSelector && selectedConfigId === null;
+  const configLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of configs) map.set(c.id, c.label);
+    return map;
+  }, [configs]);
 
   return (
     <Stack
@@ -84,6 +104,30 @@ export function ConversationList({
           }}
         />
       </Box>
+      {showConfigSelector && (
+        <Box sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider' }}>
+          <ToggleButtonGroup
+            value={selectedConfigId}
+            exclusive
+            onChange={(_, v: string | null) => onConfigChange(v)}
+            size="small"
+            sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, width: '100%' }}
+          >
+            <ToggleButton value={null} sx={{ flex: 1, minWidth: 60, fontSize: 11, py: 0.5 }}>
+              Todas
+            </ToggleButton>
+            {configs.map((c) => (
+              <ToggleButton
+                key={c.id}
+                value={c.id}
+                sx={{ flex: 1, minWidth: 60, fontSize: 11, py: 0.5 }}
+              >
+                {c.label}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        </Box>
+      )}
       <Tabs
         value={tab}
         onChange={(_, v: InboxTab) => onTabChange(v)}
@@ -120,6 +164,9 @@ export function ConversationList({
                 item={c}
                 selected={c.id === selectedId}
                 onSelect={() => onSelect(c.id)}
+                lineLabel={
+                  showLineLabel ? configLabelById.get(c.configId) ?? null : null
+                }
               />
             ))}
             {hasMore && (
@@ -144,10 +191,12 @@ function ConversationRow({
   item,
   selected,
   onSelect,
+  lineLabel,
 }: {
   item: WapiConversationListItem;
   selected: boolean;
   onSelect: () => void;
+  lineLabel: string | null;
 }) {
   const display = item.name?.trim() || formatPhone(item.phone);
   const subtitle = item.lastMessage?.preview ?? '';
@@ -237,14 +286,43 @@ function ConversationRow({
             />
           )}
         </Stack>
-        {item.campaignName && (
-          <Typography
-            variant="caption"
-            color="text.disabled"
-            sx={{ display: 'block', fontSize: 10.5, mt: 0.25 }}
+        {(lineLabel || item.campaignName) && (
+          <Stack
+            direction="row"
+            alignItems="center"
+            gap={0.75}
+            sx={{ mt: 0.25, fontSize: 10.5 }}
           >
-            {item.campaignName}
-          </Typography>
+            {lineLabel && (
+              <Chip
+                size="small"
+                label={lineLabel}
+                sx={{
+                  height: 16,
+                  fontSize: 10,
+                  px: 0.25,
+                  '& .MuiChip-label': { px: 0.75 },
+                }}
+                variant="outlined"
+              />
+            )}
+            {item.campaignName && (
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{
+                  fontSize: 10.5,
+                  flex: 1,
+                  minWidth: 0,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {item.campaignName}
+              </Typography>
+            )}
+          </Stack>
         )}
       </Box>
     </ListItemButton>

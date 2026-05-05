@@ -6,13 +6,15 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
+import { WapiMediaService } from '../media/wapi-media.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
 
 describe('WapiInboxService', () => {
   let service: WapiInboxService;
   let prismaMock: Record<string, any>;
-  let senderMock: { sendText: jest.Mock };
+  let senderMock: { sendText: jest.Mock; sendMediaById: jest.Mock };
   let eventsMock: { emitToTeam: jest.Mock };
+  let mediaMock: { uploadToMeta: jest.Mock };
 
   const ctx: RequestContext = {
     userId: 'u1',
@@ -39,8 +41,9 @@ describe('WapiInboxService', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
     };
-    senderMock = { sendText: jest.fn() };
+    senderMock = { sendText: jest.fn(), sendMediaById: jest.fn() };
     eventsMock = { emitToTeam: jest.fn() };
+    mediaMock = { uploadToMeta: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -52,6 +55,7 @@ describe('WapiInboxService', () => {
           provide: EncryptionService,
           useValue: { decrypt: jest.fn((v: string) => v) },
         },
+        { provide: WapiMediaService, useValue: mediaMock },
       ],
     }).compile();
 
@@ -187,6 +191,69 @@ describe('WapiInboxService', () => {
     await expect(
       TenantContext.run(ctx, () => service.reopen('c1')),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('sendMedia happy path: sube a Meta, persiste con campos media, emite eventos', async () => {
+    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+      id: 'c1',
+      configId: 'cfg1',
+      phone: '+5491112345678',
+      status: 'ASSIGNED',
+      assignedUserId: 'u1',
+      window24hAt: new Date(Date.now() + 60_000),
+      firstReplyAt: new Date(),
+    });
+    prismaMock.wapiConfig.findFirst.mockResolvedValue({
+      id: 'cfg1',
+      phoneNumberId: 'pn1',
+      accessTokenEnc: 'token',
+      isActive: true,
+    });
+    mediaMock.uploadToMeta.mockResolvedValue({
+      mediaId: 'meta-id-7',
+      sha256: 'a'.repeat(64),
+      size: 1024,
+      localPath: 'org1/team1/aaa.jpg',
+    });
+    senderMock.sendMediaById.mockResolvedValue({ metaMessageId: 'wamid.media.x' });
+    prismaMock.wapiMessage.create.mockResolvedValue({
+      id: 'msg-media-1',
+      content: { image: { id: 'meta-id-7' } },
+    });
+    prismaMock.wapiConversation.update.mockResolvedValue({
+      id: 'c1',
+      status: 'ASSIGNED',
+      assignedUserId: 'u1',
+      lastMessageAt: new Date(),
+    });
+
+    const out = await TenantContext.run(ctx, () =>
+      service.sendMedia(
+        'c1',
+        { type: 'image', caption: 'mira esto' },
+        {
+          buffer: Buffer.from([0xff, 0xd8, 0xff]),
+          mimetype: 'image/jpeg',
+          originalname: 'foto.jpg',
+          size: 3,
+        },
+      ),
+    );
+
+    expect(out.metaMessageId).toBe('wamid.media.x');
+    expect(mediaMock.uploadToMeta).toHaveBeenCalledWith(
+      expect.objectContaining({ configId: 'cfg1', type: 'image', mime: 'image/jpeg' }),
+    );
+    expect(prismaMock.wapiMessage.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'image',
+          mediaId: 'meta-id-7',
+          mediaSha256: 'a'.repeat(64),
+          mediaCaption: 'mira esto',
+        }),
+      }),
+    );
   });
 
   it('listMessages 404 si la conversación no existe', async () => {

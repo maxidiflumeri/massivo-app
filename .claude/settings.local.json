@@ -43,7 +43,17 @@
       "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('\\\\n'.join\\(f'{k}: {v}' for k,v in d.get\\('scripts',{}\\).items\\(\\)\\)\\)\")",
       "Bash(xargs wc *)",
       "Bash(xargs -I {} bash -c 'echo \"=== {} ===\" && head -50 \"{}\"')",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(node *)",
+      "Bash(npx tsc *)",
+      "Bash(npx jest *)",
+      "Bash(wsl.exe bash *)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe bash *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(xargs ls *)",
+      "Bash(grep -E \"\\\\.ts$|^d\")",
+      "Bash(tasklist)",
+      "Bash(npx prisma *)"
     ]
   }
 }

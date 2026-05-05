@@ -7,6 +7,10 @@ export interface WapiSenderConfig {
   phoneNumberId: string;
   accessToken: string;
   apiVersion?: string;
+  // Si true, el sender NO pega a Meta — devuelve un wamid SIM_<random> y deja
+  // que la capa superior persista el mensaje como si Meta hubiese respondido OK.
+  // Habilitado por WapiConfig.isTestMode para soportar el chat simulado de dev.
+  isTestMode?: boolean;
 }
 
 export interface SendTextInput {
@@ -41,6 +45,19 @@ export interface SendMediaInput {
   to: string;
   type: 'image' | 'document' | 'video' | 'audio';
   link: string;
+  caption?: string;
+  filename?: string;
+}
+
+/**
+ * Variante de envío de media usando un media_id ya subido a Meta (via
+ * `WapiMediaService.uploadToMeta`). Es lo que usa el inbox para responder con
+ * archivos del operador.
+ */
+export interface SendMediaByIdInput {
+  to: string;
+  type: 'image' | 'document' | 'video' | 'audio' | 'sticker';
+  mediaId: string;
   caption?: string;
   filename?: string;
 }

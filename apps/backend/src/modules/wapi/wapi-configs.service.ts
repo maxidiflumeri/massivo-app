@@ -16,6 +16,7 @@ export interface WapiConfigListItem {
   phoneNumberId: string;
   businessAccountId: string;
   isActive: boolean;
+  isTestMode: boolean;
   createdAt: Date;
 }
 
@@ -33,6 +34,7 @@ function toListItem(row: any): WapiConfigListItem {
     phoneNumberId: row.phoneNumberId,
     businessAccountId: row.businessAccountId,
     isActive: row.isActive,
+    isTestMode: row.isTestMode ?? false,
     createdAt: row.createdAt,
   };
 }
@@ -76,6 +78,7 @@ export class WapiConfigsService {
       phoneNumberId: row.phoneNumberId,
       businessAccountId: row.businessAccountId,
       isActive: row.isActive,
+      isTestMode: row.isTestMode ?? false,
       welcomeMessage: row.welcomeMessage,
       optOutConfirmMessage: row.optOutConfirmMessage,
       dailyLimit: row.dailyLimit,
@@ -97,6 +100,7 @@ export class WapiConfigsService {
         welcomeMessage: dto.welcomeMessage,
         optOutConfirmMessage: dto.optOutConfirmMessage,
         dailyLimit: dto.dailyLimit,
+        isTestMode: dto.isTestMode ?? false,
       } as Prisma.WapiConfigUncheckedCreateInput,
     });
     this.logger.log(`WapiConfig created: ${row.id} in org ${ctx.organizationId} team ${ctx.teamId}`);
@@ -120,6 +124,7 @@ export class WapiConfigsService {
       optOutConfirmMessage: dto.optOutConfirmMessage,
       dailyLimit: dto.dailyLimit,
       isActive: dto.isActive,
+      isTestMode: dto.isTestMode,
     };
 
     if (dto.accessToken !== undefined) updateData.accessTokenEnc = this.encryption.encrypt(dto.accessToken);

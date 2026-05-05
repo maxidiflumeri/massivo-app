@@ -4,6 +4,7 @@ import type {
   ListResult,
   WapiConversationDetail,
   WapiConversationListItem,
+  WapiInboxMediaType,
   WapiInboxMessage,
   WapiQuickReply,
   WapiResolutionNoteItem,
@@ -53,6 +54,32 @@ export const inboxApi = {
       body,
       previewUrl,
     });
+  },
+
+  sendMedia(
+    api: ApiClient,
+    id: string,
+    file: File,
+    type: WapiInboxMediaType,
+    caption?: string,
+  ) {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('type', type);
+    if (caption) form.append('caption', caption);
+    return api.postForm<WapiInboxMessage>(
+      `/api/wapi/inbox/conversations/${id}/media`,
+      form,
+    );
+  },
+
+  /**
+   * Devuelve el path absoluto del endpoint para descargar el binario de un
+   * mensaje. El consumidor debe usar `api.getBlob(...)` (no construir un
+   * `<img src>` directo, porque no se puede pasar el Authorization header).
+   */
+  mediaPath(messageId: string) {
+    return `/api/wapi/inbox/messages/${messageId}/media`;
   },
 
   setRead(api: ApiClient, id: string, read: boolean) {

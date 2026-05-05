@@ -5,23 +5,26 @@ import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useTeamSocket } from '../../../realtime/useTeamSocket';
 import { inboxApi, quickRepliesApi } from './api';
-import { ConversationList } from './ConversationList';
+import { ConversationList, type InboxConfigOption } from './ConversationList';
 import { ConversationHeader } from './ConversationHeader';
 import { ConversationThread } from './ConversationThread';
 import { MessageComposer } from './MessageComposer';
 import { AssignDialog } from './AssignDialog';
 import { ResolveDialog } from './ResolveDialog';
+import type { WapiConfigListItem } from '../configs/types';
 import type {
   InboxTab,
   WapiConversationDetail,
   WapiConversationListItem,
   WapiConversationUpdatedEvent,
+  WapiInboxMediaType,
   WapiInboxMessage,
   WapiMessageNewEvent,
   WapiQuickReply,
 } from './types';
 
 const PAGE_LIMIT = 30;
+const CONFIG_FILTER_STORAGE_KEY = 'massivo:wapi-inbox-configId';
 
 export function WapiInboxPage() {
   const api = useApi();
@@ -54,6 +57,63 @@ export function WapiInboxPage() {
 
   // Quick replies
   const [quickReplies, setQuickReplies] = useState<WapiQuickReply[]>([]);
+
+  // Filtro por línea (WapiConfig)
+  const [configs, setConfigs] = useState<InboxConfigOption[]>([]);
+  const [selectedConfigId, setSelectedConfigId] = useState<string | null>(() => {
+    try {
+      const v = localStorage.getItem(CONFIG_FILTER_STORAGE_KEY);
+      return v && v !== '' ? v : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleConfigChange = useCallback((id: string | null) => {
+    setSelectedConfigId(id);
+    setSelectedId(null);
+    try {
+      if (id) localStorage.setItem(CONFIG_FILTER_STORAGE_KEY, id);
+      else localStorage.removeItem(CONFIG_FILTER_STORAGE_KEY);
+    } catch {
+      // no-op
+    }
+  }, []);
+
+  // Cargar configs activas
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await api.get<WapiConfigListItem[]>('/api/wapi/configs');
+        if (cancelled) return;
+        const active: InboxConfigOption[] = list
+          .filter((c) => c.isActive)
+          .map((c) => ({ id: c.id, label: c.name?.trim() || c.phoneNumberId }));
+        setConfigs(active);
+        // Si el config persistido ya no existe / está inactivo, limpiar
+        setSelectedConfigId((cur) => {
+          if (cur && !active.some((c) => c.id === cur)) {
+            try {
+              localStorage.removeItem(CONFIG_FILTER_STORAGE_KEY);
+            } catch {
+              // no-op
+            }
+            return null;
+          }
+          return cur;
+        });
+      } catch {
+        if (!cancelled) setConfigs([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  const selectedConfigRef = useRef<string | null>(null);
+  selectedConfigRef.current = selectedConfigId;
 
   // Cargar usuario actual
   useEffect(() => {
@@ -98,6 +158,7 @@ export function WapiInboxPage() {
     try {
       const res = await inboxApi.listConversations(api, {
         tab,
+        configId: selectedConfigId ?? undefined,
         search: debouncedSearch || undefined,
         limit: PAGE_LIMIT,
       });
@@ -109,7 +170,7 @@ export function WapiInboxPage() {
     } finally {
       setListLoading(false);
     }
-  }, [api, tab, debouncedSearch, notify]);
+  }, [api, tab, debouncedSearch, selectedConfigId, notify]);
 
   useEffect(() => {
     void reloadList();
@@ -121,6 +182,7 @@ export function WapiInboxPage() {
     try {
       const res = await inboxApi.listConversations(api, {
         tab,
+        configId: selectedConfigId ?? undefined,
         search: debouncedSearch || undefined,
         cursor: listCursor,
         limit: PAGE_LIMIT,
@@ -206,6 +268,11 @@ export function WapiInboxPage() {
   useEffect(() => {
     if (!socket) return;
     const onNew = (ev: WapiMessageNewEvent) => {
+      // Si hay filtro por línea activo, ignorar eventos de otras líneas.
+      // Cambiar de filtro resetea la conversación abierta, así que la abierta
+      // siempre pertenece a la línea seleccionada.
+      const filterCfg = selectedConfigRef.current;
+      if (filterCfg && ev.configId !== filterCfg) return;
       // Append a la conversación abierta
       if (ev.conversationId === selectedRef.current) {
         setMessages((prev) => {
@@ -249,6 +316,8 @@ export function WapiInboxPage() {
     };
 
     const onUpdated = (ev: WapiConversationUpdatedEvent) => {
+      const filterCfg = selectedConfigRef.current;
+      if (filterCfg && ev.configId && ev.configId !== filterCfg) return;
       setItems((prev) =>
         prev.map((it) =>
           it.id === ev.id
@@ -299,6 +368,17 @@ export function WapiInboxPage() {
       setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [msg, ...prev]));
     } catch (e) {
       notify.error((e as Error).message || 'No se pudo enviar el mensaje');
+      throw e;
+    }
+  }
+
+  async function handleSendMedia(file: File, type: WapiInboxMediaType, caption?: string) {
+    if (!selectedId) return;
+    try {
+      const msg = await inboxApi.sendMedia(api, selectedId, file, type, caption);
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [msg, ...prev]));
+    } catch (e) {
+      notify.error((e as Error).message || 'No se pudo enviar el archivo');
       throw e;
     }
   }
@@ -396,6 +476,9 @@ export function WapiInboxPage() {
           hasMore={listMore}
           onLoadMore={loadMoreList}
           loadingMore={listLoading && items.length > 0}
+          configs={configs}
+          selectedConfigId={selectedConfigId}
+          onConfigChange={handleConfigChange}
         />
       </Box>
       <Box
@@ -433,6 +516,7 @@ export function WapiInboxPage() {
               isResolved={conversation.status === 'RESOLVED'}
               quickReplies={quickReplies}
               onSend={handleSend}
+              onSendMedia={handleSendMedia}
             />
           </>
         ) : null}
