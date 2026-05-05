@@ -676,6 +676,10 @@ model WapiConversation {
   unreadCount    Int                    @default(0)
   lastReadAt     DateTime?
   campaignName   String?
+  // Marcada como prioridad alta — se setea cuando el cliente apreta el botón
+  // INBOX en un template interactivo (4.K). El inbox tiene un filtro y un
+  // badge ⭐ para destacarlas.
+  priority       Boolean                @default(false)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
@@ -691,6 +695,7 @@ model WapiConversation {
   @@index([assignedUserId])
   @@index([status])
   @@index([teamId, status, lastMessageAt])
+  @@index([teamId, priority, lastMessageAt])
 }
 
 model WapiMessage {

@@ -632,8 +632,14 @@ Monorepo con **pnpm workspaces** + **Turborepo**.
 #### 4.J — Live dashboard WAPI
 - [ ] `/dashboard/wapi/live`: campañas en curso con progreso live, throughput por config, alertas de daily-limit cerca del 80%/100%, conversaciones nuevas/sin asignar.
 
-#### 4.K — Botones de templates (INBOX/BAJA/IGNORAR)
-- [ ] Templates aprobados con quick-reply buttons. Webhook procesa `interactive.button_reply` → matching del payload → acción: agregar a inbox priorizado / opt-out / ignorar (log).
+#### 4.K — Botones de templates (INBOX/BAJA/IGNORAR) ✅
+- [x] **Schema**: `WapiConversation.priority Boolean @default(false)` + índice `(teamId, priority, lastMessageAt)` (migration `20260506100000_wapi_conversation_priority`).
+- [x] **`WapiButtonActionService`** resuelve y aplica acciones de botones interactivos. 3 acciones: INBOX (priority=true), BAJA (opt-out global), IGNORAR (log only). Resolución vía `context.id → WapiReport → campaign.templateId → template.buttonActions[buttonId]`. Acepta shape legacy `string` y nuevo `{action, payload?}`. Fallback a defaults case-insensitive.
+- [x] **Webhook integration** maneja ambas shapes Meta (`interactive.button_reply` + legacy `button.payload`) vía helper `extractButtonInfo`. Trigger condition: `isNewConversation || couldTriggerOptOut || buttonInfo`. BAJA dispara `optOutConfirmMessage` (paridad con keyword opt-out).
+- [x] **Dev Simulator**: endpoint `POST /api/dev/wapi/simulate/inbound/button` + UI quick-buttons en chat simulado.
+- [x] **Inbox UI**: filtro Chip "Priorizadas" + badge ⭐ inline. Backend `?priority=true` con `@Transform` boolean.
+- [x] **Templates UI**: editor de `buttonActions` con combo de QUICK_REPLY del template, Select de action, TextField payload con soporte `{{var}}` (resolver runtime pendiente). Endpoint `GET /api/wapi/templates/:id/data-keys` agrega keys de `WapiContact.data` para todas las campañas que usaron el template.
+- [x] **Tests**: spec `wapi-button-action.service.spec.ts` (11 casos) + bloque `4.K` en `wapi-webhook.service.spec.ts` (5 casos). 30/30 ✅.
 
 #### 4.L — Dev Simulator de chat WhatsApp (focused inbox QA) 🆕
 > Sub-fase específica para QA del inbox conversacional: testear ida/vuelta de mensajes sin cuenta Meta real. Reusa la infra de Fase 9 (Dev Simulator) pero presenta una UI de chat tipo two-pane (cliente virtual ↔ inbox del operador).

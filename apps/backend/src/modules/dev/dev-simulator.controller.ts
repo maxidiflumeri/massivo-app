@@ -21,6 +21,7 @@ import { TenantContextInterceptor } from '../../common/auth/tenant-context.inter
 import { MEDIA_LIMITS_BY_TYPE } from '../wapi/media/wapi-media.types';
 import { DevSimulatorService } from './dev-simulator.service';
 import {
+  SimulateInboundButtonDto,
   SimulateInboundMediaDto,
   SimulateInboundReactionDto,
   SimulateInboundTextDto,
@@ -77,6 +78,12 @@ export class DevSimulatorController {
   @HttpCode(HttpStatus.OK)
   inboundReaction(@Body() dto: SimulateInboundReactionDto) {
     return this.service.simulateInboundReaction(dto);
+  }
+
+  @Post('inbound/button')
+  @HttpCode(HttpStatus.OK)
+  inboundButton(@Body() dto: SimulateInboundButtonDto) {
+    return this.service.simulateInboundButton(dto);
   }
 
   @Post('status')

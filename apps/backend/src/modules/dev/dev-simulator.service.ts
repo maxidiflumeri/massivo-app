@@ -18,6 +18,7 @@ import {
   type WapiMediaType,
 } from '../wapi/media/wapi-media.types';
 import type {
+  SimulateInboundButtonDto,
   SimulateInboundMediaDto,
   SimulateInboundReactionDto,
   SimulateInboundTextDto,
@@ -139,6 +140,26 @@ export class DevSimulatorService {
 
     await this.deliver(cfg, dto.fromPhone, dto.fromName, [message], overrides);
     return { ok: true, metaMessageId, mediaId };
+  }
+
+  async simulateInboundButton(
+    dto: SimulateInboundButtonDto,
+  ): Promise<{ ok: true; metaMessageId: string }> {
+    const cfg = await this.resolveConfig(dto.configId);
+    const metaMessageId = this.fakeWamid();
+    const message: WapiWebhookMessage = {
+      id: metaMessageId,
+      from: dto.fromPhone,
+      timestamp: this.nowSec(),
+      type: 'interactive',
+      interactive: {
+        type: 'button_reply',
+        button_reply: { id: dto.buttonId, title: dto.buttonText ?? dto.buttonId },
+      },
+      ...(dto.contextMetaMessageId ? { context: { id: dto.contextMetaMessageId } } : {}),
+    };
+    await this.deliver(cfg, dto.fromPhone, dto.fromName, [message]);
+    return { ok: true, metaMessageId };
   }
 
   async simulateInboundReaction(

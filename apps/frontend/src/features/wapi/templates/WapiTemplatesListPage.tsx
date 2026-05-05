@@ -17,6 +17,7 @@ import {
   Select,
   Skeleton,
   Stack,
+  TextField,
   Table,
   TableBody,
   TableCell,
@@ -31,6 +32,8 @@ import AddIcon from '@mui/icons-material/Add';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DescriptionIcon from '@mui/icons-material/Description';
+import SmartButtonIcon from '@mui/icons-material/SmartButton';
+import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useConfirm } from '../../../feedback/ConfirmProvider';
@@ -42,6 +45,20 @@ import type {
   WapiTemplateListItem,
 } from './types';
 import { renderWhatsAppMarkdown } from './whatsappMarkdown';
+
+const BUTTON_ACTIONS = ['INBOX', 'BAJA', 'IGNORAR'] as const;
+type ButtonAction = (typeof BUTTON_ACTIONS)[number];
+
+interface ButtonActionRow {
+  buttonId: string;
+  action: ButtonAction;
+  payload: string;
+}
+
+interface QuickReplyOption {
+  id: string;
+  label: string;
+}
 
 const STATUS_COLOR: Record<string, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
   APPROVED: 'success',
@@ -67,6 +84,13 @@ export function WapiTemplatesListPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<WapiTemplateDetail | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [actionsTarget, setActionsTarget] = useState<WapiTemplateDetail | null>(null);
+  const [actionsRows, setActionsRows] = useState<ButtonActionRow[]>([]);
+  const [actionsLoading, setActionsLoading] = useState(false);
+  const [actionsSaving, setActionsSaving] = useState(false);
+  const [actionsDataKeys, setActionsDataKeys] = useState<string[]>([]);
 
   async function load() {
     try {
@@ -146,6 +170,63 @@ export function WapiTemplatesListPage() {
       await load();
     } catch (e) {
       notify.error(e instanceof Error ? e.message : 'Error borrando');
+    }
+  }
+
+  async function handleOpenActions(t: WapiTemplateListItem) {
+    setActionsOpen(true);
+    setActionsTarget(null);
+    setActionsRows([]);
+    setActionsDataKeys([]);
+    setActionsLoading(true);
+    try {
+      const [detail, keys] = await Promise.all([
+        api.get<WapiTemplateDetail>(`/api/wapi/templates/${t.id}`),
+        api.get<string[]>(`/api/wapi/templates/${t.id}/data-keys`).catch(() => []),
+      ]);
+      setActionsTarget(detail);
+      setActionsRows(parseButtonActions(detail.buttonActions));
+      setActionsDataKeys(keys);
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error cargando template');
+      setActionsOpen(false);
+    } finally {
+      setActionsLoading(false);
+    }
+  }
+
+  function handleAddActionRow() {
+    setActionsRows((rows) => [...rows, { buttonId: '', action: 'INBOX', payload: '' }]);
+  }
+
+  function handleChangeActionRow(idx: number, patch: Partial<ButtonActionRow>) {
+    setActionsRows((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  }
+
+  function handleRemoveActionRow(idx: number) {
+    setActionsRows((rows) => rows.filter((_, i) => i !== idx));
+  }
+
+  async function handleSaveActions() {
+    if (!actionsTarget) return;
+    const map: Record<string, { action: ButtonAction; payload?: string }> = {};
+    for (const row of actionsRows) {
+      const key = row.buttonId.trim();
+      if (!key) continue;
+      const payload = row.payload.trim();
+      map[key] = payload ? { action: row.action, payload } : { action: row.action };
+    }
+    setActionsSaving(true);
+    try {
+      await api.patch(`/api/wapi/templates/${actionsTarget.id}`, {
+        buttonActions: map,
+      });
+      notify.success('Acciones de botones guardadas');
+      setActionsOpen(false);
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error guardando');
+    } finally {
+      setActionsSaving(false);
     }
   }
 
@@ -266,6 +347,11 @@ export function WapiTemplatesListPage() {
                         <VisibilityIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
+                    <Tooltip title="Acciones de botones">
+                      <IconButton size="small" onClick={() => handleOpenActions(t)}>
+                        <SmartButtonIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="Borrar del catálogo local">
                       <IconButton size="small" color="error" onClick={() => handleDelete(t)}>
                         <DeleteIcon fontSize="small" />
@@ -345,6 +431,52 @@ export function WapiTemplatesListPage() {
         </DialogActions>
       </Dialog>
 
+      {/* Button actions dialog */}
+      <Dialog
+        open={actionsOpen}
+        onClose={() => !actionsSaving && setActionsOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>
+          Acciones de botones
+          {actionsTarget && (
+            <Typography variant="caption" component="div" color="text.secondary">
+              {actionsTarget.metaName} · {actionsTarget.language}
+            </Typography>
+          )}
+        </DialogTitle>
+        <DialogContent dividers>
+          {actionsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress size={28} />
+            </Box>
+          ) : (
+            <ActionsEditor
+              components={actionsTarget?.components ?? []}
+              rows={actionsRows}
+              dataKeys={actionsDataKeys}
+              onChange={handleChangeActionRow}
+              onAdd={handleAddActionRow}
+              onRemove={handleRemoveActionRow}
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setActionsOpen(false)} disabled={actionsSaving}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveActions}
+            disabled={actionsLoading || actionsSaving}
+            startIcon={actionsSaving ? <CircularProgress size={16} /> : null}
+          >
+            {actionsSaving ? 'Guardando…' : 'Guardar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Preview dialog */}
       <Dialog
         open={previewOpen}
@@ -375,6 +507,205 @@ export function WapiTemplatesListPage() {
       </Dialog>
     </Stack>
   );
+}
+
+function ActionsEditor({
+  components,
+  rows,
+  dataKeys,
+  onChange,
+  onAdd,
+  onRemove,
+}: {
+  components: WapiTemplateComponent[];
+  rows: ButtonActionRow[];
+  dataKeys: string[];
+  onChange: (idx: number, patch: Partial<ButtonActionRow>) => void;
+  onAdd: () => void;
+  onRemove: (idx: number) => void;
+}) {
+  const options = quickReplyOptions(components);
+  const usedIds = new Set(rows.map((r) => r.buttonId).filter(Boolean));
+  const noQuickReplies = options.length === 0;
+
+  function appendVar(idx: number, key: string) {
+    const row = rows[idx];
+    if (!row) return;
+    const next = `${row.payload}${row.payload && !row.payload.endsWith(' ') ? ' ' : ''}{{${key}}}`;
+    onChange(idx, { payload: next });
+  }
+
+  return (
+    <Stack spacing={2}>
+      <Typography variant="body2" color="text.secondary">
+        Asigná qué hace Massivo cuando un contacto presiona un botón Quick Reply de este
+        template. Los botones URL/Phone no disparan webhook, así que no aparecen acá.
+      </Typography>
+      {noQuickReplies && (
+        <Typography variant="body2" color="warning.main">
+          Este template no tiene botones Quick Reply.
+        </Typography>
+      )}
+      <Box
+        sx={{
+          p: 1.5,
+          bgcolor: (t) => (t.palette.mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'grey.50'),
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 1,
+        }}
+      >
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+          <strong>Payload</strong> (opcional): texto libre que se persiste con la acción
+          para uso posterior (ej. categoría, código de campaña, dato a loguear).
+          Podés interpolar variables del contacto con la sintaxis{' '}
+          <code>{`{{nombre_columna}}`}</code>, igual que en el body del template.
+        </Typography>
+        {dataKeys.length > 0 ? (
+          <>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              Variables disponibles (de las campañas que usaron este template):
+            </Typography>
+            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+              {dataKeys.map((k) => (
+                <Chip key={k} size="small" variant="outlined" label={`{{${k}}}`} />
+              ))}
+            </Stack>
+          </>
+        ) : (
+          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5 }}>
+            Aún no hay datos de contactos para sugerir variables. Cuando uses este
+            template en una campaña con CSV, las columnas aparecerán acá.
+          </Typography>
+        )}
+      </Box>
+      {rows.length === 0 ? (
+        <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+          Sin acciones configuradas. Se aplican los defaults INBOX/BAJA/IGNORAR
+          (case-insensitive) si el texto del botón coincide.
+        </Typography>
+      ) : (
+        <Stack spacing={1}>
+          {rows.map((row, idx) => {
+            const available = options.filter(
+              (o) => o.id === row.buttonId || !usedIds.has(o.id),
+            );
+            const missing = row.buttonId && !options.some((o) => o.id === row.buttonId);
+            return (
+              <Stack key={idx} direction="row" spacing={1} alignItems="center">
+                <FormControl size="small" sx={{ flex: 1 }} error={Boolean(missing)}>
+                  <Select
+                    displayEmpty
+                    value={row.buttonId}
+                    onChange={(e) => onChange(idx, { buttonId: e.target.value })}
+                  >
+                    <MenuItem value="">
+                      <em>Elegí un botón…</em>
+                    </MenuItem>
+                    {available.map((o) => (
+                      <MenuItem key={o.id} value={o.id}>
+                        {o.label}
+                      </MenuItem>
+                    ))}
+                    {missing && (
+                      <MenuItem value={row.buttonId}>{row.buttonId} (no existe)</MenuItem>
+                    )}
+                  </Select>
+                </FormControl>
+                <FormControl size="small" sx={{ minWidth: 130 }}>
+                  <Select
+                    value={row.action}
+                    onChange={(e) =>
+                      onChange(idx, { action: e.target.value as ButtonAction })
+                    }
+                  >
+                    {BUTTON_ACTIONS.map((a) => (
+                      <MenuItem key={a} value={a}>
+                        {a}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <TextField
+                  size="small"
+                  placeholder="payload (opcional, soporta {{var}})"
+                  value={row.payload}
+                  onChange={(e) => onChange(idx, { payload: e.target.value })}
+                  sx={{ flex: 1.5 }}
+                />
+                {dataKeys.length > 0 && (
+                  <FormControl size="small" sx={{ minWidth: 120 }}>
+                    <Select
+                      displayEmpty
+                      value=""
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v) appendVar(idx, String(v));
+                      }}
+                      renderValue={() => 'Insertar var…'}
+                    >
+                      {dataKeys.map((k) => (
+                        <MenuItem key={k} value={k}>
+                          {`{{${k}}}`}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )}
+                <IconButton size="small" color="error" onClick={() => onRemove(idx)}>
+                  <RemoveCircleOutlineIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            );
+          })}
+        </Stack>
+      )}
+      <Box>
+        <Button
+          size="small"
+          startIcon={<AddIcon />}
+          onClick={onAdd}
+          disabled={noQuickReplies || rows.length >= options.length}
+        >
+          Agregar acción
+        </Button>
+      </Box>
+    </Stack>
+  );
+}
+
+function parseButtonActions(value: unknown): ButtonActionRow[] {
+  if (!value || typeof value !== 'object') return [];
+  const out: ButtonActionRow[] = [];
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    let action: string | null = null;
+    let payload = '';
+    if (typeof v === 'string') {
+      action = v.toUpperCase();
+    } else if (v && typeof v === 'object') {
+      const obj = v as Record<string, unknown>;
+      if (typeof obj.action === 'string') action = obj.action.toUpperCase();
+      if (typeof obj.payload === 'string') payload = obj.payload;
+    }
+    if (action && (BUTTON_ACTIONS as readonly string[]).includes(action)) {
+      out.push({ buttonId: k, action: action as ButtonAction, payload });
+    }
+  }
+  return out;
+}
+
+function quickReplyOptions(components: WapiTemplateComponent[]): QuickReplyOption[] {
+  const buttons = components.find((c) => c.type === 'BUTTONS');
+  if (!buttons || !Array.isArray(buttons.buttons)) return [];
+  const out: QuickReplyOption[] = [];
+  for (const raw of buttons.buttons as Array<Record<string, unknown>>) {
+    const type = String(raw.type ?? '').toUpperCase();
+    if (type !== 'QUICK_REPLY') continue;
+    const text = typeof raw.text === 'string' ? raw.text : '';
+    if (!text) continue;
+    out.push({ id: text, label: text });
+  }
+  return out;
 }
 
 function TemplatePreview({ components }: { components: WapiTemplateComponent[] }) {

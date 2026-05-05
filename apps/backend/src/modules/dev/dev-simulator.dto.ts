@@ -80,6 +80,38 @@ export class SimulateInboundReactionDto {
   emoji!: string;
 }
 
+export class SimulateInboundButtonDto {
+  @IsString()
+  @IsNotEmpty()
+  configId!: string;
+
+  @IsString()
+  @Matches(PHONE_REGEX, { message: 'fromPhone debe ser E.164 sin "+"' })
+  fromPhone!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  fromName?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(256)
+  buttonId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  buttonText?: string;
+
+  // metaMessageId del outbound original (template) — opcional. Si se omite, el
+  // resolver se cae al lookup de defaults case-insensitive (INBOX/BAJA/IGNORAR).
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  contextMetaMessageId?: string;
+}
+
 export const SIMULATE_STATUSES = ['sent', 'delivered', 'read', 'failed'] as const;
 export type SimulateStatus = (typeof SIMULATE_STATUSES)[number];
 

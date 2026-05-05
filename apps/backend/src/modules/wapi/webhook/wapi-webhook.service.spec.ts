@@ -37,6 +37,7 @@ describe('WapiWebhookService', () => {
   let sender: { sendText: jest.Mock };
   let encryption: { decrypt: jest.Mock };
   let optOut: { resolveKeywords: jest.Mock; matchKeyword: jest.Mock; check: jest.Mock; add: jest.Mock };
+  let buttonActions: { resolve: jest.Mock; apply: jest.Mock };
   let svc: WapiWebhookService;
 
   beforeEach(() => {
@@ -62,6 +63,10 @@ describe('WapiWebhookService', () => {
       check: jest.fn().mockResolvedValue({ optedOut: false }),
       add: jest.fn().mockResolvedValue(undefined),
     };
+    buttonActions = {
+      resolve: jest.fn().mockResolvedValue(null),
+      apply: jest.fn().mockResolvedValue(undefined),
+    };
     svc = new WapiWebhookService(
       { scoped: prismaScoped } as never,
       events as never,
@@ -69,6 +74,7 @@ describe('WapiWebhookService', () => {
       sender as never,
       encryption as never,
       optOut as never,
+      buttonActions as never,
     );
   });
 
@@ -321,6 +327,109 @@ describe('WapiWebhookService', () => {
     });
     expect(calls[1]![0].data).toMatchObject({
       teamId: 'team-b', configId: 'cfg-2', phone: '5492222',
+    });
+  });
+
+  describe('4.K — button actions', () => {
+    beforeEach(() => {
+      prismaScoped.wapiConfig.findFirst.mockResolvedValue({
+        id: 'cfg-1',
+        phoneNumberId: 'pn-A',
+        accessTokenEnc: 'tok',
+        isActive: true,
+        isTestMode: true,
+        welcomeMessage: null,
+        optOutConfirmMessage: 'Listo, te dimos de baja',
+        optOutKeywords: null,
+      });
+    });
+
+    it('interactive button_reply → resolve + apply con context.id', async () => {
+      buttonActions.resolve.mockResolvedValueOnce({ action: 'INBOX', source: 'template' });
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.BTN', from: '5491100', timestamp: '1714780000', type: 'interactive',
+          interactive: { type: 'button_reply', button_reply: { id: 'Quiero hablar', title: 'Quiero hablar' } },
+          context: { id: 'wamid.OUT' },
+        }),
+        mapA,
+      );
+      expect(buttonActions.resolve).toHaveBeenCalledWith({
+        buttonId: 'Quiero hablar',
+        contextMetaMessageId: 'wamid.OUT',
+      });
+      expect(buttonActions.apply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId: 'conv-1',
+          configId: 'cfg-1',
+          phone: '5491100',
+          action: 'INBOX',
+          buttonId: 'Quiero hablar',
+          buttonText: 'Quiero hablar',
+          contextMetaMessageId: 'wamid.OUT',
+        }),
+      );
+    });
+
+    it('legacy button.payload → resolve con payload como buttonId', async () => {
+      buttonActions.resolve.mockResolvedValueOnce({ action: 'IGNORAR', source: 'default' });
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.BTN2', from: '5491100', timestamp: '1714780000', type: 'button',
+          button: { payload: 'IGNORAR', text: 'Ok gracias' },
+          context: { id: 'wamid.OUT' },
+        }),
+        mapA,
+      );
+      expect(buttonActions.resolve).toHaveBeenCalledWith({
+        buttonId: 'IGNORAR',
+        contextMetaMessageId: 'wamid.OUT',
+      });
+      expect(buttonActions.apply).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'IGNORAR', buttonId: 'IGNORAR', buttonText: 'Ok gracias' }),
+      );
+    });
+
+    it('resolve devuelve null → no apply', async () => {
+      buttonActions.resolve.mockResolvedValueOnce(null);
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.BTN3', from: '5491100', timestamp: '1714780000', type: 'interactive',
+          interactive: { type: 'button_reply', button_reply: { id: 'x', title: 'x' } },
+        }),
+        mapA,
+      );
+      expect(buttonActions.apply).not.toHaveBeenCalled();
+    });
+
+    it('action BAJA → además dispara optOutConfirmMessage si está seteado', async () => {
+      buttonActions.resolve.mockResolvedValueOnce({ action: 'BAJA', source: 'template' });
+      sender.sendText.mockResolvedValue({ metaMessageId: 'wamid.AUTO' });
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.BTN4', from: '5491100', timestamp: '1714780000', type: 'interactive',
+          interactive: { type: 'button_reply', button_reply: { id: 'No me interesa', title: 'No me interesa' } },
+          context: { id: 'wamid.OUT' },
+        }),
+        mapA,
+      );
+      expect(buttonActions.apply).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'BAJA' }),
+      );
+      const sentBodies = sender.sendText.mock.calls.map((c) => c[1]?.body);
+      expect(sentBodies).toContain('Listo, te dimos de baja');
+    });
+
+    it('mensaje de texto NO dispara button actions', async () => {
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.TXT', from: '5491100', timestamp: '1714780000', type: 'text',
+          text: { body: 'hola' },
+        }),
+        mapA,
+      );
+      expect(buttonActions.resolve).not.toHaveBeenCalled();
+      expect(buttonActions.apply).not.toHaveBeenCalled();
     });
   });
 

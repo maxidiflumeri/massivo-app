@@ -7,6 +7,7 @@ import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
 import { WapiMediaService } from '../media/wapi-media.service';
 import { WapiMediaException } from '../media/wapi-media.types';
+import { WapiButtonActionService } from '../button-actions/wapi-button-action.service';
 import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
 import { WapiSendException } from '../sender/wapi-sender.types';
@@ -25,6 +26,13 @@ interface InboundMediaInfo {
   sha256FromMeta?: string;
   caption?: string;
   filename?: string;
+}
+
+interface ExtractedButtonInfo {
+  buttonId: string;
+  buttonText: string | null;
+  contextMetaMessageId: string | null;
+  shape: 'interactive' | 'button';
 }
 
 /**
@@ -83,6 +91,7 @@ export class WapiWebhookService {
     private readonly sender: WapiSenderService,
     private readonly encryption: EncryptionService,
     private readonly optOut: WapiOptOutService,
+    private readonly buttonActions: WapiButtonActionService,
   ) {}
 
   async process(
@@ -383,15 +392,16 @@ export class WapiWebhookService {
       unreadCount: conversation.unreadCount,
     });
 
-    // Auto-respuestas (4.H opt-out + 4.I welcome). Cargamos el config completo
-    // sólo si alguno de los dos disparadores aplica, para no pegar a DB en
-    // cada inbound. Welcome tiene precedencia sobre opt-out porque sólo aplica
-    // a primera conversación, y un opt-out al primer mensaje cierra el ciclo
-    // sin que el cliente haya recibido nada — el welcome confirma al cliente
-    // que llegó y luego el opt-out confirma la baja.
+    // Auto-respuestas (4.H opt-out + 4.I welcome + 4.K button actions).
+    // Cargamos el config completo sólo si alguno de los disparadores aplica,
+    // para no pegar a DB en cada inbound. Orden de aplicación:
+    //  1. Welcome (sólo primera conversación).
+    //  2. Opt-out por keyword (cierra ciclo, prevalece sobre handoff humano).
+    //  3. Button action (INBOX/BAJA/IGNORAR de templates interactive).
     const inboundText = msg.type === 'text' ? msg.text?.body ?? null : null;
     const couldTriggerOptOut = inboundText !== null;
-    if (isNewConversation || couldTriggerOptOut) {
+    const buttonInfo = extractButtonInfo(msg);
+    if (isNewConversation || couldTriggerOptOut || buttonInfo) {
       await this.tryAutoReplies({
         configId: tenant.configId,
         conversationId: conversation.id,
@@ -399,6 +409,7 @@ export class WapiWebhookService {
         isNewConversation,
         inboundText,
         teamId: tenant.teamId,
+        buttonInfo,
       });
     }
   }
@@ -415,6 +426,7 @@ export class WapiWebhookService {
     isNewConversation: boolean;
     inboundText: string | null;
     teamId: string;
+    buttonInfo: ExtractedButtonInfo | null;
   }): Promise<void> {
     const cfg = await this.prisma.scoped.wapiConfig.findFirst({
       where: { id: input.configId },
@@ -461,6 +473,62 @@ export class WapiWebhookService {
           });
         }
       }
+    }
+
+    if (input.buttonInfo) {
+      await this.handleButtonAction({
+        cfg,
+        conversationId: input.conversationId,
+        phone: input.phone,
+        button: input.buttonInfo,
+      });
+    }
+  }
+
+  /**
+   * Resuelve el action del botón (vía template.buttonActions o defaults) y lo
+   * aplica. BAJA dispara también el optOutConfirmMessage para mantener paridad
+   * con el opt-out por keyword.
+   */
+  private async handleButtonAction(input: {
+    cfg: {
+      id: string;
+      phoneNumberId: string;
+      accessTokenEnc: string;
+      isTestMode: boolean;
+      optOutConfirmMessage: string | null;
+    };
+    conversationId: string;
+    phone: string;
+    button: ExtractedButtonInfo;
+  }): Promise<void> {
+    const resolved = await this.buttonActions.resolve({
+      buttonId: input.button.buttonId,
+      contextMetaMessageId: input.button.contextMetaMessageId,
+    });
+    if (!resolved) {
+      this.logger.debug(
+        `Button reply sin action mapeada buttonId=${input.button.buttonId} convId=${input.conversationId}`,
+      );
+      return;
+    }
+    await this.buttonActions.apply({
+      conversationId: input.conversationId,
+      configId: input.cfg.id,
+      phone: input.phone,
+      action: resolved.action,
+      buttonId: input.button.buttonId,
+      buttonText: input.button.buttonText ?? undefined,
+      contextMetaMessageId: input.button.contextMetaMessageId,
+    });
+    if (resolved.action === 'BAJA' && input.cfg.optOutConfirmMessage && input.cfg.optOutConfirmMessage.trim()) {
+      await this.sendAutoReply({
+        cfg: input.cfg,
+        conversationId: input.conversationId,
+        phone: input.phone,
+        body: input.cfg.optOutConfirmMessage,
+        kind: 'opt-out-confirm',
+      });
     }
   }
 
@@ -527,6 +595,32 @@ export class WapiWebhookService {
       this.logger.warn(`Auto-reply ${input.kind} falló para ${input.phone}: ${detail}`);
     }
   }
+}
+
+/**
+ * Extrae info de un button reply en cualquiera de las dos shapes que Meta usa:
+ *  - `interactive.button_reply` — templates modernos con quick_reply buttons.
+ *  - `button.payload` — templates aprobados con call-to-action legacy.
+ * Devuelve null si el msg no es un button reply.
+ */
+function extractButtonInfo(msg: WapiWebhookMessage): ExtractedButtonInfo | null {
+  if (msg.type === 'interactive' && msg.interactive?.button_reply) {
+    return {
+      buttonId: msg.interactive.button_reply.id,
+      buttonText: msg.interactive.button_reply.title ?? null,
+      contextMetaMessageId: msg.context?.id ?? null,
+      shape: 'interactive',
+    };
+  }
+  if (msg.type === 'button' && msg.button) {
+    return {
+      buttonId: msg.button.payload,
+      buttonText: msg.button.text ?? null,
+      contextMetaMessageId: msg.context?.id ?? null,
+      shape: 'button',
+    };
+  }
+  return null;
 }
 
 function extractMediaInfo(msg: WapiWebhookMessage): InboundMediaInfo | null {

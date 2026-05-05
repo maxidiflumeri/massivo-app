@@ -15,6 +15,7 @@ export interface WapiConversationListItem {
   unreadCount: number;
   campaignName: string | null;
   resolvedAt: string | null;
+  priority: boolean;
   lastMessage: {
     fromMe: boolean;
     type: string;
@@ -82,4 +83,5 @@ export interface WapiConversationUpdatedEvent {
   lastMessageAt?: string | null;
   resolvedAt?: string | null;
   unreadCount?: number;
+  priority?: boolean;
 }

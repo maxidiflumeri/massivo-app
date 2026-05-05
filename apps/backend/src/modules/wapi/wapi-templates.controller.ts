@@ -63,6 +63,12 @@ export class WapiTemplatesController {
     return this.service.findOne(id);
   }
 
+  @Get(':id/data-keys')
+  @CheckPolicies((ability: AppAbility) => ability.can('read', 'WapiTemplate'))
+  dataKeys(@Param('id') id: string): Promise<string[]> {
+    return this.service.getContactDataKeys(id);
+  }
+
   @Post()
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'WapiTemplate'))
   create(@Body() dto: CreateWapiTemplateDto) {

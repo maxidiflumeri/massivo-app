@@ -19,6 +19,8 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import DoneIcon from '@mui/icons-material/Done';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
+import StarIcon from '@mui/icons-material/Star';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { formatPhone, formatRelative, initials } from './formatters';
 import type { InboxTab, WapiConversationListItem } from './types';
 
@@ -42,6 +44,8 @@ interface Props {
   configs: InboxConfigOption[];
   selectedConfigId: string | null;
   onConfigChange: (id: string | null) => void;
+  priorityOnly: boolean;
+  onPriorityChange: (v: boolean) => void;
 }
 
 const TABS: Array<{ value: InboxTab; label: string }> = [
@@ -66,6 +70,8 @@ export function ConversationList({
   configs,
   selectedConfigId,
   onConfigChange,
+  priorityOnly,
+  onPriorityChange,
 }: Props) {
   const empty = !loading && items.length === 0;
   const showConfigSelector = configs.length > 1;
@@ -103,6 +109,17 @@ export function ConversationList({
             ),
           }}
         />
+        <Stack direction="row" spacing={0.5} sx={{ mt: 1 }}>
+          <Chip
+            size="small"
+            icon={priorityOnly ? <StarIcon sx={{ fontSize: 14 }} /> : <StarBorderIcon sx={{ fontSize: 14 }} />}
+            label="Priorizadas"
+            color={priorityOnly ? 'warning' : 'default'}
+            variant={priorityOnly ? 'filled' : 'outlined'}
+            onClick={() => onPriorityChange(!priorityOnly)}
+            sx={{ height: 22, fontSize: 11 }}
+          />
+        </Stack>
       </Box>
       {showConfigSelector && (
         <Box sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider' }}>
@@ -235,6 +252,12 @@ function ConversationRow({
       </Badge>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+          {item.priority && (
+            <StarIcon
+              sx={{ fontSize: 14, color: 'warning.main', flexShrink: 0 }}
+              titleAccess="Conversación priorizada"
+            />
+          )}
           <Typography
             variant="body2"
             sx={{

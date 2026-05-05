@@ -35,6 +35,7 @@ export function WapiInboxPage() {
 
   // Lista
   const [tab, setTab] = useState<InboxTab>('mine');
+  const [priorityOnly, setPriorityOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [items, setItems] = useState<WapiConversationListItem[]>([]);
@@ -161,6 +162,7 @@ export function WapiInboxPage() {
         configId: selectedConfigId ?? undefined,
         search: debouncedSearch || undefined,
         limit: PAGE_LIMIT,
+        priority: priorityOnly || undefined,
       });
       setItems(res.items);
       setListCursor(res.nextCursor);
@@ -170,7 +172,7 @@ export function WapiInboxPage() {
     } finally {
       setListLoading(false);
     }
-  }, [api, tab, debouncedSearch, selectedConfigId, notify]);
+  }, [api, tab, debouncedSearch, selectedConfigId, priorityOnly, notify]);
 
   useEffect(() => {
     void reloadList();
@@ -186,6 +188,7 @@ export function WapiInboxPage() {
         search: debouncedSearch || undefined,
         cursor: listCursor,
         limit: PAGE_LIMIT,
+        priority: priorityOnly || undefined,
       });
       setItems((prev) => [...prev, ...res.items]);
       setListCursor(res.nextCursor);
@@ -330,6 +333,7 @@ export function WapiInboxPage() {
                 ...(ev.lastMessageAt !== undefined ? { lastMessageAt: ev.lastMessageAt } : {}),
                 ...(ev.resolvedAt !== undefined ? { resolvedAt: ev.resolvedAt } : {}),
                 ...(ev.unreadCount !== undefined ? { unreadCount: ev.unreadCount } : {}),
+                ...(ev.priority !== undefined ? { priority: ev.priority } : {}),
               }
             : it,
         ),
@@ -346,6 +350,7 @@ export function WapiInboxPage() {
                 ...(ev.lastMessageAt !== undefined ? { lastMessageAt: ev.lastMessageAt } : {}),
                 ...(ev.resolvedAt !== undefined ? { resolvedAt: ev.resolvedAt } : {}),
                 ...(ev.unreadCount !== undefined ? { unreadCount: ev.unreadCount } : {}),
+                ...(ev.priority !== undefined ? { priority: ev.priority } : {}),
               }
             : c,
         );
@@ -479,6 +484,11 @@ export function WapiInboxPage() {
           configs={configs}
           selectedConfigId={selectedConfigId}
           onConfigChange={handleConfigChange}
+          priorityOnly={priorityOnly}
+          onPriorityChange={(v) => {
+            setPriorityOnly(v);
+            setSelectedId(null);
+          }}
         />
       </Box>
       <Box

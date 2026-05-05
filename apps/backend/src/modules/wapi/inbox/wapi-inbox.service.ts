@@ -47,6 +47,7 @@ export interface ConversationListItem {
   unreadCount: number;
   campaignName: string | null;
   resolvedAt: Date | null;
+  priority: boolean;
   lastMessage: {
     fromMe: boolean;
     type: string;
@@ -99,6 +100,7 @@ export class WapiInboxService {
 
     const where: Record<string, unknown> = {};
     if (query.configId) where.configId = query.configId;
+    if (query.priority) where.priority = true;
 
     switch (tab) {
       case 'mine':
@@ -174,6 +176,7 @@ export class WapiInboxService {
         unreadCount: row.unreadCount,
         campaignName: row.campaignName,
         resolvedAt: row.resolvedAt,
+        priority: row.priority,
         lastMessage: last
           ? {
               fromMe: last.fromMe,
@@ -222,6 +225,7 @@ export class WapiInboxService {
       unreadCount: row.unreadCount,
       campaignName: row.campaignName,
       resolvedAt: row.resolvedAt,
+      priority: row.priority,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       lastMessage: last

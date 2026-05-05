@@ -16,11 +16,12 @@ export interface ListConversationsParams {
   search?: string;
   cursor?: string;
   limit?: number;
+  priority?: boolean;
 }
 
-function qs(params: Record<string, string | number | undefined>): string {
+function qs(params: Record<string, string | number | boolean | undefined>): string {
   const entries = Object.entries(params).filter(
-    ([, v]) => v !== undefined && v !== null && v !== '',
+    ([, v]) => v !== undefined && v !== null && v !== '' && v !== false,
   );
   if (entries.length === 0) return '';
   const search = new URLSearchParams();

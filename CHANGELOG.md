@@ -21,6 +21,38 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.K — Botones interactivos en templates (INBOX / BAJA / IGNORAR)
+
+#### Added
+- **`WapiConversation.priority Boolean @default(false)`** (migration `20260506100000_wapi_conversation_priority`) + índice `(teamId, priority, lastMessageAt)`. Marca conversaciones que deben aparecer destacadas en el inbox.
+- **`WapiButtonActionService`** (`apps/backend/src/modules/wapi/button-actions/`) — resuelve y aplica acciones disparadas por botones interactivos de templates. 3 acciones soportadas:
+  - **INBOX** → marca `priority=true` en la conversación + emite `wapi.conversation.updated`.
+  - **BAJA** → llama `WapiOptOutService.add({scope:'GLOBAL', source:'inbound_button'})`.
+  - **IGNORAR** → sólo logea (ack semántico "el cliente entendió, no hay nada que hacer").
+  - Resolución: chain `context.id → WapiReport.metaMessageId → WapiCampaign.templateId → WapiTemplate.buttonActions[buttonId]`. Acepta valores `string` (legacy) o `{action, payload?}` (nuevo). Fallback a defaults case-insensitive (`INBOX`/`BAJA`/`IGNORAR`) si no hay match en el template — habilita QA con Dev Simulator sin configurar templates.
+  - `apply()` es best-effort: errores se loggean y no rompen el webhook (el inbound del cliente igual quedó persistido).
+- **Webhook integration** — nuevo helper `extractButtonInfo(msg)` en `wapi-webhook.service.ts` maneja ambas shapes Meta (`interactive.button_reply.{id,title}` para templates modernos + legacy `button.{payload,text}`). Trigger condition extendida: `isNewConversation || couldTriggerOptOut || buttonInfo`. Cuando llega un button reply, `tryAutoReplies` dispatcha a `handleButtonAction` que resuelve + aplica + dispara `optOutConfirmMessage` en BAJA (paridad con keyword opt-out).
+- **Dev Simulator endpoint** — `POST /api/dev/wapi/simulate/inbound/button` arma payload Meta-shaped con `interactive.button_reply` + `context.id` opcional. UI chat simulado (`WapiSimulatorChatPage`) con 3 quick buttons INBOX/BAJA/IGNORAR encima del composer del cliente.
+- **Inbox UI — filtro Priorizadas** — `Chip` toggle "Priorizadas" en `ConversationList` (debajo del search, compone con tabs). Backend acepta `?priority=true` con `@Transform` para coerción de boolean desde query string. Badge ⭐ inline al inicio del nombre cuando `item.priority`. Socket handler aplica el campo `priority` en updates en vivo.
+- **Templates UI — editor de `buttonActions`** (`WapiTemplatesListPage.tsx`) — IconButton SmartButton (⚙️) por fila → diálogo con filas {combo de QUICK_REPLY del template, Select(INBOX/BAJA/IGNORAR), TextField payload con soporte `{{var}}`}.
+  - Combo excluye IDs ya usados en otras filas (no permite duplicados).
+  - Estado "(no existe)" en rojo si el mapping legacy apunta a un botón que ya no está.
+  - Helper banner con sintaxis Mustache + chips de variables disponibles + Select "Insertar var…" por fila que anexa `{{key}}` al payload.
+  - Persistencia: `{ [buttonId]: { action, payload? } }`.
+- **Endpoint data-keys de templates** — `GET /api/wapi/templates/:id/data-keys` agrega keys de `WapiContact.data` para todas las campañas que usaron este template (muestra de 200 contactos). Mirror de `wapi-campaigns.getContactDataKeys` pero a nivel template. Devuelve `[]` si nunca se usó.
+
+#### Changed
+- **`WapiWebhookService` constructor** — 7° arg nuevo `WapiButtonActionService`. Tests actualizados.
+- **`WapiTemplate.buttonActions`** — schema sigue siendo `Json?`, pero ahora se persiste como `{ [buttonId]: { action: 'INBOX'|'BAJA'|'IGNORAR', payload?: string } }`. Lectura backward-compatible con el shape viejo `Record<string, string>`.
+
+#### Tests
+- Nueva spec `wapi-button-action.service.spec.ts` (11 casos: resolve con/sin context, ambos shapes, defaults case-insensitive, apply para 3 actions, best-effort error swallowing).
+- `wapi-webhook.service.spec.ts` extendida con bloque `4.K — button actions` (5 casos: interactive shape, legacy shape, resolve null, BAJA dispara optOutConfirm, texto NO dispara button actions).
+- 30/30 pasando en specs button-action + webhook. Backend + frontend typecheck ✅.
+
+#### Pending
+- Renderizado del payload con `{{var}}` en runtime (resolver). Hoy se persiste la plantilla cruda; cuando se necesite, agregar `resolvePayload(payload, contactData)` en `WapiButtonActionService.apply` haciendo un `WapiContact.findFirst({phone, campaignId})` + sustitución regex.
+
 ### 4.H + 4.I — Auto-respuestas de WhatsApp (opt-out por keyword + welcome message)
 
 #### Added

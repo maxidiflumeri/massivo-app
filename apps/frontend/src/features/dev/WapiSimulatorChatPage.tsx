@@ -243,6 +243,28 @@ export function WapiSimulatorChatPage() {
     }
   }
 
+  async function sendClientButton(buttonId: string, buttonText?: string) {
+    if (!configId || !phone.trim()) {
+      notify.error('Faltan config o phone');
+      return;
+    }
+    try {
+      await api.post('/api/dev/wapi/simulate/inbound/button', {
+        configId,
+        fromPhone: phone.trim(),
+        fromName: name.trim() || undefined,
+        buttonId,
+        buttonText,
+      });
+      if (!conversationRef.current) {
+        await resolveConversation();
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError || err instanceof Error ? err.message : 'Error';
+      notify.error(msg);
+    }
+  }
+
   async function sendClientMedia(file: File, type: WapiInboxMediaType, caption?: string) {
     if (!configId || !phone.trim()) {
       notify.error('Faltan config o phone');
@@ -399,6 +421,7 @@ export function WapiSimulatorChatPage() {
               messages={messages}
               onSendText={sendClientText}
               onSendMedia={sendClientMedia}
+              onSendButton={sendClientButton}
               loading={loadingConv}
             />
           )}
@@ -497,11 +520,13 @@ function ClientThread({
   messages,
   onSendText,
   onSendMedia,
+  onSendButton,
   loading,
 }: {
   messages: WapiInboxMessage[];
   onSendText: (body: string) => Promise<unknown>;
   onSendMedia: (file: File, type: WapiInboxMediaType, caption?: string) => Promise<void>;
+  onSendButton: (buttonId: string, buttonText?: string) => Promise<void>;
   loading: boolean;
 }) {
   const [body, setBody] = useState('');
@@ -555,6 +580,30 @@ function ClientThread({
         loadingMore={false}
       />
       <Box sx={{ borderTop: 1, borderColor: 'divider', p: 1.5, bgcolor: 'background.paper' }}>
+        <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+          {(['INBOX', 'BAJA', 'IGNORAR'] as const).map((id) => (
+            <Button
+              key={id}
+              size="small"
+              variant="outlined"
+              disabled={sending}
+              onClick={async () => {
+                setSending(true);
+                try {
+                  await onSendButton(id, id);
+                } finally {
+                  setSending(false);
+                }
+              }}
+            >
+              {id}
+            </Button>
+          ))}
+          <Box sx={{ flex: 1 }} />
+          <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
+            Botones de template (4.K)
+          </Typography>
+        </Stack>
         <TextField
           size="small"
           fullWidth

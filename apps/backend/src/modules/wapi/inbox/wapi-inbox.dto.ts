@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -39,6 +39,12 @@ export class ListWapiConversationsQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  // Filtro Priorizadas (4.K) — query string `priority=true`
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  @IsBoolean()
+  priority?: boolean;
 }
 
 export class ListWapiMessagesQueryDto {

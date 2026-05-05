@@ -47,18 +47,18 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 4 — Canal WhatsApp Cloud API (**sub-A ✅, sub-B ✅, sub-C ✅, sub-D ✅, sub-E ✅, sub-F.1 ✅, sub-F.1.a ✅, sub-F.1.b ✅, sub-F.1.c ✅ (mapping vars), sub-F.2.a ✅, sub-F.2.b ✅, sub-F.2.c ✅ (markdown + dark mode preview), sub-F.2.d ✅ (media upload Meta + storage local + render por tipo), sub-F.3 ✅ (inbox backend), sub-F.4 ✅ (inbox frontend), sub-G ✅ (quick replies admin), sub-H ✅ (opt-out por keyword + worker guard), sub-I ✅ (welcome message), sub-L (MVP ✅ + ✅ chat ida-vuelta con `isTestMode`; pendiente virtual numbers + audit log), sub-L.1 ✅ (filtro inbox por línea)**; siguen **4.J live dashboard, 4.K botones**)
+- **Fase actual:** Fase 4 — Canal WhatsApp Cloud API (**sub-A ✅, sub-B ✅, sub-C ✅, sub-D ✅, sub-E ✅, sub-F.1 ✅, sub-F.1.a ✅, sub-F.1.b ✅, sub-F.1.c ✅ (mapping vars), sub-F.2.a ✅, sub-F.2.b ✅, sub-F.2.c ✅ (markdown + dark mode preview), sub-F.2.d ✅ (media upload Meta + storage local + render por tipo), sub-F.3 ✅ (inbox backend), sub-F.4 ✅ (inbox frontend), sub-G ✅ (quick replies admin), sub-H ✅ (opt-out por keyword + worker guard), sub-I ✅ (welcome message), sub-K ✅ (botones interactivos: INBOX/BAJA/IGNORAR + payload variable), sub-L (MVP ✅ + ✅ chat ida-vuelta con `isTestMode`; pendiente virtual numbers + audit log), sub-L.1 ✅ (filtro inbox por línea)**; sigue **4.J live dashboard**; en marcha **4.M bot guiado simple**)
 - **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅ + **Fase 3 ✅** (3.E inbound postergado, decisión del dueño)
-- **Última actualización:** 2026-05-05 (cierre Sesión 29, 4.H opt-out + 4.I welcome auto-respuestas)
+- **Última actualización:** 2026-05-05 (cierre Sesión 30, 4.K button actions end-to-end)
 - **Branch principal:** `main`
-- **Próximo paso al volver**: ⚠️ **Antes que nada**: detener backend dev server, correr `pnpm prisma generate` desde `packages/prisma/` (la regeneración falló durante la sesión por DLL locked — los tipos `optOutKeywords` ya quedaron inyectados en `index.d.ts` pero `client.d.ts` puede estar desfasado) y reiniciar backend. Luego smoke test de **4.H + 4.I** vía chat simulado:
-  1. Editar la `WapiConfig` test: setear `welcomeMessage` ("¡Hola! Gracias por escribirnos."), `optOutConfirmMessage` ("Listo, te dimos de baja.") y opcionalmente custom keywords.
-  2. Abrir `/dashboard/dev/wapi/chat`, pickear esa config y un phone fresh (no usado antes).
-  3. Mandar el primer texto desde el pane izq → debería aparecer la conversación en el pane der + auto-aparecer un mensaje del operador con el welcome.
-  4. Mandar `BAJA` (o `STOP`) → debería aparecer la confirmación de opt-out.
-  5. Crear una campaña que incluya ese phone → el report debe terminar `CANCELED` con error `opted-out:global` sin pegar a Meta.
-  
-  Después: decidir entre **4.J (live dashboard)** o **4.K (botones interactivos en templates)**.
+- **Próximo paso al volver**: smoke test de **4.K** vía Dev Simulator chat:
+  1. Abrir `/dashboard/wapi/templates`, click en el ícono SmartButton (⚙️) de cualquier template con QUICK_REPLY → mapear botones a INBOX/BAJA/IGNORAR (opcional: agregar payload con `{{var}}`).
+  2. Abrir `/dashboard/dev/wapi/chat`, pickear la config en `isTestMode`, y mandar inbound de tipo button (en `WapiSimulatorChatPage` agregamos 3 botones rápidos INBOX/BAJA/IGNORAR — disparan `POST /api/dev/wapi/simulate/inbound/button`).
+  3. INBOX → la conversación debe aparecer con ⭐ en el inbox (filtro "Priorizadas" la aísla).
+  4. BAJA → debe quedar opted-out (verificar con campaña posterior que termina CANCELED + auto-reply de confirmación).
+  5. IGNORAR → sólo logea en backend, no muta DB.
+
+  Después: avanzar con **4.M (bot guiado)** que ya quedó iniciado en esta sesión.
 - **Cómo testear el inbox sin Meta (recordatorio)**:
   1. Tener una `WapiConfig` activa con `appSecretEnc = NULL` (en dev el webhook acepta sin verificar firma — ver `wapi-webhook.controller.ts:156-162`).
   2. POST a `http://localhost:3001/api/webhooks/wapi` con payload Meta válido (object `whatsapp_business_account`, entry → changes → field `messages`, value con `metadata.phone_number_id`, `contacts[]` y `messages[]` con `from`, `timestamp`, `type=text`, `text.body`).
@@ -557,6 +557,26 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 ---
 
 ## Bitácora de sesiones
+
+### 2026-05-05 — Sesión 30 (Claude Opus 4.7) — Sub-fase 4.K (button actions) + arranque 4.M (bot guiado)
+
+- **Contexto**: con 4.H + 4.I cerradas (Sesión 29), el dueño aprobó avanzar con 4.K. Tres acciones soportadas para botones interactivos de templates: **INBOX** (priorizar conversación con ⭐), **BAJA** (opt-out global) e **IGNORAR** (log only). Resolución vía `WapiTemplate.buttonActions[buttonId]` con fallback a defaults case-insensitive (`INBOX`/`BAJA`/`IGNORAR`).
+- **Schema**: `WapiConversation.priority Boolean @default(false)` + índice `(teamId, priority, lastMessageAt)`. Migración `20260506100000_wapi_conversation_priority` aplicada.
+- **Backend — `WapiButtonActionService`** (`apps/backend/src/modules/wapi/button-actions/`):
+  - `resolve({buttonId, contextMetaMessageId})` → busca template via `WapiReport.metaMessageId → campaign.templateId → template.buttonActions`. Acepta valores `string` (legacy) y `{action, payload?}` (nuevo). Fallback a defaults case-insensitive.
+  - `apply({...})` → INBOX hace `wapiConversation.update(priority=true)` + emite `wapi.conversation.updated`; BAJA llama `optOut.add(scope='GLOBAL', source='inbound_button')`; IGNORAR sólo logea. Best-effort: errores no rompen webhook.
+- **Backend — Webhook integration** (`wapi-webhook.service.ts`): nuevo helper `extractButtonInfo(msg)` maneja ambas shapes Meta (`interactive.button_reply` + legacy `button.payload`). Trigger condition extendida: `isNewConversation || couldTriggerOptOut || buttonInfo`. `tryAutoReplies` ahora dispatcha a `handleButtonAction` que resuelve/aplica + dispara `optOutConfirmMessage` en BAJA (paridad con keyword opt-out).
+- **Dev Simulator — endpoint button** (`POST /api/dev/wapi/simulate/inbound/button`): arma payload Meta-shaped con `interactive.button_reply` + `context.id` opcional. UI chat simulado (`WapiSimulatorChatPage`) con 3 quick buttons INBOX/BAJA/IGNORAR sobre el composer del cliente para QA rápido.
+- **Inbox UI — filtro Priorizadas**: `Chip` toggle "Priorizadas" debajo del search en `ConversationList` (compone con tabs). Badge ⭐ inline al inicio del nombre cuando `item.priority`. Backend acepta `?priority=true` con `@Transform` para coerción de query string boolean. Socket handler aplica el campo `priority` en updates en vivo.
+- **Templates UI — editor de `buttonActions`** (`WapiTemplatesListPage.tsx`): IconButton SmartButton (⚙️) por fila → diálogo con filas {combo de QUICK_REPLY del template, Select(INBOX/BAJA/IGNORAR), TextField payload con soporte `{{var}}`}. Muestra warning si template no tiene QUICK_REPLY. Combo excluye IDs ya usados en otras filas (no permite duplicados). Estado "(no existe)" en rojo si el mapping legacy apunta a un botón que ya no está. Helper banner con sintaxis Mustache + chips de variables disponibles + Select "Insertar var…" por fila que anexa `{{key}}` al payload.
+- **Backend — endpoint data-keys de templates**: `GET /api/wapi/templates/:id/data-keys` agrega keys de `WapiContact.data` para todas las campañas que usaron este template (muestra de 200 contactos). Mirror de `wapi-campaigns.getContactDataKeys` pero a nivel template (porque un template puede usarse en múltiples campañas). Devuelve `[]` si nunca se usó — UI cae a fallback "tipear a mano".
+- **Persistencia del payload**: el shape persistido es `{ [buttonId]: { action, payload? } }`. El resolver del backend acepta también el shape legacy `Record<string, string>` (backward compat). El renderizado del payload con `{{var}}` queda **pendiente** para una sub-fase futura — hoy se persiste la plantilla cruda; cuando se necesite resolver en runtime, se agrega un `resolvePayload(payload, contactData)` en `WapiButtonActionService.apply` haciendo un `WapiContact.findFirst({phone, campaignId})` y sustitución regex.
+- **Tests**: nueva spec `wapi-button-action.service.spec.ts` con 11 casos (resolve con/sin context, ambos shapes, defaults case-insensitive, apply para 3 actions, best-effort error swallowing). Spec `wapi-webhook.service.spec.ts` extendida con bloque `4.K — button actions` (5 casos: interactive shape, legacy shape, resolve null, BAJA dispara optOutConfirm, texto NO dispara button actions). **30/30 ✅** en specs button-action + webhook. Frontend + backend typecheck ✅.
+- **Decisiones clave**:
+  - **Defaults case-insensitive** (`INBOX`/`BAJA`/`IGNORAR`): permite QA con Dev Simulator sin tener que configurar `buttonActions` en cada template. Se aplican sólo si no hay match en el template explícito.
+  - **Combo de buttonId + filtro de duplicados**: prefiere UX guiada sobre flexibilidad. Si el usuario tipea un id custom (vía import legacy), se muestra como "(no existe)" pero no se borra.
+  - **Sólo QUICK_REPLY en el editor**: URL/Phone buttons no disparan webhook, así que no tienen sentido ahí.
+  - **Payload con `{{var}}` deferido**: el editor permite escribir la plantilla pero el resolver aún no la renderiza. Decisión: no agregar runtime hasta que haya un caso de uso concreto (ej. routing por categoría) — hoy el payload se guarda como metadato.
 
 ### 2026-05-05 — Sesión 29 (Claude Opus 4.7) — Sub-fase 4.H (opt-out por keyword) + 4.I (welcome message)
 

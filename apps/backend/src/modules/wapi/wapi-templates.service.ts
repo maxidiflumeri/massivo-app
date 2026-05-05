@@ -145,6 +145,34 @@ export class WapiTemplatesService {
     };
   }
 
+  /**
+   * Devuelve la unión de keys de `WapiContact.data` para todas las campañas que
+   * usaron este template. Sirve para sugerir variables `{{var}}` en el editor de
+   * `buttonActions.payload` (4.K). Si el template todavía no se usó en ninguna
+   * campaña, devuelve [] — el usuario igual puede tipear variables a mano.
+   */
+  async getContactDataKeys(id: string): Promise<string[]> {
+    await this.findOne(id);
+    const campaigns = await this.prisma.scoped.wapiCampaign.findMany({
+      where: { templateId: id } as never,
+      select: { id: true },
+    });
+    if (campaigns.length === 0) return [];
+    const rows = await this.prisma.scoped.wapiContact.findMany({
+      where: { campaignId: { in: campaigns.map((c) => c.id) } } as never,
+      select: { data: true },
+      take: 200,
+    });
+    const keys = new Set<string>();
+    for (const r of rows) {
+      const d = r.data as Record<string, unknown> | null;
+      if (d && typeof d === 'object') {
+        for (const k of Object.keys(d)) keys.add(k);
+      }
+    }
+    return Array.from(keys).sort();
+  }
+
   async remove(id: string): Promise<void> {
     this.requireContext();
     const current = await this.prisma.scoped.wapiTemplate.findFirst({
