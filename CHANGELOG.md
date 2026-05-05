@@ -21,6 +21,44 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.F.4 — Inbox conversacional WhatsApp (frontend) + 4.G Quick replies admin
+
+#### Added
+- **Página `/dashboard/wapi/inbox`** con layout 2 columnas (lista + thread + composer). Lista con tabs **Mías / Sin asignar / Otras / Resueltas**, search debounced, paginación cursor, badges de no-leído. Thread con look WhatsApp Web (fondo dotted theme-aware, burbujas con tail, agrupación por día con headers Hoy/Ayer/weekday, receipt icons ✓/✓✓/azul, render del subset markdown WhatsApp). Header con avatar, status chip y acciones: Tomar, Resolver/Reabrir, MarkRead/Unread, Asignar, Liberar.
+- **Composer** con textarea multiline (Enter envía, Shift+Enter salto), botón send y dropdown de respuestas rápidas activado al tipear `/atajo` (filtro live, navegable con flechas, Enter/Tab para insertar). Banner cuando la ventana 24h está cerrada o la conversación está RESOLVED. Borrador persistido por conversación en `localStorage`, se limpia al enviar exitoso.
+- **Listeners socket** `wapi.message.new` (append al thread abierto + reorder en lista, incrementa unread cuando la conv no está abierta) y `wapi.conversation.updated` (mergea status / asignación / `resolvedAt` / `unreadCount` en lista y detail). Auto mark-read al abrir una conversación con mensajes nuevos.
+- **`AssignDialog`** con buscador de miembros del team (lista desde `/api/teams/:teamId/members`, avatares + email). **`ResolveDialog`** con nota opcional multiline (max 2000), pasa `null` si está vacío.
+- **Página admin `/dashboard/wapi/quick-replies`** (4.G) con CRUD: tabla con atajo (chip monospace), contenido truncado y acciones; editor en `Dialog` con validación de regex `^[a-z0-9][a-z0-9_-]{0,39}$` y body 1-4096 con contador. Eliminación con `useConfirm` destructive.
+- **Sidebar** ampliado: grupo WhatsApp ahora muestra **Inbox** (`InboxIcon`) y **Respuestas rápidas** (`BoltIcon`) además de los items existentes.
+
+#### Changed
+- `AppLayout` detecta la ruta del inbox y entra en **modo full-bleed**: el `<main>` deja de aplicar `maxWidth: 1400` y el padding clásico, y en su lugar fija altura exacta `calc(100vh - 56px)` con `overflow: hidden` y un padding pequeño (`{ xs: 1, sm: 1.5, md: 2 }`) para dar respiración respecto del sidebar. El inbox queda enmarcado como tarjeta con `border` + `borderRadius: 2`.
+- `ConversationHeader` removió un `export { Divider }` espurio y la importación no usada del componente.
+
+#### Fixed
+- **Loop de requests a `/api/me/context` (y otros endpoints)**: `useApi()` retornaba un objeto literal nuevo en cada render, lo que invalidaba la identidad referencial del cliente HTTP y disparaba en bucle todos los `useEffect`/`useCallback` que lo tenían como dependencia. Solución: envolver el retorno en `useMemo([request, download])`. Beneficia a todas las pantallas que dependen de `api`.
+- **Webhook Meta — `WapiWebhookService.shouldReopen` lanzaba `PrismaClientValidationError`** porque usaba el compound key `teamId_configId_phone` con `findFirst` (sólo válido en `findUnique`). El cast `as never` ocultaba el error en typecheck. Reemplazado por `where: { teamId, configId, phone }`.
+
+### 4.F.3 — Inbox conversacional WhatsApp (backend)
+
+#### Added
+- **Modelos Prisma** `WapiQuickReply` y `WapiResolutionNote`. `WapiQuickReply` (scope team) almacena respuestas rápidas con `shortcut` (slug `[a-z0-9_-]{1,40}`) y `body`, `@@unique([teamId, shortcut])`. `WapiResolutionNote` guarda historial de cierres por conversación (modelo separado para soportar resolver → reabrir → resolver múltiples veces sin perder notas previas).
+- **Índice compuesto** `WapiConversation @@index([teamId, status, lastMessageAt])` para acelerar el listado del inbox por tab.
+- **Permisos CASL** — nuevos subjects `Conversation` y `QuickReply`. Team `MEMBER` recibe `read/update/send` sobre `Conversation` y CRUD sobre `QuickReply`. Team `ADMIN` ya cubre estos via `manage all`.
+- **Módulo `wapi/inbox`** con `WapiInboxService` + controller bajo `POST /api/wapi/inbox/*`. Endpoints: `GET conversations` (filtros por tab `mine` / `unassigned` / `others` / `resolved` / `all` + `configId` + `search` + paginación cursor); `GET conversations/:id` y `GET conversations/:id/messages` (cursor); `POST conversations/:id/messages` (envío de texto libre dentro de la ventana 24h, falla con `BadRequest` si la ventana está cerrada o `Conflict` si la conversación está RESOLVED); `POST conversations/:id/read` (marca leído/no leído, resetea `unreadCount`); `POST conversations/:id/take` y `assign` y `unassign` (auto-asignación al responder si estaba UNASSIGNED); `POST conversations/:id/resolve` (acepta `note?` opcional → persiste `WapiResolutionNote`) y `reopen`; `GET conversations/:id/notes` (historial de notas de cierre).
+- **Módulo `wapi/quick-replies`** con CRUD completo en `/api/wapi/quick-replies`. Conflict 409 si el `shortcut` ya existe (P2002).
+- **Eventos socket adicionales** desde el webhook: además del legacy `wapi.message.inbound`, ahora se emiten `wapi.message.new` (con el mensaje completo serializado para append en la conversación abierta del frontend) y `wapi.conversation.updated` (con el shape mínimo de la conversación para refrescar la lista del inbox sin re-fetchear).
+- **Auto-reapertura** en el webhook: si entra un mensaje a una conversación RESOLVED, se vuelve a abrir automáticamente (ASSIGNED si conserva `assignedUserId`, UNASSIGNED si no), limpiando `resolvedAt`.
+- **Tests unitarios**: `wapi-inbox.service.spec.ts` (8 casos: filtro `mine`, ventana 24h cerrada, conflicto RESOLVED, happy path con auto-asignación + emisión de eventos, resolve con/sin nota, reopen no-aplicable, listMessages 404) y `wapi-quick-replies.service.spec.ts` (5 casos: create con userId del ctx, P2002 → Conflict, validación de existencia en update y delete).
+
+#### Changed
+- **`WapiSenderService`** — sin cambios; el inbox usa `sendText` que ya existía. La inyección sólo agrega un consumer.
+- **Tenant-aware Prisma extension** — los nuevos modelos `WapiQuickReply` y `WapiResolutionNote` agregados a `TENANT_SCOPED_MODELS` para que las queries vía `prisma.scoped.*` filtren por `organizationId`/`teamId` automáticamente.
+
+#### Notas
+- Frontend (4.F.4) y página admin de quick replies (4.G) quedan pendientes para la próxima sesión.
+- Tras correr la migración `20260504232310_wapi_inbox_quick_replies_resolution_notes`, hay que reiniciar el backend para que `pnpm prisma generate` tome los nuevos tipos (el dev server suele lockear el `query_engine-windows.dll.node`).
+
 ### 4.F.1.c — Mapeo CSV → variables del template + fixes de envío con vars
 
 #### Added
