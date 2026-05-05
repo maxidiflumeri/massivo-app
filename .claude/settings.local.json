@@ -53,7 +53,8 @@
       "Bash(xargs ls *)",
       "Bash(grep -E \"\\\\.ts$|^d\")",
       "Bash(tasklist)",
-      "Bash(npx prisma *)"
+      "Bash(npx prisma *)",
+      "Bash(find node_modules/.pnpm/@prisma+client* -name \"index.d.ts\" -path \"*.prisma/client*\")"
     ]
   }
 }

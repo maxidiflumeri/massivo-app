@@ -47,6 +47,12 @@ describe('WapiWorkerService.process', () => {
       decrypt: jest.fn((v: string) => v.replace(/^enc\(|\)$/g, '')),
       isEncrypted: jest.fn((v: string) => v.startsWith('enc(')),
     };
+    const optOut = {
+      check: jest.fn().mockResolvedValue({ optedOut: false }),
+      add: jest.fn().mockResolvedValue(undefined),
+      resolveKeywords: jest.fn().mockReturnValue([]),
+      matchKeyword: jest.fn().mockReturnValue(null),
+    };
     // Forzar jitter a 0 para no demorar tests
     worker = new WapiWorkerService(
       new ConfigService({ WAPI_DELAY_MIN_MS: '0', WAPI_DELAY_MAX_MS: '0' }),
@@ -54,6 +60,7 @@ describe('WapiWorkerService.process', () => {
       sender as never,
       events as never,
       encryption as never,
+      optOut as never,
     );
   });
 

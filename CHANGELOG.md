@@ -21,6 +21,29 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.H + 4.I — Auto-respuestas de WhatsApp (opt-out por keyword + welcome message)
+
+#### Added
+- **`WapiConfig.optOutKeywords: String[] @default([])`** (migration `20260505200000_wapi_config_opt_out_keywords`). Lista editable de keywords case-insensitive que disparan opt-out automático cuando llegan como texto inbound. Si vacío, se usan los defaults internos: `BAJA`, `STOP`, `UNSUBSCRIBE`, `CANCELAR`. Match es exacto sobre el body completo del mensaje (post-trim, uppercase) — evitamos falsos positivos como "no quiero la baja del dólar".
+- **`WapiOptOutService`** (`apps/backend/src/modules/wapi/opt-out/`) centraliza el estado opt-out por `(team, phone)`. API: `resolveKeywords(cfgKeywords)`, `matchKeyword(body, keywords)`, `check({phone, campaignId})`, `add({phone, scope, campaignId?, reason?, source?})`. Mirror de `SuppressionService` para email — usa `phoneHash` (SHA-256 sobre dígitos del phone normalizado) como key para indexar el unique constraint sin exponer el plano. `add()` es idempotente con `findFirst` previo (Postgres trata múltiples NULL como distintos en compound unique con `campaignId NULL`).
+- **Webhook handler con auto-respuestas** — `WapiWebhookService.handleInboundMessage` ahora reemplazó el `wapiConversation.upsert` por `findFirst + create/update` para detectar primera conversación. Tras persistir el `WapiMessage` inbound dispara `tryAutoReplies()` que carga el config completo lazy (sólo si hay disparador) y:
+  - **Welcome (4.I)**: si `isNewConversation && cfg.welcomeMessage`, envía el welcome via `sender.sendText` con `isTestMode` plumbed.
+  - **Opt-out (4.H)**: si `msg.type='text'`, resuelve keywords del config (o defaults) y matchea body. Si match → `optOut.add(scope='GLOBAL', source='inbound_keyword')` y envía `cfg.optOutConfirmMessage` si está set.
+  - Ambos auto-replies persisten un `WapiMessage(fromMe=true, status='sent', content.system={kind:'welcome'|'opt-out-confirm'})` y emiten `wapi.message.new` para que el frontend los vea sin refresh. Errores de envío se loggean pero no rompen el flujo (best-effort).
+- **Worker guard opt-out** — `WapiWorkerService.process` chequea `optOut.check({phone, campaignId})` antes del daily limit y del envío. Si está opted-out, marca `WapiReport.status='CANCELED'` con `error='opted-out:global|campaign'`, emite `wapi.report.log` con status FAILED y llama `maybeCompleteCampaign`. Sin pegar a Meta, sin sleep jitter.
+- **DTOs + service WapiConfig** — `Create/UpdateWapiConfigDto` aceptan `optOutKeywords?: string[]` validado con `@IsArray @ArrayMaxSize(20) @IsString({each:true})`. `wapi-configs.service` normaliza vía `normalizeKeywords()` (trim, uppercase, dedupe) y lo persiste. `WapiConfigDetail` ahora expone `optOutKeywords: string[]`.
+- **UI WapiConfig** — campos `welcomeMessage` y `optOutConfirmMessage` (multiline TextField) con helperText actualizado a "Se envía automáticamente al primer mensaje…" / "…cuando un contacto manda una keyword". Nuevo TextField "Keywords de opt-out (separadas por coma)" con placeholder `BAJA, STOP, UNSUBSCRIBE, CANCELAR`. `parseKeywords()` en el frontend hace split por coma o newline, trim/uppercase/dedupe.
+
+#### Changed
+- **`WapiWebhookService` constructor** ahora inyecta `WapiSenderService`, `EncryptionService`, `WapiOptOutService` (antes sólo `prisma/events/media`). Tests del webhook actualizados al nuevo shape (incluye mocks de los 3 services + `wapiConfig.findFirst` + `wapiOptOut.{findFirst, create}`).
+- **`WapiWorkerService` constructor** ahora inyecta `WapiOptOutService` (6° arg). Test `wapi-worker.service.spec` actualizado.
+- **Reopen de conversación RESOLVED** — la lógica de re-abrir status `RESOLVED → ASSIGNED/UNASSIGNED` que vivía en el helper `shouldReopen()` quedó inlineada en el branch `update` del refactor (ya teníamos el `existing` del `findFirst` previo, no necesitamos un query extra).
+
+#### Notes
+- **Tests**: 120/120 wapi tests ✅ (incluye los 11 specs del worker + 12 del webhook + nuevos mocks de opt-out).
+- **Schema preexistente**: el modelo `WapiOptOut` ya estaba declarado en `schema.prisma` desde la migration inicial `20260430153841_add_wapi_models` con `phoneHash`, `scope`, `campaignId?`, `reason?`, `source?` y unique `(teamId, phoneHash, scope, campaignId)`. Sólo faltaba el campo `optOutKeywords` en `WapiConfig` y la lógica que lo usara.
+- **Pendientes**: UI admin para ver / borrar opt-outs (similar al panel de Suppressions de email). Resuscripción manual desde el inbox.
+
 ### 4.M MVP — `WapiConfig.isTestMode` + Chat simulado ida-vuelta + filtro inbox por línea
 
 #### Added

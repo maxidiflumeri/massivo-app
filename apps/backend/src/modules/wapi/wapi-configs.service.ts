@@ -23,8 +23,23 @@ export interface WapiConfigListItem {
 export interface WapiConfigDetail extends WapiConfigListItem {
   welcomeMessage: string | null;
   optOutConfirmMessage: string | null;
+  optOutKeywords: string[];
   dailyLimit: number;
   updatedAt: Date;
+}
+
+function normalizeKeywords(input: string[] | undefined): string[] {
+  if (!input) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input) {
+    const k = raw.trim().toUpperCase();
+    if (!k) continue;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
 }
 
 function toListItem(row: any): WapiConfigListItem {
@@ -81,6 +96,7 @@ export class WapiConfigsService {
       isTestMode: row.isTestMode ?? false,
       welcomeMessage: row.welcomeMessage,
       optOutConfirmMessage: row.optOutConfirmMessage,
+      optOutKeywords: row.optOutKeywords ?? [],
       dailyLimit: row.dailyLimit,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -99,6 +115,7 @@ export class WapiConfigsService {
         appSecretEnc: dto.appSecret ? this.encryption.encrypt(dto.appSecret) : dto.appSecret,
         welcomeMessage: dto.welcomeMessage,
         optOutConfirmMessage: dto.optOutConfirmMessage,
+        optOutKeywords: normalizeKeywords(dto.optOutKeywords),
         dailyLimit: dto.dailyLimit,
         isTestMode: dto.isTestMode ?? false,
       } as Prisma.WapiConfigUncheckedCreateInput,
@@ -126,6 +143,9 @@ export class WapiConfigsService {
       isActive: dto.isActive,
       isTestMode: dto.isTestMode,
     };
+    if (dto.optOutKeywords !== undefined) {
+      updateData.optOutKeywords = normalizeKeywords(dto.optOutKeywords);
+    }
 
     if (dto.accessToken !== undefined) updateData.accessTokenEnc = this.encryption.encrypt(dto.accessToken);
     if (dto.webhookVerifyToken !== undefined) updateData.webhookVerifyTokenEnc = this.encryption.encrypt(dto.webhookVerifyToken);

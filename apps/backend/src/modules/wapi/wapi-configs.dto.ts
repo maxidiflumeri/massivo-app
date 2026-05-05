@@ -1,4 +1,6 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsInt,
   IsNotEmpty,
@@ -44,6 +46,12 @@ export class CreateWapiConfigDto {
   @IsOptional()
   @IsString()
   optOutConfirmMessage?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  optOutKeywords?: string[];
 
   @IsOptional()
   @IsInt()
@@ -95,6 +103,12 @@ export class UpdateWapiConfigDto {
   @IsOptional()
   @IsString()
   optOutConfirmMessage?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  optOutKeywords?: string[];
 
   @IsOptional()
   @IsInt()

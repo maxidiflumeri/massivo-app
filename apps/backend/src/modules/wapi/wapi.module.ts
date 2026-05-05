@@ -18,6 +18,7 @@ import { WapiInboxService } from './inbox/wapi-inbox.service';
 import { WapiMediaService } from './media/wapi-media.service';
 import { WapiQuickRepliesController } from './quick-replies/wapi-quick-replies.controller';
 import { WapiQuickRepliesService } from './quick-replies/wapi-quick-replies.service';
+import { WapiOptOutService } from './opt-out/wapi-opt-out.service';
 
 @Module({
   imports: [EventsModule],
@@ -42,6 +43,7 @@ import { WapiQuickRepliesService } from './quick-replies/wapi-quick-replies.serv
     WapiInboxService,
     WapiMediaService,
     WapiQuickRepliesService,
+    WapiOptOutService,
   ],
   exports: [WapiQueueService, WapiSenderService, WapiMediaService, WapiWebhookService],
 })

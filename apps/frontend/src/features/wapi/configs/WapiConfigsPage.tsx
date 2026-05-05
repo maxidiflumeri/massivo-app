@@ -50,6 +50,7 @@ interface FormState {
   appSecret: string;
   welcomeMessage: string;
   optOutConfirmMessage: string;
+  optOutKeywords: string;
   dailyLimit: string;
   isTestMode: boolean;
 }
@@ -63,9 +64,22 @@ const EMPTY_FORM: FormState = {
   appSecret: '',
   welcomeMessage: '',
   optOutConfirmMessage: '',
+  optOutKeywords: '',
   dailyLimit: '',
   isTestMode: false,
 };
+
+function parseKeywords(input: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input.split(/[,\n]/)) {
+    const k = raw.trim().toUpperCase();
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
+}
 
 export function WapiConfigsPage() {
   const api = useApi();
@@ -116,6 +130,7 @@ export function WapiConfigsPage() {
         appSecret: '',
         welcomeMessage: detail.welcomeMessage ?? '',
         optOutConfirmMessage: detail.optOutConfirmMessage ?? '',
+        optOutKeywords: (detail.optOutKeywords ?? []).join(', '),
         dailyLimit: String(detail.dailyLimit),
         isTestMode: detail.isTestMode ?? false,
       });
@@ -149,6 +164,7 @@ export function WapiConfigsPage() {
           businessAccountId: form.businessAccountId.trim(),
           welcomeMessage: form.welcomeMessage.trim() || null,
           optOutConfirmMessage: form.optOutConfirmMessage.trim() || null,
+          optOutKeywords: parseKeywords(form.optOutKeywords),
           dailyLimit: form.dailyLimit ? Number(form.dailyLimit) : undefined,
           isTestMode: form.isTestMode,
         };
@@ -168,6 +184,7 @@ export function WapiConfigsPage() {
           appSecret: form.appSecret.trim() || undefined,
           welcomeMessage: form.welcomeMessage.trim() || undefined,
           optOutConfirmMessage: form.optOutConfirmMessage.trim() || undefined,
+          optOutKeywords: parseKeywords(form.optOutKeywords),
           dailyLimit: form.dailyLimit ? Number(form.dailyLimit) : undefined,
           isTestMode: form.isTestMode,
         };
@@ -414,7 +431,7 @@ export function WapiConfigsPage() {
               minRows={2}
               value={form.welcomeMessage}
               onChange={(e) => update('welcomeMessage', e.target.value)}
-              helperText="Pendiente — se aplicará en 4.I"
+              helperText="Se envía automáticamente al primer mensaje de un nuevo contacto."
             />
             <TextField
               label="Opt-out confirm message (opcional)"
@@ -423,7 +440,15 @@ export function WapiConfigsPage() {
               minRows={2}
               value={form.optOutConfirmMessage}
               onChange={(e) => update('optOutConfirmMessage', e.target.value)}
-              helperText="Pendiente — se aplicará en 4.H"
+              helperText="Se envía automáticamente cuando un contacto manda una keyword de opt-out."
+            />
+            <TextField
+              label="Keywords de opt-out (separadas por coma)"
+              fullWidth
+              value={form.optOutKeywords}
+              onChange={(e) => update('optOutKeywords', e.target.value)}
+              placeholder="BAJA, STOP, UNSUBSCRIBE, CANCELAR"
+              helperText="Match case-insensitive y exacto sobre el body del mensaje. Si vacío se usan los defaults: BAJA, STOP, UNSUBSCRIBE, CANCELAR."
             />
             <Box
               sx={{

@@ -623,11 +623,11 @@ Monorepo con **pnpm workspaces** + **Turborepo**.
 #### 4.G — Respuestas rápidas (snippets)
 - [ ] Modelo `WapiQuickReply` (id, teamId, shortcut, body, vars). CRUD `/api/wapi/quick-replies`. UI en inbox: tipear `/atajo` → autocomplete + insert con interpolación de vars del contacto.
 
-#### 4.H — Bajas / opt-out
-- [ ] Modelo `WapiOptOut` (existe). Endpoint `POST /api/wapi/opt-outs` (manual + auto desde palabras clave en mensaje entrante: "BAJA", "STOP", etc.). Worker chequea opt-out antes de send → marca `WapiReport.status='SUPPRESSED'`. UI `/dashboard/wapi/opt-outs` (lista, agregar, eliminar).
+#### 4.H — Bajas / opt-out ✅
+- [x] **Auto opt-out por keyword** implementado en `WapiWebhookService` — al recibir mensaje text inbound cuyo body (trim+upper) coincide exactamente con alguna keyword de `WapiConfig.optOutKeywords` (o defaults `BAJA`/`STOP`/`UNSUBSCRIBE`/`CANCELAR` si vacío), persiste `WapiOptOut` GLOBAL y envía `optOutConfirmMessage` como respuesta. **Worker** (`WapiWorkerService`) chequea opt-out antes del daily-limit → marca `WapiReport.status='CANCELED'` con `error='opted-out:<scope>'` (no consume cuota). Servicio dedicado `WapiOptOutService` (mirror de `SuppressionService` email) con `check/add` idempotentes vía `phoneHash` SHA-256. **Endpoint manual + UI** difieren — el MVP cubre el flujo automático end-to-end.
 
-#### 4.I — Mensaje de bienvenida automático
-- [ ] `WapiConfig.welcomeMessage` (texto + delaySec). Cuando llega un mensaje entrante de un número que NO tiene `WapiConversation` previa, crear conversación + enviar welcome message tras `delaySec`.
+#### 4.I — Mensaje de bienvenida automático ✅
+- [x] **Welcome implementado** vía `WapiConfig.welcomeMessage` (sin delaySec — envío inmediato al detectar primera conversación). El webhook reemplaza `wapiConversation.upsert` por `findFirst + create/update` para distinguir conversaciones nuevas; cuando `isNewConversation=true` y hay welcome configurado, envía el texto vía `sendAutoReply` (respeta `cfg.isTestMode` para chat simulado) y persiste `WapiMessage(fromMe=true, content.system={kind:'welcome'})`. Race P2002 mitigado con catch + refetch. Si la primera conversación arranca con keyword opt-out, dispara welcome **y** opt-out confirm en orden (decisión deliberada — saluda + acusa baja).
 
 #### 4.J — Live dashboard WAPI
 - [ ] `/dashboard/wapi/live`: campañas en curso con progreso live, throughput por config, alertas de daily-limit cerca del 80%/100%, conversaciones nuevas/sin asignar.

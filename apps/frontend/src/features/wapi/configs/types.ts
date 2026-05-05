@@ -11,6 +11,7 @@ export interface WapiConfigListItem {
 export interface WapiConfigDetail extends WapiConfigListItem {
   welcomeMessage: string | null;
   optOutConfirmMessage: string | null;
+  optOutKeywords: string[];
   dailyLimit: number;
   updatedAt: string;
 }
@@ -24,6 +25,7 @@ export interface CreateWapiConfigPayload {
   appSecret?: string;
   welcomeMessage?: string;
   optOutConfirmMessage?: string;
+  optOutKeywords?: string[];
   dailyLimit?: number;
   isTestMode?: boolean;
 }
@@ -37,6 +39,7 @@ export interface UpdateWapiConfigPayload {
   appSecret?: string | null;
   welcomeMessage?: string | null;
   optOutConfirmMessage?: string | null;
+  optOutKeywords?: string[];
   dailyLimit?: number;
   isActive?: boolean;
   isTestMode?: boolean;

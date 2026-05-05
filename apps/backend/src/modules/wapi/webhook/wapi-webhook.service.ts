@@ -3,9 +3,13 @@ import type { Prisma } from '@massivo/prisma';
 import type { RequestContext } from '@massivo/shared-types';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
 import { WapiMediaService } from '../media/wapi-media.service';
 import { WapiMediaException } from '../media/wapi-media.types';
+import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
+import { WapiSenderService } from '../sender/wapi-sender.service';
+import { WapiSendException } from '../sender/wapi-sender.types';
 import type {
   WapiWebhookMessage,
   WapiWebhookPayload,
@@ -76,6 +80,9 @@ export class WapiWebhookService {
     private readonly prisma: PrismaService,
     private readonly events: EventsService,
     private readonly media: WapiMediaService,
+    private readonly sender: WapiSenderService,
+    private readonly encryption: EncryptionService,
+    private readonly optOut: WapiOptOutService,
   ) {}
 
   async process(
@@ -192,35 +199,58 @@ export class WapiWebhookService {
     const tsMs = Number(msg.timestamp) * 1000;
     const ts = Number.isFinite(tsMs) ? new Date(tsMs) : new Date();
 
-    const conversation = await this.prisma.scoped.wapiConversation.upsert({
-      where: {
-        teamId_configId_phone: {
-          teamId: tenant.teamId,
-          configId: tenant.configId,
-          phone,
-        },
-      },
-      create: {
-        organizationId: tenant.organizationId,
-        teamId: tenant.teamId,
-        configId: tenant.configId,
-        phone,
-        name: profileName,
-        lastMessageAt: ts,
-        window24hAt: new Date(ts.getTime() + 24 * 60 * 60_000),
-        unreadCount: 1,
-      },
-      update: {
-        lastMessageAt: ts,
-        window24hAt: new Date(ts.getTime() + 24 * 60 * 60_000),
-        unreadCount: { increment: 1 },
-        ...(profileName ? { name: profileName } : {}),
-        // Si la conversación estaba RESOLVED y entra un mensaje nuevo, la
-        // reabrimos automáticamente (mantiene assignedUserId si lo tenía).
-        ...(await this.shouldReopen(tenant.teamId, tenant.configId, phone)),
-      },
+    // findFirst + create/update en vez de upsert para detectar primera
+    // conversación (necesario para 4.I welcome message). El race entre dos
+    // webhooks del mismo phone+config en simultáneo es muy raro y, si ocurre,
+    // el unique (teamId, configId, phone) tira P2002 — capturamos abajo.
+    const existing = await this.prisma.scoped.wapiConversation.findFirst({
+      where: { configId: tenant.configId, phone },
       select: { id: true, status: true, assignedUserId: true, unreadCount: true },
     });
+    const isNewConversation = !existing;
+    let conversation: { id: string; status: string; assignedUserId: string | null; unreadCount: number };
+    if (existing) {
+      const reopen = existing.status === 'RESOLVED'
+        ? { status: existing.assignedUserId ? 'ASSIGNED' : 'UNASSIGNED', resolvedAt: null }
+        : {};
+      conversation = await this.prisma.scoped.wapiConversation.update({
+        where: { id: existing.id },
+        data: {
+          lastMessageAt: ts,
+          window24hAt: new Date(ts.getTime() + 24 * 60 * 60_000),
+          unreadCount: { increment: 1 },
+          ...(profileName ? { name: profileName } : {}),
+          ...reopen,
+        } as never,
+        select: { id: true, status: true, assignedUserId: true, unreadCount: true },
+      });
+    } else {
+      try {
+        conversation = await this.prisma.scoped.wapiConversation.create({
+          data: {
+            organizationId: tenant.organizationId,
+            teamId: tenant.teamId,
+            configId: tenant.configId,
+            phone,
+            name: profileName,
+            lastMessageAt: ts,
+            window24hAt: new Date(ts.getTime() + 24 * 60 * 60_000),
+            unreadCount: 1,
+          },
+          select: { id: true, status: true, assignedUserId: true, unreadCount: true },
+        });
+      } catch (err) {
+        // Race contra otro webhook simultáneo — refetch y treat as existing.
+        const code = (err as { code?: string }).code;
+        if (code !== 'P2002') throw err;
+        const refetched = await this.prisma.scoped.wapiConversation.findFirst({
+          where: { configId: tenant.configId, phone },
+          select: { id: true, status: true, assignedUserId: true, unreadCount: true },
+        });
+        if (!refetched) throw err;
+        conversation = refetched;
+      }
+    }
 
     // Si el mensaje trae media (image/audio/video/document/sticker), descargamos
     // el binario de Meta y lo cacheamos local. Las URLs de Meta expiran en ~5min;
@@ -352,27 +382,150 @@ export class WapiWebhookService {
       lastMessageAt: ts.toISOString(),
       unreadCount: conversation.unreadCount,
     });
+
+    // Auto-respuestas (4.H opt-out + 4.I welcome). Cargamos el config completo
+    // sólo si alguno de los dos disparadores aplica, para no pegar a DB en
+    // cada inbound. Welcome tiene precedencia sobre opt-out porque sólo aplica
+    // a primera conversación, y un opt-out al primer mensaje cierra el ciclo
+    // sin que el cliente haya recibido nada — el welcome confirma al cliente
+    // que llegó y luego el opt-out confirma la baja.
+    const inboundText = msg.type === 'text' ? msg.text?.body ?? null : null;
+    const couldTriggerOptOut = inboundText !== null;
+    if (isNewConversation || couldTriggerOptOut) {
+      await this.tryAutoReplies({
+        configId: tenant.configId,
+        conversationId: conversation.id,
+        phone,
+        isNewConversation,
+        inboundText,
+        teamId: tenant.teamId,
+      });
+    }
   }
 
   /**
-   * Si la conversación viene de RESOLVED, la reabrimos: ASSIGNED si tenía
-   * dueño, UNASSIGNED si no. Devolvemos el patch para mergear en `update` del
-   * upsert. Si no está RESOLVED, devolvemos {} y no toca status.
+   * Carga config completo + dispara welcome y/o opt-out según corresponda.
+   * Cada auto-reply se loggea pero no rompe el flujo si falla — el inbound
+   * ya está persistido y el operador puede responder manual.
    */
-  private async shouldReopen(
-    teamId: string,
-    configId: string,
-    phone: string,
-  ): Promise<Record<string, unknown>> {
-    const existing = await this.prisma.scoped.wapiConversation.findFirst({
-      where: { teamId, configId, phone },
-      select: { status: true, assignedUserId: true },
+  private async tryAutoReplies(input: {
+    configId: string;
+    conversationId: string;
+    phone: string;
+    isNewConversation: boolean;
+    inboundText: string | null;
+    teamId: string;
+  }): Promise<void> {
+    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
+      where: { id: input.configId },
+      select: {
+        id: true,
+        phoneNumberId: true,
+        accessTokenEnc: true,
+        isActive: true,
+        isTestMode: true,
+        welcomeMessage: true,
+        optOutConfirmMessage: true,
+        optOutKeywords: true,
+      },
     });
-    if (!existing || existing.status !== 'RESOLVED') return {};
-    return {
-      status: existing.assignedUserId ? 'ASSIGNED' : 'UNASSIGNED',
-      resolvedAt: null,
+    if (!cfg || !cfg.isActive) return;
+
+    if (input.isNewConversation && cfg.welcomeMessage && cfg.welcomeMessage.trim()) {
+      await this.sendAutoReply({
+        cfg,
+        conversationId: input.conversationId,
+        phone: input.phone,
+        body: cfg.welcomeMessage,
+        kind: 'welcome',
+      });
+    }
+
+    if (input.inboundText) {
+      const keywords = this.optOut.resolveKeywords(cfg.optOutKeywords);
+      const matched = this.optOut.matchKeyword(input.inboundText, keywords);
+      if (matched) {
+        await this.optOut.add({
+          phone: input.phone,
+          scope: 'GLOBAL',
+          reason: `Inbound keyword: ${matched}`,
+          source: 'inbound_keyword',
+        });
+        if (cfg.optOutConfirmMessage && cfg.optOutConfirmMessage.trim()) {
+          await this.sendAutoReply({
+            cfg,
+            conversationId: input.conversationId,
+            phone: input.phone,
+            body: cfg.optOutConfirmMessage,
+            kind: 'opt-out-confirm',
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Envía un texto del sistema (welcome / opt-out confirm) y lo persiste como
+   * WapiMessage(fromMe=true, status='sent'). Emite los mismos socket events
+   * que un envío manual del inbox para que el frontend lo vea sin refrescar.
+   * Errores se loggean pero no se propagan — la auto-reply es best-effort.
+   */
+  private async sendAutoReply(input: {
+    cfg: {
+      id: string;
+      phoneNumberId: string;
+      accessTokenEnc: string;
+      isTestMode: boolean;
     };
+    conversationId: string;
+    phone: string;
+    body: string;
+    kind: 'welcome' | 'opt-out-confirm';
+  }): Promise<void> {
+    try {
+      const result = await this.sender.sendText(
+        {
+          phoneNumberId: input.cfg.phoneNumberId,
+          accessToken: this.encryption.decrypt(input.cfg.accessTokenEnc),
+          isTestMode: input.cfg.isTestMode,
+        },
+        { to: input.phone, body: input.body, previewUrl: false },
+      );
+      const ts = new Date();
+      const message = await this.prisma.scoped.wapiMessage.create({
+        data: {
+          conversationId: input.conversationId,
+          metaMessageId: result.metaMessageId,
+          fromMe: true,
+          type: 'text',
+          content: { text: { body: input.body }, system: { kind: input.kind } } as Prisma.InputJsonValue,
+          status: 'sent',
+          timestamp: ts,
+        } as never,
+        select: { id: true, content: true },
+      });
+      const ctx = TenantContext.current();
+      if (ctx) {
+        this.events.emitToTeam(ctx.teamId, 'wapi.message.new', {
+          conversationId: input.conversationId,
+          configId: input.cfg.id,
+          phone: input.phone,
+          message: {
+            id: message.id,
+            fromMe: true,
+            type: 'text',
+            content: message.content,
+            status: 'sent',
+            timestamp: ts.toISOString(),
+            metaMessageId: result.metaMessageId,
+          },
+        });
+      }
+      this.logger.log(`Auto-reply ${input.kind} enviado a ${input.phone} (configId=${input.cfg.id})`);
+    } catch (err) {
+      const detail = err instanceof WapiSendException ? err.detail.message : err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Auto-reply ${input.kind} falló para ${input.phone}: ${detail}`);
+    }
   }
 }
 

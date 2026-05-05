@@ -12,6 +12,7 @@ import {
   type SendTemplateInput,
   type TemplateComponent,
 } from '../sender/wapi-sender.types';
+import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
 import { WAPI_QUEUE_NAME, type WapiSendJob } from './wapi-queue.types';
 
 const DEFAULT_DELAY_MIN_MS = 30_000;
@@ -60,6 +61,7 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly sender: WapiSenderService,
     private readonly events: EventsService,
     private readonly encryption: EncryptionService,
+    private readonly optOut: WapiOptOutService,
   ) {}
 
   private notifyReportUpdate(teamId: string, campaignId: string): void {
@@ -224,6 +226,30 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
       const cfg = report.campaign.configRel;
       if (!template) throw new Error(`Campaign ${report.campaignId} has no template`);
       if (!cfg) throw new Error(`Campaign ${report.campaignId} has no config`);
+
+      // 4.H: chequeo opt-out (GLOBAL o por esta campaña). Skip definitivo —
+      // marca CANCELED con error `opted-out` para que el reporte muestre el
+      // motivo. No tocamos campaign status acá (maybeCompleteCampaign al final).
+      const optOutCheck = await this.optOut.check({
+        phone: report.phone,
+        campaignId: report.campaignId,
+      });
+      if (optOutCheck.optedOut) {
+        await this.prisma.scoped.wapiReport.update({
+          where: { id: reportId },
+          data: { status: 'CANCELED', error: `opted-out:${optOutCheck.scope?.toLowerCase() ?? 'global'}` },
+        });
+        this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportLog(teamId, {
+          campaignId: report.campaignId,
+          reportId,
+          phone: report.phone,
+          status: 'FAILED',
+          error: `opted-out:${optOutCheck.scope?.toLowerCase() ?? 'global'}`,
+        });
+        await this.maybeCompleteCampaign(report.campaignId, teamId);
+        return { canceled: true };
+      }
 
       // Daily limit per WapiConfig
       const sentToday = await this.countSentLast24h(cfg.id);

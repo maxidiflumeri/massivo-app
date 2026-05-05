@@ -536,6 +536,10 @@ model WapiConfig {
   appSecretEnc          String?
   welcomeMessage        String?
   optOutConfirmMessage  String?
+  // Keywords case-insensitive que disparan opt-out automático al recibirse
+  // como texto inbound. Si vacío, se usan los defaults internos del webhook
+  // handler (BAJA, STOP, UNSUBSCRIBE, CANCELAR).
+  optOutKeywords        String[] @default([])
   dailyLimit            Int      @default(200)
   isActive              Boolean  @default(true)
   // Si true, el sender NO pega a Meta — devuelve un wamid SIM_ y persiste el
