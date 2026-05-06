@@ -37,6 +37,16 @@ export interface PlanFlags {
   canSso: boolean;
 }
 
+/**
+ * 4.O.1 — Feature flags efectivos para la org en el contexto actual. Resultado
+ * del AND entre el kill-switch global (env) y los flags persistidos en
+ * `Organization.*`. El frontend los usa para gatear UI (sidebar, rutas) y
+ * mostrar / ocultar features tipo add-on.
+ */
+export interface OrgFeatureFlags {
+  bot: boolean;
+}
+
 export interface MeOrganization {
   id: string;
   clerkOrgId: string;
@@ -45,6 +55,8 @@ export interface MeOrganization {
   role: OrgRole;
   plan: MePlan;
   permissions: PlanFlags;
+  /** 4.O.1 — feature flags efectivos (env AND per-org). */
+  features: OrgFeatureFlags;
   teams: MeTeam[];
 }
 

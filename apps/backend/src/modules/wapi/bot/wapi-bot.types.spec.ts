@@ -161,4 +161,128 @@ describe('validateBotFlow', () => {
     });
     expect(r.ok).toBe(false);
   });
+
+  // -- 4.N.2 ----
+
+  it('CAPTURE válido con preset email', () => {
+    const flow: BotFlow = {
+      startNodeId: 'a',
+      nodes: {
+        a: {
+          kind: 'CAPTURE',
+          text: 'Tu email?',
+          saveAs: 'email',
+          validate: { kind: 'preset', preset: 'email' },
+          nextNodeId: 'b',
+        },
+        b: { kind: 'HANDOFF', text: 'Listo' },
+      },
+    };
+    expect(v(flow).ok).toBe(true);
+  });
+
+  it('CAPTURE rechaza saveAs inválido', () => {
+    const r = v({
+      startNodeId: 'a',
+      nodes: {
+        a: { kind: 'CAPTURE', text: 'x', saveAs: '1bad', nextNodeId: 'b' },
+        b: { kind: 'HANDOFF', text: 'Listo' },
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.endsWith('saveAs'))).toBe(true);
+  });
+
+  it('CAPTURE rechaza regex inválida', () => {
+    const r = v({
+      startNodeId: 'a',
+      nodes: {
+        a: {
+          kind: 'CAPTURE',
+          text: 'x',
+          saveAs: 'v',
+          validate: { kind: 'regex', pattern: '[' },
+          nextNodeId: 'b',
+        },
+        b: { kind: 'HANDOFF', text: 'Listo' },
+      },
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it('MEDIA válido con caption', () => {
+    const flow: BotFlow = {
+      startNodeId: 'a',
+      nodes: {
+        a: {
+          kind: 'MEDIA',
+          mediaType: 'image',
+          mediaId: 'mid-1',
+          caption: 'foto',
+          nextNodeId: 'b',
+        },
+        b: { kind: 'HANDOFF', text: 'fin' },
+      },
+    };
+    expect(v(flow).ok).toBe(true);
+  });
+
+  it('MEDIA audio rechaza caption', () => {
+    const r = v({
+      startNodeId: 'a',
+      nodes: {
+        a: { kind: 'MEDIA', mediaType: 'audio', mediaId: 'mid', caption: 'no va' },
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('audio'))).toBe(true);
+  });
+
+  it('CONDITION válido con rama var', () => {
+    const flow: BotFlow = {
+      startNodeId: 'gate',
+      nodes: {
+        gate: {
+          kind: 'CONDITION',
+          branches: [
+            { id: 'b1', when: { kind: 'var', var: 'x', op: 'eq', value: 'A' }, nextNodeId: 'a' },
+          ],
+          elseNextNodeId: 'b',
+        },
+        a: { kind: 'HANDOFF', text: 'Sí' },
+        b: { kind: 'HANDOFF', text: 'No' },
+      },
+    };
+    expect(v(flow).ok).toBe(true);
+  });
+
+  it('CONDITION rechaza HH:MM mal formado', () => {
+    const r = v({
+      startNodeId: 'gate',
+      nodes: {
+        gate: {
+          kind: 'CONDITION',
+          branches: [
+            { id: 'b1', when: { kind: 'time', between: ['25:00', '30:00'] }, nextNodeId: 'a' },
+          ],
+        },
+        a: { kind: 'HANDOFF', text: 'x' },
+      },
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it('CONDITION rechaza weekday fuera de rango', () => {
+    const r = v({
+      startNodeId: 'gate',
+      nodes: {
+        gate: {
+          kind: 'CONDITION',
+          branches: [{ id: 'b1', when: { kind: 'weekday', days: [7] }, nextNodeId: 'a' }],
+        },
+        a: { kind: 'HANDOFF', text: 'x' },
+      },
+    });
+    expect(r.ok).toBe(false);
+  });
 });

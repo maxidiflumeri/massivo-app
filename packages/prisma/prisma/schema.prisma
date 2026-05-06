@@ -108,6 +108,10 @@ model Organization {
   plan             Plan      @relation(fields: [planId], references: [id])
   stripeCustomerId String?   @unique
   status           OrgStatus @default(ACTIVE)
+  // Feature flag por organización (4.O.1). Combinado con WAPI_BOT_FEATURE_ENABLED
+  // (env kill-switch) gobierna acceso al motor de bots, endpoints CRUD y UI.
+  // Default false: cobramos como add-on de plan superior, se enciende manual.
+  botEnabled       Boolean   @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -558,6 +562,14 @@ model WapiConfig {
   botEnabled            Boolean  @default(false)
   botFlow               Json?
   botSessionTtlMin      Int      @default(30)
+  // 4.O.1 — sistema multi-tema. botTopics: Array<{id,label,flow:BotFlow}>.
+  // botRouter: { rules: BotRouterRule[], defaultTopicId?: string } decide a qué
+  // tema entrar según template-payload (regex named groups) o keyword exacto.
+  // Si ambos (botFlow legacy + botTopics) están seteados, el motor prefiere
+  // topics; botFlow se mantiene para backward compat (se materializa como
+  // tema 'default' al vuelo si topics está vacío).
+  botTopics             Json?
+  botRouter             Json?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -811,11 +823,18 @@ model WapiBotSession {
   configId       String
   phone          String
   currentNodeId  String
+  // 4.O.1 — id del tema (BotTopic) en el que está parado el cliente. Null para
+  // sesiones legacy (botFlow sin topics) — el motor las trata como tema 'default'.
+  currentTopicId String?
   startedAt      DateTime @default(now())
   lastInboundAt  DateTime @default(now())
   expiresAt      DateTime
   endedAt        DateTime?
   endedReason    String?
+  // Variables capturadas por nodos CAPTURE (4.N.2). Forma libre Json,
+  // claves = nombres definidos en saveAs. Se usa para interpolación {{var}}
+  // en MESSAGE/CAPTURE/MEDIA y para ramas CONDITION{kind:'var'}.
+  data           Json?    @default("{}")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)

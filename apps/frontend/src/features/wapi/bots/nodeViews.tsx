@@ -4,7 +4,18 @@ import { Box, Chip, Stack, Typography } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import HeadsetMicIcon from '@mui/icons-material/HeadsetMic';
-import type { BotMenuNode, BotMessageNode, BotHandoffNode } from './types';
+import KeyboardIcon from '@mui/icons-material/Keyboard';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import CallSplitIcon from '@mui/icons-material/CallSplit';
+import type {
+  BotCaptureNode,
+  BotConditionNode,
+  BotConditionWhen,
+  BotHandoffNode,
+  BotMediaNode,
+  BotMenuNode,
+  BotMessageNode,
+} from './types';
 
 interface BaseNodeData {
   id: string;
@@ -154,8 +165,154 @@ export const HandoffNodeView = memo(function HandoffNodeView(
   );
 });
 
+// 4.N.2 — CAPTURE
+export const CaptureNodeView = memo(function CaptureNodeView(
+  props: NodeProps<{ id: string; node: BotCaptureNode; isStart: boolean } & BaseNodeData> & { selected?: boolean },
+) {
+  const { data, selected } = props;
+  const node = data.node;
+  const validateLabel =
+    node.validate?.kind === 'preset'
+      ? node.validate.preset
+      : node.validate?.kind === 'regex'
+        ? 'regex'
+        : 'sin validar';
+  return (
+    <Box sx={{ ...wrapperSx, borderColor: selected ? 'primary.main' : 'divider', borderWidth: selected ? 2 : 1 }}>
+      <Handle type="target" position={Position.Left} style={handleSx} />
+      <Box sx={{ ...headerSx, bgcolor: 'warning.main', color: 'common.white' }}>
+        <KeyboardIcon fontSize="small" />
+        <Typography variant="caption" fontWeight={700}>CAPTURE</Typography>
+        <Box sx={{ flex: 1 }} />
+        {data.isStart && <Chip size="small" label="START" sx={{ height: 18, bgcolor: 'success.main', color: 'common.white', fontSize: 10 }} />}
+      </Box>
+      <Box sx={{ px: 1.25, py: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', display: 'block' }}>
+          {data.id}
+        </Typography>
+        <Typography variant="body2" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>
+          {truncate(node.text, 80)}
+        </Typography>
+        <Stack direction="row" gap={0.5} sx={{ mt: 0.75 }}>
+          <Chip size="small" label={`→ {{${node.saveAs || '?'}}}`} sx={{ height: 20, fontSize: 10 }} />
+          <Chip size="small" label={validateLabel} variant="outlined" sx={{ height: 20, fontSize: 10 }} />
+        </Stack>
+        <Box sx={{ position: 'relative', mt: 1, py: 0.5, px: 1, bgcolor: 'success.light', color: 'success.contrastText', borderRadius: 1, fontSize: 11 }}>
+          ✓ válido → next
+          <Handle type="source" position={Position.Right} id="next" style={{ ...handleSx, top: '50%' }} />
+        </Box>
+        <Box sx={{ position: 'relative', mt: 0.5, py: 0.5, px: 1, bgcolor: 'error.light', color: 'error.contrastText', borderRadius: 1, fontSize: 11 }}>
+          ✗ retry {node.retryNodeId ? '' : '(re-prompt)'}
+          <Handle type="source" position={Position.Right} id="retry" style={{ ...handleSx, top: '50%' }} />
+        </Box>
+      </Box>
+    </Box>
+  );
+});
+
+// 4.N.2 — MEDIA
+export const MediaNodeView = memo(function MediaNodeView(
+  props: NodeProps<{ id: string; node: BotMediaNode; isStart: boolean } & BaseNodeData> & { selected?: boolean },
+) {
+  const { data, selected } = props;
+  const node = data.node;
+  return (
+    <Box sx={{ ...wrapperSx, borderColor: selected ? 'primary.main' : 'divider', borderWidth: selected ? 2 : 1 }}>
+      <Handle type="target" position={Position.Left} style={handleSx} />
+      <Box sx={{ ...headerSx, bgcolor: 'success.dark', color: 'common.white' }}>
+        <AttachFileIcon fontSize="small" />
+        <Typography variant="caption" fontWeight={700}>MEDIA · {node.mediaType.toUpperCase()}</Typography>
+        <Box sx={{ flex: 1 }} />
+        {data.isStart && <Chip size="small" label="START" sx={{ height: 18, bgcolor: 'success.main', color: 'common.white', fontSize: 10 }} />}
+      </Box>
+      <Box sx={{ px: 1.25, py: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', display: 'block' }}>
+          {data.id}
+        </Typography>
+        {node.mediaId ? (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontFamily: 'monospace' }}>
+            id: {truncate(node.mediaId, 22)}
+          </Typography>
+        ) : (
+          <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
+            sin archivo — subir
+          </Typography>
+        )}
+        {node.caption && (
+          <Typography variant="body2" sx={{ mt: 0.5, whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
+            {truncate(node.caption, 80)}
+          </Typography>
+        )}
+        {!node.nextNodeId && (
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+            (terminal — sin siguiente)
+          </Typography>
+        )}
+      </Box>
+      <Handle type="source" position={Position.Right} id="next" style={handleSx} />
+    </Box>
+  );
+});
+
+// 4.N.2 — CONDITION
+function whenLabel(w: BotConditionWhen): string {
+  if (w.kind === 'var') return `${w.var} ${w.op} "${truncate(w.value, 12)}"`;
+  if (w.kind === 'time') return `${w.between[0]}–${w.between[1]}`;
+  if (w.kind === 'weekday') {
+    const names = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
+    return w.days.map((d) => names[d] ?? '?').join('');
+  }
+  return '?';
+}
+
+export const ConditionNodeView = memo(function ConditionNodeView(
+  props: NodeProps<{ id: string; node: BotConditionNode; isStart: boolean } & BaseNodeData> & { selected?: boolean },
+) {
+  const { data, selected } = props;
+  const node = data.node;
+  return (
+    <Box sx={{ ...wrapperSx, borderColor: selected ? 'primary.main' : 'divider', borderWidth: selected ? 2 : 1 }}>
+      <Handle type="target" position={Position.Left} style={handleSx} />
+      <Box sx={{ ...headerSx, bgcolor: 'grey.700', color: 'common.white' }}>
+        <CallSplitIcon fontSize="small" />
+        <Typography variant="caption" fontWeight={700}>CONDITION</Typography>
+        <Box sx={{ flex: 1 }} />
+        {data.isStart && <Chip size="small" label="START" sx={{ height: 18, bgcolor: 'success.main', color: 'common.white', fontSize: 10 }} />}
+      </Box>
+      <Box sx={{ px: 1.25, py: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', display: 'block' }}>
+          {data.id}
+        </Typography>
+        <Stack gap={0.5} sx={{ mt: 0.5 }}>
+          {node.branches.map((b) => (
+            <Box
+              key={b.id}
+              sx={{ position: 'relative', px: 1, py: 0.5, bgcolor: 'action.hover', borderRadius: 1, fontSize: 11 }}
+            >
+              {truncate(whenLabel(b.when), 26)}
+              <Handle type="source" position={Position.Right} id={`br-${b.id}`} style={{ ...handleSx, top: '50%' }} />
+            </Box>
+          ))}
+          {node.branches.length === 0 && (
+            <Typography variant="caption" color="warning.main">Sin ramas — agregar</Typography>
+          )}
+          <Box
+            sx={{ position: 'relative', px: 1, py: 0.5, bgcolor: 'action.selected', borderRadius: 1, fontSize: 11, fontStyle: 'italic' }}
+          >
+            else
+            <Handle type="source" position={Position.Right} id="else" style={{ ...handleSx, top: '50%' }} />
+          </Box>
+        </Stack>
+      </Box>
+    </Box>
+  );
+});
+
 export const nodeTypes = {
   menu: MenuNodeView,
   message: MessageNodeView,
   handoff: HandoffNodeView,
+  capture: CaptureNodeView,
+  media: MediaNodeView,
+  condition: ConditionNodeView,
 };

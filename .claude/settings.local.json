@@ -58,7 +58,10 @@
       "Bash(wait)",
       "Bash(netstat -ano)",
       "Bash(PRISMA_SKIP_DATAPROXY_IN_GENERATE=1 pnpm prisma generate --no-hints)",
-      "Bash(taskkill *)"
+      "Bash(taskkill *)",
+      "Bash(PGPASSWORD=massivo wsl psql *)",
+      "Bash(echo \"BACKEND_EXIT=$?\")",
+      "Bash(echo \"FRONTEND_EXIT=$?\")"
     ]
   }
 }

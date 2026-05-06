@@ -1,9 +1,10 @@
-import { IsBoolean, IsInt, IsObject, IsOptional, Max, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsObject, IsOptional, Max, Min } from 'class-validator';
 
 /**
- * DTO para PATCH /wapi/configs/:id/bot. botFlow se valida estructuralmente en
- * el service via `validateBotFlow` (más rico que decoradores) — acá sólo
- * chequeamos que sea objeto. Pasar null para borrar el flow.
+ * DTO para PATCH /wapi/configs/:id/bot. botFlow / botTopics / botRouter se
+ * validan estructuralmente en el service via `validateBotFlow` /
+ * `validateBotTopics` / `validateBotRouter` (más ricos que decoradores). Acá
+ * sólo chequeamos forma básica. Pasar null para borrar.
  */
 export class UpdateBotConfigDto {
   @IsOptional()
@@ -19,4 +20,13 @@ export class UpdateBotConfigDto {
   @IsOptional()
   @IsObject()
   botFlow?: Record<string, unknown> | null;
+
+  // 4.O.1 — multi-tema
+  @IsOptional()
+  @IsArray()
+  botTopics?: unknown[] | null;
+
+  @IsOptional()
+  @IsObject()
+  botRouter?: Record<string, unknown> | null;
 }

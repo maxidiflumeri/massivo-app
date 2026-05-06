@@ -23,6 +23,11 @@ import { WapiButtonActionService } from './button-actions/wapi-button-action.ser
 import { WapiBotEngineService } from './bot/wapi-bot-engine.service';
 import { WapiBotService } from './bot/wapi-bot.service';
 import { WapiBotController } from './bot/wapi-bot.controller';
+import {
+  WapiBotFeatureGuard,
+  WapiBotFeatureService,
+} from './bot/wapi-bot-feature.service';
+import { WapiBotRouterService } from './bot/wapi-bot-router.service';
 
 @Module({
   imports: [EventsModule],
@@ -52,7 +57,16 @@ import { WapiBotController } from './bot/wapi-bot.controller';
     WapiButtonActionService,
     WapiBotEngineService,
     WapiBotService,
+    WapiBotFeatureService,
+    WapiBotFeatureGuard,
+    WapiBotRouterService,
   ],
-  exports: [WapiQueueService, WapiSenderService, WapiMediaService, WapiWebhookService],
+  exports: [
+    WapiQueueService,
+    WapiSenderService,
+    WapiMediaService,
+    WapiWebhookService,
+    WapiBotFeatureService,
+  ],
 })
 export class WapiModule {}

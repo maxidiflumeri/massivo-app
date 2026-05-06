@@ -49,11 +49,17 @@ const cfg = {
 
 describe('WapiBotEngineService', () => {
   let prismaScoped: {
-    wapiBotSession: { findFirst: jest.Mock; update: jest.Mock; create: jest.Mock; findMany: jest.Mock };
+    wapiBotSession: {
+      findFirst: jest.Mock;
+      update: jest.Mock;
+      create: jest.Mock;
+      findMany: jest.Mock;
+      upsert: jest.Mock;
+    };
     wapiMessage: { create: jest.Mock };
   };
   let events: { emitToTeam: jest.Mock };
-  let sender: { sendInteractiveButtons: jest.Mock; sendText: jest.Mock };
+  let sender: { sendInteractiveButtons: jest.Mock; sendText: jest.Mock; sendMediaById: jest.Mock };
   let encryption: { decrypt: jest.Mock };
   let svc: WapiBotEngineService;
 
@@ -64,6 +70,7 @@ describe('WapiBotEngineService', () => {
         update: jest.fn().mockResolvedValue(undefined),
         create: jest.fn().mockResolvedValue({ id: 'sess-1' }),
         findMany: jest.fn().mockResolvedValue([]),
+        upsert: jest.fn().mockResolvedValue({ id: 'sess-1' }),
       },
       wapiMessage: {
         create: jest.fn().mockResolvedValue({ id: 'msg-1', content: {} }),
@@ -73,13 +80,23 @@ describe('WapiBotEngineService', () => {
     sender = {
       sendInteractiveButtons: jest.fn().mockResolvedValue({ metaMessageId: 'wamid.OUT', raw: {} }),
       sendText: jest.fn().mockResolvedValue({ metaMessageId: 'wamid.OUT', raw: {} }),
+      sendMediaById: jest.fn().mockResolvedValue({ metaMessageId: 'wamid.OUT', raw: {} }),
     };
     encryption = { decrypt: jest.fn((v: string) => `dec(${v})`) };
+    const feature = {
+      isEnabled: jest.fn().mockResolvedValue(true),
+      isEnvEnabled: jest.fn().mockReturnValue(true),
+      isOrgEnabled: jest.fn().mockResolvedValue(true),
+      assertEnabled: jest.fn().mockResolvedValue(undefined),
+    };
+    const router = { resolve: jest.fn().mockReturnValue(null) };
     svc = new WapiBotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
       sender as never,
       encryption as never,
+      feature as never,
+      router as never,
     );
   });
 
@@ -136,13 +153,15 @@ describe('WapiBotEngineService', () => {
         ],
       }),
     );
-    expect(prismaScoped.wapiBotSession.create).toHaveBeenCalledWith(
+    expect(prismaScoped.wapiBotSession.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
+        where: { configId_phone: { configId: 'cfg-1', phone: '5491100' } },
+        create: expect.objectContaining({
           configId: 'cfg-1',
           phone: '5491100',
           currentNodeId: 'menu1',
         }),
+        update: expect.objectContaining({ currentNodeId: 'menu1', endedAt: null }),
       }),
     );
   });
@@ -167,10 +186,10 @@ describe('WapiBotEngineService', () => {
       expect.anything(),
       expect.objectContaining({ body: 'Elegí un sub-tema' }),
     );
-    expect(prismaScoped.wapiBotSession.update).toHaveBeenCalledWith(
+    expect(prismaScoped.wapiBotSession.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'sess-1' },
-        data: expect.objectContaining({ currentNodeId: 'menu2' }),
+        where: { configId_phone: { configId: 'cfg-1', phone: '5491100' } },
+        update: expect.objectContaining({ currentNodeId: 'menu2' }),
       }),
     );
   });
@@ -222,8 +241,9 @@ describe('WapiBotEngineService', () => {
       expect.anything(),
       expect.objectContaining({ body: '¿En qué te ayudamos?' }),
     );
-    // No crea nueva sesión, no llama update porque no avanzó.
+    // No crea nueva sesión, no llama upsert porque no avanzó.
     expect(prismaScoped.wapiBotSession.create).not.toHaveBeenCalled();
+    expect(prismaScoped.wapiBotSession.upsert).not.toHaveBeenCalled();
   });
 
   it('llegada a HANDOFF → ended=true + escalate=true + cierra sesión', async () => {
@@ -320,9 +340,10 @@ describe('WapiBotEngineService', () => {
       expect.objectContaining({ body: '¿Qué hacemos?' }),
     );
     // Sesión queda en MENU final del chain.
-    expect(prismaScoped.wapiBotSession.create).toHaveBeenCalledWith(
+    expect(prismaScoped.wapiBotSession.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ currentNodeId: 'menu1' }),
+        create: expect.objectContaining({ currentNodeId: 'menu1' }),
+        update: expect.objectContaining({ currentNodeId: 'menu1' }),
       }),
     );
   });
@@ -352,6 +373,7 @@ describe('WapiBotEngineService', () => {
     expect(out.escalate).toBe(false);
     expect(sender.sendText).toHaveBeenCalledTimes(3); // m1, m2, fin
     expect(prismaScoped.wapiBotSession.create).not.toHaveBeenCalled();
+    expect(prismaScoped.wapiBotSession.upsert).not.toHaveBeenCalled();
   });
 
   it('MESSAGE terminal (sin nextNodeId) entrega y deja sesión en ese nodo', async () => {
@@ -376,10 +398,419 @@ describe('WapiBotEngineService', () => {
       expect.anything(),
       expect.objectContaining({ body: 'Gracias!' }),
     );
-    expect(prismaScoped.wapiBotSession.create).toHaveBeenCalledWith(
+    expect(prismaScoped.wapiBotSession.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ currentNodeId: 'thanks' }),
+        create: expect.objectContaining({ currentNodeId: 'thanks' }),
+        update: expect.objectContaining({ currentNodeId: 'thanks' }),
       }),
+    );
+  });
+
+  // -- 4.N.2: CAPTURE / MEDIA / CONDITION + interpolación ----------------------
+
+  it('CAPTURE: texto valida (preset email) → guarda en data + avanza', async () => {
+    const captureFlow: BotFlow = {
+      startNodeId: 'ask',
+      nodes: {
+        ask: {
+          kind: 'CAPTURE',
+          text: 'Tu email?',
+          saveAs: 'email',
+          validate: { kind: 'preset', preset: 'email' },
+          nextNodeId: 'thanks',
+        },
+        thanks: { kind: 'MESSAGE', text: 'Gracias {{email}}!' },
+      },
+    };
+    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+      id: 'sess-1',
+      currentNodeId: 'ask',
+      expiresAt: new Date(Date.now() + 60_000),
+      endedAt: null,
+      data: {},
+    });
+    const out = await withTenant(() =>
+      svc.handle(
+        { ...cfg, botFlow: captureFlow },
+        {
+          configId: 'cfg-1',
+          conversationId: 'conv-1',
+          phone: '5491100',
+          inbound: { kind: 'text', body: 'maxi@ejemplo.com' },
+        },
+      ),
+    );
+    expect(out.handled).toBe(true);
+    expect(sender.sendText).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ body: 'Gracias maxi@ejemplo.com!' }),
+    );
+    expect(prismaScoped.wapiBotSession.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'sess-1' },
+        data: expect.objectContaining({ data: { email: 'maxi@ejemplo.com' } }),
+      }),
+    );
+  });
+
+  it('CAPTURE: validación falla con retryNodeId → entrega retry, no avanza', async () => {
+    const captureFlow: BotFlow = {
+      startNodeId: 'ask',
+      nodes: {
+        ask: {
+          kind: 'CAPTURE',
+          text: 'Tu email?',
+          saveAs: 'email',
+          validate: { kind: 'preset', preset: 'email' },
+          nextNodeId: 'thanks',
+          retryNodeId: 'oops',
+        },
+        oops: { kind: 'MESSAGE', text: 'Email inválido', nextNodeId: 'ask' },
+        thanks: { kind: 'MESSAGE', text: 'Gracias' },
+      },
+    };
+    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+      id: 'sess-1',
+      currentNodeId: 'ask',
+      expiresAt: new Date(Date.now() + 60_000),
+      endedAt: null,
+      data: {},
+    });
+    const out = await withTenant(() =>
+      svc.handle(
+        { ...cfg, botFlow: captureFlow },
+        {
+          configId: 'cfg-1',
+          conversationId: 'conv-1',
+          phone: '5491100',
+          inbound: { kind: 'text', body: 'no-es-mail' },
+        },
+      ),
+    );
+    expect(out.handled).toBe(true);
+    // Entregó "Email inválido" + chain a "ask" (re-prompt).
+    const bodies = sender.sendText.mock.calls.map((c) => c[1].body);
+    expect(bodies).toEqual(expect.arrayContaining(['Email inválido', 'Tu email?']));
+    // Sesión queda en "ask" (re-prompt).
+    expect(prismaScoped.wapiBotSession.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ currentNodeId: 'ask' }),
+      }),
+    );
+  });
+
+  it('CAPTURE: validación falla sin retryNodeId → re-entrega prompt, no avanza', async () => {
+    const captureFlow: BotFlow = {
+      startNodeId: 'ask',
+      nodes: {
+        ask: {
+          kind: 'CAPTURE',
+          text: 'Tu número?',
+          saveAs: 'n',
+          validate: { kind: 'preset', preset: 'number' },
+          nextNodeId: 'thanks',
+        },
+        thanks: { kind: 'MESSAGE', text: 'OK' },
+      },
+    };
+    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+      id: 'sess-1',
+      currentNodeId: 'ask',
+      expiresAt: new Date(Date.now() + 60_000),
+      endedAt: null,
+      data: {},
+    });
+    const out = await withTenant(() =>
+      svc.handle(
+        { ...cfg, botFlow: captureFlow },
+        {
+          configId: 'cfg-1',
+          conversationId: 'conv-1',
+          phone: '5491100',
+          inbound: { kind: 'text', body: 'abc' },
+        },
+      ),
+    );
+    expect(out.handled).toBe(true);
+    expect(sender.sendText).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ body: 'Tu número?' }),
+    );
+    // No persistió data porque no validó.
+    expect(prismaScoped.wapiBotSession.update).not.toHaveBeenCalled();
+  });
+
+  it('MEDIA: envía sendMediaById con caption interpolado y avanza', async () => {
+    const mediaFlow: BotFlow = {
+      startNodeId: 'ask',
+      nodes: {
+        ask: {
+          kind: 'CAPTURE',
+          text: 'Tu nombre?',
+          saveAs: 'nombre',
+          nextNodeId: 'pdf',
+        },
+        pdf: {
+          kind: 'MEDIA',
+          mediaType: 'document',
+          mediaId: 'mid-123',
+          caption: 'Hola {{nombre}}',
+          filename: 'guia.pdf',
+          nextNodeId: 'fin',
+        },
+        fin: { kind: 'HANDOFF', text: 'Listo' },
+      },
+    };
+    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+      id: 'sess-1',
+      currentNodeId: 'ask',
+      expiresAt: new Date(Date.now() + 60_000),
+      endedAt: null,
+      data: {},
+    });
+    const out = await withTenant(() =>
+      svc.handle(
+        { ...cfg, botFlow: mediaFlow },
+        {
+          configId: 'cfg-1',
+          conversationId: 'conv-1',
+          phone: '5491100',
+          inbound: { kind: 'text', body: 'Maxi' },
+        },
+      ),
+    );
+    expect(out.handled).toBe(true);
+    expect(out.ended).toBe(true);
+    expect(sender.sendMediaById).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        type: 'document',
+        mediaId: 'mid-123',
+        caption: 'Hola Maxi',
+        filename: 'guia.pdf',
+      }),
+    );
+  });
+
+  it('CONDITION: rama var matchea → salta a su nextNodeId (sin entregar)', async () => {
+    const condFlow: BotFlow = {
+      startNodeId: 'ask',
+      nodes: {
+        ask: {
+          kind: 'CAPTURE',
+          text: 'Tipo?',
+          saveAs: 'tipo',
+          nextNodeId: 'gate',
+        },
+        gate: {
+          kind: 'CONDITION',
+          branches: [
+            {
+              id: 'b1',
+              when: { kind: 'var', var: 'tipo', op: 'eq', value: 'A' },
+              nextNodeId: 'pathA',
+            },
+          ],
+          elseNextNodeId: 'pathB',
+        },
+        pathA: { kind: 'MESSAGE', text: 'Sos A' },
+        pathB: { kind: 'MESSAGE', text: 'Sos B' },
+      },
+    };
+    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+      id: 'sess-1',
+      currentNodeId: 'ask',
+      expiresAt: new Date(Date.now() + 60_000),
+      endedAt: null,
+      data: {},
+    });
+    const out = await withTenant(() =>
+      svc.handle(
+        { ...cfg, botFlow: condFlow },
+        {
+          configId: 'cfg-1',
+          conversationId: 'conv-1',
+          phone: '5491100',
+          inbound: { kind: 'text', body: 'A' },
+        },
+      ),
+    );
+    expect(out.handled).toBe(true);
+    expect(sender.sendText).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ body: 'Sos A' }),
+    );
+    // pathB no se entregó.
+    const bodies = sender.sendText.mock.calls.map((c) => c[1].body);
+    expect(bodies).not.toContain('Sos B');
+  });
+
+  it('CONDITION: ninguna rama → elseNextNodeId', async () => {
+    const condFlow: BotFlow = {
+      startNodeId: 'gate',
+      nodes: {
+        gate: {
+          kind: 'CONDITION',
+          branches: [
+            { id: 'b1', when: { kind: 'var', var: 'x', op: 'eq', value: 'sí' }, nextNodeId: 'a' },
+          ],
+          elseNextNodeId: 'b',
+        },
+        a: { kind: 'MESSAGE', text: 'Sí' },
+        b: { kind: 'MESSAGE', text: 'No' },
+      },
+    };
+    const out = await withTenant(() =>
+      svc.handle(
+        { ...cfg, botFlow: condFlow },
+        {
+          configId: 'cfg-1',
+          conversationId: 'conv-1',
+          phone: '5491100',
+          inbound: { kind: 'text', body: 'hola' },
+        },
+      ),
+    );
+    expect(out.handled).toBe(true);
+    expect(sender.sendText).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ body: 'No' }),
+    );
+  });
+
+  it('4.O.2 — keyword router-restart: matchea con sesión activa, la cierra y arranca el topic matched', async () => {
+    // Sesión activa en topic A node "msg-a" (no MENU/CAPTURE → invalid-state path).
+    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+      id: 'sess-old',
+      currentNodeId: 'msg-a',
+      currentTopicId: 'a',
+      expiresAt: new Date(Date.now() + 60_000),
+      endedAt: null,
+      data: {},
+    });
+    // Router devuelve match keyword → topic 'b'.
+    const routerMock = {
+      resolve: jest.fn().mockReturnValue({
+        topicId: 'b',
+        seedData: { producto: 'X' },
+        via: 'keyword',
+      }),
+    };
+    const feature = {
+      isEnabled: jest.fn().mockResolvedValue(true),
+      isEnvEnabled: jest.fn().mockReturnValue(true),
+      isOrgEnabled: jest.fn().mockResolvedValue(true),
+      assertEnabled: jest.fn().mockResolvedValue(undefined),
+    };
+    const localSvc = new WapiBotEngineService(
+      { scoped: prismaScoped } as never,
+      events as never,
+      sender as never,
+      encryption as never,
+      feature as never,
+      routerMock as never,
+    );
+    const cfgMulti = {
+      ...cfg,
+      botFlow: null,
+      botTopics: [
+        {
+          id: 'a',
+          label: 'Tema A',
+          flow: {
+            startNodeId: 'msg-a',
+            nodes: { 'msg-a': { kind: 'MESSAGE', text: 'En A' } },
+          },
+        },
+        {
+          id: 'b',
+          label: 'Tema B',
+          flow: {
+            startNodeId: 'msg-b',
+            nodes: { 'msg-b': { kind: 'MESSAGE', text: 'Hola desde B {{producto}}' } },
+          },
+        },
+      ],
+      botRouter: {
+        rules: [{ kind: 'keyword', keywords: ['hola'], topicId: 'b' }],
+      },
+    };
+    const out = await withTenant(() =>
+      localSvc.handle(cfgMulti, {
+        configId: 'cfg-1',
+        conversationId: 'conv-1',
+        phone: '5491100',
+        inbound: { kind: 'text', body: 'hola' },
+      }),
+    );
+    expect(out.handled).toBe(true);
+    expect(routerMock.resolve).toHaveBeenCalledWith(
+      expect.anything(),
+      { kind: 'text', text: 'hola' },
+    );
+    // Cerró la sesión vieja con reason router-restart.
+    expect(prismaScoped.wapiBotSession.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'sess-old' },
+        data: expect.objectContaining({ endedReason: 'router-restart' }),
+      }),
+    );
+    // Entregó el msg-b del topic B con seedData interpolado.
+    expect(sender.sendText).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ body: 'Hola desde B X' }),
+    );
+  });
+
+  it('4.O.2 — keyword fallback (via=fallback) NO interrumpe MENU activo', async () => {
+    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+      id: 'sess-1',
+      currentNodeId: 'menu1',
+      currentTopicId: 'default',
+      expiresAt: new Date(Date.now() + 60_000),
+      endedAt: null,
+      data: {},
+    });
+    const routerMock = {
+      resolve: jest.fn().mockReturnValue({
+        topicId: 'other',
+        seedData: {},
+        via: 'fallback',
+      }),
+    };
+    const feature = {
+      isEnabled: jest.fn().mockResolvedValue(true),
+      isEnvEnabled: jest.fn().mockReturnValue(true),
+      isOrgEnabled: jest.fn().mockResolvedValue(true),
+      assertEnabled: jest.fn().mockResolvedValue(undefined),
+    };
+    const localSvc = new WapiBotEngineService(
+      { scoped: prismaScoped } as never,
+      events as never,
+      sender as never,
+      encryption as never,
+      feature as never,
+      routerMock as never,
+    );
+    const out = await withTenant(() =>
+      localSvc.handle(cfg, {
+        configId: 'cfg-1',
+        conversationId: 'conv-1',
+        phone: '5491100',
+        inbound: { kind: 'text', body: 'no entiendo' },
+      }),
+    );
+    expect(out.handled).toBe(true);
+    // No cerró sesión por router-restart.
+    expect(prismaScoped.wapiBotSession.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ endedReason: 'router-restart' }),
+      }),
+    );
+    // Re-entregó el menú actual (MENU activo).
+    expect(sender.sendInteractiveButtons).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ body: '¿En qué te ayudamos?' }),
     );
   });
 

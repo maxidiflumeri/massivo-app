@@ -38,7 +38,7 @@ describe('WapiWebhookService', () => {
   let encryption: { decrypt: jest.Mock };
   let optOut: { resolveKeywords: jest.Mock; matchKeyword: jest.Mock; check: jest.Mock; add: jest.Mock };
   let buttonActions: { resolve: jest.Mock; apply: jest.Mock };
-  let botEngine: { handle: jest.Mock; isBotButtonId: jest.Mock; endSessionsForConversation: jest.Mock };
+  let botEngine: { handle: jest.Mock; isBotButtonId: jest.Mock; endSessionsForConversation: jest.Mock; startTopic: jest.Mock };
   let svc: WapiWebhookService;
 
   beforeEach(() => {
@@ -72,6 +72,16 @@ describe('WapiWebhookService', () => {
       handle: jest.fn().mockResolvedValue({ handled: false }),
       isBotButtonId: jest.fn((id: string | null | undefined) => typeof id === 'string' && id.startsWith('bot:')),
       endSessionsForConversation: jest.fn().mockResolvedValue(undefined),
+      startTopic: jest.fn().mockResolvedValue(undefined),
+    };
+    const botFeature = {
+      isEnabled: jest.fn().mockResolvedValue(true),
+      isEnvEnabled: jest.fn().mockReturnValue(true),
+      isOrgEnabled: jest.fn().mockResolvedValue(true),
+      assertEnabled: jest.fn().mockResolvedValue(undefined),
+    };
+    const botRouter = {
+      resolve: jest.fn().mockReturnValue(null),
     };
     svc = new WapiWebhookService(
       { scoped: prismaScoped } as never,
@@ -82,6 +92,8 @@ describe('WapiWebhookService', () => {
       optOut as never,
       buttonActions as never,
       botEngine as never,
+      botFeature as never,
+      botRouter as never,
     );
   });
 

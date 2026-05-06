@@ -4,13 +4,17 @@ import { TenantContext } from '../../../common/auth/tenant-context';
 import { EventsService } from '../../events/events.service';
 import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
 
-export const BUTTON_ACTIONS = ['INBOX', 'BAJA', 'IGNORAR'] as const;
+export const BUTTON_ACTIONS = ['INBOX', 'BAJA', 'IGNORAR', 'BOT'] as const;
 export type ButtonAction = (typeof BUTTON_ACTIONS)[number];
 
 /**
  * Defaults case-insensitive: si el button id matchea exactamente el nombre de
  * la acción, la disparamos sin necesidad de configurar `WapiTemplate.buttonActions`.
  * Útil para QA y para templates simples cuyos IDs ya nombran la acción.
+ *
+ * Para BOT, el button id típicamente es el payload (ej. `OFERTA_X_PROD_Y`) que
+ * pasa por el router del bot, no `BOT` literal. Por eso no lo incluimos en los
+ * defaults — debe configurarse explícitamente vía `WapiTemplate.buttonActions`.
  */
 const DEFAULT_BUTTON_ACTION_BY_ID: Record<string, ButtonAction> = {
   INBOX: 'INBOX',
@@ -99,6 +103,14 @@ export class WapiButtonActionService {
         case 'IGNORAR':
           this.logger.log(
             `Button IGNORAR conversationId=${input.conversationId} buttonId=${input.buttonId}`,
+          );
+          break;
+        case 'BOT':
+          // BOT no se aplica acá — requiere WapiBotEngineService + WapiBotRouterService
+          // y rompería el ciclo de imports. El webhook detecta action=BOT y
+          // dispara `engine.startTopic` con el topic resuelto por el router.
+          this.logger.log(
+            `Button BOT conversationId=${input.conversationId} buttonId=${input.buttonId} (delegado al webhook)`,
           );
           break;
       }

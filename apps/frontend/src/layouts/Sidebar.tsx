@@ -33,6 +33,11 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import { OrganizationSwitcher } from '@clerk/clerk-react';
 
 const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
+// 4.O.1 — kill-switch del feature de bots (env). El backend además valida
+// `Organization.botEnabled`; acá sólo ocultamos el item del sidebar para
+// orgs sin la feature contratada (mostramos siempre si env está prendido —
+// el backend devuelve 403 si la org no la tiene y la página lo refleja).
+const WAPI_BOT_FEATURE_ENABLED = import.meta.env.VITE_WAPI_BOT_FEATURE_ENABLED === 'true';
 
 export const SIDEBAR_WIDTH = 248;
 export const SIDEBAR_COLLAPSED_WIDTH = 64;
@@ -108,11 +113,15 @@ const NAV_GROUPS: NavGroupSpec[] = [
         label: 'Respuestas rápidas',
         icon: <BoltIcon fontSize="small" />,
       },
-      {
-        to: '/dashboard/wapi/bots',
-        label: 'Bot guiado',
-        icon: <SmartToyIcon fontSize="small" />,
-      },
+      ...(WAPI_BOT_FEATURE_ENABLED
+        ? [
+            {
+              to: '/dashboard/wapi/bots',
+              label: 'Bot guiado',
+              icon: <SmartToyIcon fontSize="small" />,
+            },
+          ]
+        : []),
       {
         to: '/dashboard/wapi/configs',
         label: 'Números',

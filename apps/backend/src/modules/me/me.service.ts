@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MeContextResponse } from '@massivo/shared-types';
 import { computePlanFlags } from '@massivo/permissions';
 
 @Injectable()
 export class MeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   async getContext(clerkUserId: string): Promise<MeContextResponse> {
     const user = await this.prisma.user.findUnique({
@@ -34,8 +38,12 @@ export class MeService {
       );
     }
 
+    const botEnvOn = this.config.get<string>('WAPI_BOT_FEATURE_ENABLED') === 'true';
     const organizations = user.orgMemberships.map((membership) => {
       const org = membership.organization;
+      // 4.O.1 — feature flags efectivos. botEnabled puede no existir en clientes
+      // viejos sin la columna; lo casteamos defensivamente.
+      const orgBotEnabled = (org as unknown as { botEnabled?: boolean }).botEnabled === true;
       const teams = org.teams
         .filter((team) => team.memberships.length > 0)
         .map((team) => {
@@ -62,6 +70,9 @@ export class MeService {
           limits: org.plan.limits as Record<string, unknown>,
         },
         permissions: computePlanFlags(org.plan.features as Record<string, unknown> | null),
+        features: {
+          bot: botEnvOn && orgBotEnabled,
+        },
         teams,
       };
     });

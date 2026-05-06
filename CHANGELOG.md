@@ -21,6 +21,155 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.O.2 — UI multi-topic + Router en el editor visual
+
+#### Fixed
+- **Router-restart por keyword/template-payload** (`wapi-bot-engine.service.ts` + `wapi-bot-router.service.ts`): un match explícito de keyword o template-payload ahora **interrumpe la sesión activa** y arranca el topic resuelto (mismo patrón que el botón BOT — "el inbound nuevo siempre gana"). Antes la sesión vieja bloqueaba el match: si el cliente había llegado a un nodo terminal (ej. MESSAGE sin next), cualquier inbound de texto reactivaba el topic actual desde su startNode en lugar de evaluar el router. Los matches `default` y el `defaultTopicId` (catch-all) NO interrumpen — sólo se evalúan si la sesión no procesa el inbound. El reason de cierre es `router-restart`. `BotRouterResolution` ahora trae `via: 'keyword'|'template-payload'|'default'|'fallback'`. +2 specs (override sesión activa + fallback no interrumpe MENU).
+- **Sesión inválida resetea local var**: en el branch `invalid-state` (current node no es MENU/CAPTURE), el motor ahora setea `session = null` después de cerrarla, así el branch siguiente puede correr el router (antes el const seguía truthy y caía al fallback "restart current topic").
+
+#### Changed
+- **`KeywordEditor` (RouterPanel.tsx)**: reemplazado el textfield multilínea con split por coma/newline por **MUI Autocomplete `multiple freeSolo`** — el usuario tipea cada keyword/frase y Enter lo agrega como chip. Acepta espacios sin ambigüedad (frases tipo "buen día" funcionan), dedupe case-insensitive automático. Antes: separar por coma forzaba a evitar espacios o causaba que frases multi-palabra se confundieran con la convención de delimitador.
+
+#### Added
+- **Vista lista de temas** (`TopicsListView.tsx`) como entry-point de `/dashboard/wapi/bots`. Tabla con columnas Nombre / ID (monospace) / Nodos / Estado (✓ válido o ⚠ N error(es)) / Acciones, **buscador por nombre o ID**, badge ⭐ para el `defaultTopicId` del router, empty-state con CTA "Crear tema". Botones de header: "Router (N)" y "Nuevo tema". Acciones por fila: **"Editar flow"** (entra al canvas), renombrar y eliminar (deshabilitado si queda 1 solo topic). Reemplaza la fila de tabs scrollable que no escalaba a 40-50 topics — feedback del usuario.
+- **Vista canvas y vista router** ahora se navegan vía breadcrumb ("← Temas / [topic name]" o "← Temas / Router") en lugar de tabs. La página es un state machine `view: 'list' | 'topic' | 'router'`. Volver a la lista descarga el canvas hasta reentrar (mejor performance con muchos topics).
+- **`TopicDialog.tsx`** — modal MUI para crear/renombrar topics con validación visual (label requerido <60ch, id `^[a-zA-Z0-9_-]+$`, unicidad). Reemplaza los `window.prompt` previos.
+- **Tabs por topic** ~~en `/dashboard/wapi/bots` (`WapiBotsPage.tsx`)~~ → reemplazado por lista. Cada `BotTopic` se gestiona ahora desde la tabla. Botones para **agregar** (modal), **renombrar** (modal con cross-rewrite de `gotoTopic` y `BotRouterRule.topicId`) y **eliminar** topic. Filas marcan ⚠ + count de errores si el topic no valida.
+- **Tab "Router"** dedicado (`RouterPanel.tsx`): editor de `BotRouterRule[]` con reorder up/down (la 1ª que matchea gana), agregar/eliminar y selector de tema destino. Tipos:
+  - `template-payload`: textfield regex + preview de **named groups** (`(?<varName>...)` se listan como chips `{{varName}}`) + validación regex en vivo.
+  - `keyword`: textfield multilínea (separador `,` o `\n`) que renderiza chips por keyword.
+  - `default`: sólo selector de tema.
+  - Selector global `defaultTopicId` (fallback si nada matchea).
+- **Selector "Saltar a tema" en cada destino del drawer** (`NodeEditorDrawer.tsx` → `NextOrTopicSelect`): grupos *Nodos del flow actual* + *Saltar a otro tema*, mutuamente excluyentes (encoding interno `node:<id>` / `topic:<id>`). Aplicado en MENU.options, MESSAGE, CAPTURE.next, MEDIA, CONDITION.branches y CONDITION.else. `CAPTURE.retry` queda solo-nodo (sin gotoTopic, intencional — el retry siempre se queda en el topic actual).
+- **Backward compat al cargar**: si la cfg trae sólo `botFlow` (legacy 4.N), se materializa como `[{id:'default', label:'Principal', flow}]`. Save consolida siempre `botTopics + botRouter` y manda `botFlow: null` para obsoletar el legacy.
+- **Validación cliente cross-topic** (`validateClient.ts`):
+  - `validateClient(flow, topicIds?)` — extiende validador de 4.N para aceptar `gotoTopic` como alternativa a `nextNodeId` en cada salida; si se pasan `topicIds`, chequea que los `gotoTopic` referencien topics existentes.
+  - `validateTopics(topics)` — valida shape de cada topic (id format, label, no duplicados) + corre `validateClient` por flow con cross-check global.
+  - `validateRouter(router, topicIds)` — regex compila, keywords no vacías, topic destino existe, advertencia si hay >1 rule kind `default`.
+  - El banner de errores se filtra al contexto activo (topic en vista canvas o router en vista panel) para no abrumar.
+- **Tipos frontend** (`types.ts`): `BotTopic`, `BotRouter`, `BotRouterRule`, `BotRouterRuleKind`, `gotoTopic` opcional en cada nodo con destino, `elseGotoTopic` en CONDITION. `BotConfigSnapshot` y `UpdateBotPayload` extendidos con `botTopics` + `botRouter`.
+
+#### Changed
+- **Save bloquea ON** si `topicsValidation` o `routerValidation` reportan errores — antes sólo bloqueaba por flow inválido.
+- **`onConnect`** (drag desde handles): cuando se conecta a un nodo, se limpia el `gotoTopic` del mismo destino para evitar estados híbridos. La elección entre nodo o topic se hace por el drawer, no drag-and-drop.
+- **`rfEdges`** ya no renderiza arrows para destinos `gotoTopic` — sólo intra-topic. Los inter-topic se ven en el chip del nodo (próxima iteración: badge visible en el view).
+
+#### Tests
+- No se agregan tests nuevos en esta sub-fase (UI). Typecheck `apps/frontend` + `apps/backend` = verde.
+
+### 4.O.1 — Multi-topic + Router + Feature flag (env + per-org)
+
+#### Added
+- **Multi-topic en cada `WapiConfig`** — un bot ahora puede tener varios "temas" (`BotTopic { id, label, flow }`) en `WapiConfig.botTopics: BotTopic[]`. Cada topic tiene su propio `BotFlow` (con start node y nodos `MESSAGE/MENU/CAPTURE/MEDIA/CONDITION/HANDOFF`). Schema `WapiBotSession.currentTopicId: String?` para saber en qué topic está la sesión.
+- **Router declarativo** (`WapiConfig.botRouter: BotRouter`): `rules[]` ordenadas con `{ kind: 'template-payload' | 'keyword' | 'default', topicId }`. La primera que matchea gana. `defaultTopicId` como atajo si no hay match.
+  - **`template-payload`**: regex contra el payload del botón de un template. Acepta named capture groups que se inyectan en `seedData` y se mergean a `session.data` al iniciar el topic. Ej `^OFERTA_(?<producto>\w+)_(?<plan>\d+)$` matchea `OFERTA_HOSTING_99` → `seedData={producto:'HOSTING',plan:'99'}` accesibles en MESSAGE/CAPTURE como `{{producto}}`.
+  - **`keyword`**: lista de strings; match exacto case-insensitive y trimmeado contra `text` inbound. No matchea sustrings.
+  - **`default`**: matchea siempre, último recurso.
+- **Inter-topic calls (`gotoTopic`)** — todos los nodos que originalmente apuntaban a `nextNodeId`/`retryNodeId`/`branches[].nextNodeId`/`elseNextNodeId` ahora aceptan también `gotoTopic: '<topicId>'`. Cuando el motor encuentra un `gotoTopic`, cambia de topic y arranca por el `startNodeId` del topic destino. Permite armar bots compuestos sin un solo flow gigante.
+- **Botón `BOT` en `WapiButtonAction`** — junto a `INBOX`/`BAJA`/`IGNORAR`. Cuando un template lleva un botón con action `BOT` y payload, el webhook llama al router con ese payload (kind `template-payload`); si matchea un topic, abre/reabre la sesión bot en ese topic con `seedData`. **Payload nuevo siempre gana**: si ya había sesión activa, se cierra (`endedReason='router-restart'`) y se arranca limpio en el nuevo topic.
+- **Feature flag de dos niveles**:
+  - `WAPI_BOT_FEATURE_ENABLED` (env, kill-switch global). Default `false` en prod por seguridad.
+  - `Organization.botEnabled: Boolean @default(false)` (per-org grant — pensado como add-on de plan superior; se habilita manualmente con SQL hasta que esté el módulo de billing).
+  - **AND lógico**: ambos en `true` para que el feature funcione. Si falla cualquiera, el motor no intercepta inbounds, los endpoints `/api/wapi/configs/:id/bot/*` devuelven `403 Forbidden`, y la UI oculta el item "Bot guiado" del sidebar.
+- **`WapiBotFeatureService`** (`apps/backend/src/modules/wapi/bot/wapi-bot-feature.service.ts`): expone `isEnvEnabled()`, `isOrgEnabled(orgId)`, `isEnabled(orgId?)`, `assertEnabled(orgId?)` (lanza `ForbiddenException`). Detecta el `organizationId` del `TenantContext` si no lo recibe. Guard `WapiBotFeatureGuard` aplicado al `WapiBotController`.
+- **`WapiBotRouterService`** (`apps/backend/src/modules/wapi/bot/wapi-bot-router.service.ts`): `resolve(router, input) → { topicId, seedData } | null`. Maneja regex inválida silenciosa (rule se ignora), kinds incompatibles (keyword vs template-payload), y caída a `defaultTopicId` si no hay match.
+- **`/me/context.organizations[].features`** — nuevo objeto `OrgFeatureFlags { bot: boolean }` con AND de env+org. Lo usa el frontend para gating UI sin hardcodear lógica del lado cliente.
+- **Frontend env mirror**: `VITE_WAPI_BOT_FEATURE_ENABLED` para el sidebar (oculta "Bot guiado" si está off — el gating per-org se enforce desde backend con 403). Ambas deben estar `true` para que la UI exponga el feature.
+
+#### Changed
+- **`WapiBotEngineService.handle`** — refactor mayor:
+  - Gate inicial via `featureService.isEnabled(orgId)`. Si está off, retorna `{ handled: false }` (deja pasar al webhook como si no hubiera bot).
+  - `resolveTopics(cfg)` materializa los topics: si `botTopics` está poblado, los usa tal cual; si sólo hay `botFlow` (legacy 4.N), lo wrappea como `topics: { default: { id:'default', flow } }` y sintetiza un router `{ defaultTopicId: 'default' }` — backward compat full.
+  - `text` sin sesión → `routerService.resolve(router, { kind:'text', text })`. Si matchea, abre sesión en `currentTopicId` con `seedData`. Si no matchea y hay `defaultTopicId`, va ahí. Si nada matchea, no responde.
+  - `followGoto(gotoTopic, nextNodeId, currentTopicId, resolved)` — helper que convierte cualquier salida de nodo (puede ser `gotoTopic` o `nextNodeId` del topic actual) en `{ topicId, nodeId }` para el siguiente paso del chain.
+  - `runChain()` extrae el bucle de auto-chain (cap 8) y soporta `gotoTopic` en MESSAGE/MEDIA + CONDITION branches + CAPTURE next/retry + MENU options.
+  - `pickConditionBranch` ahora retorna `{ nextNodeId?, gotoTopic? }` (no sólo string).
+  - `startTopic(cfg, conversationId, phone, topicId, seedData)` — método público que cierra la sesión activa (si hay) y arranca el chain en el `startNodeId` del topic destino. Usado por el webhook para BOT button action.
+- **`WapiWebhookService`** — antes de delegar al engine, chequea `featureService.isEnabled()`. `handleButtonAction` extendida con BOT action: parsea `botRouter` desde la cfg, llama `routerService.resolve()` con el `buttonId` como `template-payload`, y si matchea, llama `botEngine.startTopic(...)`. Si no matchea, fall-through al engine como text inbound vacío.
+- **`WapiButtonActionService`** — `BUTTON_ACTIONS` ahora incluye `'BOT'`. La acción BOT en `apply()` sólo loggea (la dispatch real está en el webhook para evitar circular import con el engine).
+- **`WapiBotService.update`** — valida `botTopics` primero (con `validateBotTopics`), después `botRouter` con el set de `topicIds` (usa los del patch si vienen, sino lee los existentes para cross-check). Enable guard relajado: acepta `botFlow` (legacy) **o** `botTopics` (nuevo).
+
+#### Schema
+- Migración `20260508100000_wapi_bot_topics_and_org_feature_flag` aplicada vía SQL directa (psql/WSL — DLL lock en Windows):
+  ```sql
+  ALTER TABLE "Organization" ADD COLUMN "botEnabled" BOOLEAN NOT NULL DEFAULT false;
+  ALTER TABLE "WapiConfig" ADD COLUMN "botTopics" JSONB, ADD COLUMN "botRouter" JSONB;
+  ALTER TABLE "WapiBotSession" ADD COLUMN "currentTopicId" TEXT;
+  ```
+
+#### Tests
+- `wapi-bot-router.service.spec.ts` (9): template-payload con/sin named groups, keyword case-insensitive exacto, kinds incompatibles, default rule, atajo `defaultTopicId`, primer match gana, regex inválida ignorada, router null → null.
+- `wapi-bot-feature.service.spec.ts` (7): env off, org off, ambos on, sin contexto tenant (defensive false), `assertEnabled` lanza `ForbiddenException`, `assertEnabled` pasa cuando ambos on.
+- `wapi-bot-engine.service.spec.ts`: constructor extendido con mocks de `feature` (`isEnabled.mockResolvedValue(true)`) y `router` (`resolve.mockReturnValue(null)`) — todos los tests anteriores siguen pasando.
+- 5/5 specs `wapi-bot/*` ✅, 66/66 tests pasando.
+
+#### Cómo activarlo
+1. **Aplicar la migración** (ya aplicada en dev local):
+   ```sql
+   -- Las columnas ya están creadas. Para habilitar tu org:
+   UPDATE "Organization" SET "botEnabled" = true WHERE id = '<tu-org-id>';
+   ```
+2. **Variables de entorno** (`.env`):
+   ```
+   WAPI_BOT_FEATURE_ENABLED=true
+   VITE_WAPI_BOT_FEATURE_ENABLED=true
+   ```
+3. **Reiniciar dev server** (backend + frontend).
+4. **Verificar**: ir a `/dashboard/wapi/bots` (debe aparecer "Bot guiado" en el sidebar). El editor visual de 4.N.1/4.N.2 sigue funcionando con el flow legacy; el armado multi-topic + router se expone en backend (UI quedó pendiente para 4.O.2).
+
+#### Pendiente (post-4.O.2)
+- Test E2E con un template real con botón `BOT` y payload `OFERTA_X_99` → router → topic correcto.
+- Badge visible en los node views cuando una salida tiene `gotoTopic` (hoy queda implícito en el drawer).
+
+### 4.N.2 — Nodos CAPTURE / MEDIA / CONDITION + interpolación `{{var}}`
+
+#### Added
+- **Tipo de nodo `CAPTURE`** — espera la próxima respuesta de texto del usuario y la guarda en `session.data[saveAs]`. Configurable:
+  - `saveAs` (`/^[a-zA-Z_][a-zA-Z0-9_]*$/`) — nombre de variable.
+  - `validate` opcional: `{ kind:'preset', preset:'email'|'phone'|'number'|'any' }` o `{ kind:'regex', pattern:string }`.
+  - `nextNodeId` (obligatorio) — destino tras captura válida.
+  - `retryNodeId` (opcional) — destino si la validación falla; si se omite, se re-entrega el mismo prompt y se mantiene la sesión.
+- **Tipo de nodo `MEDIA`** — envía media (`image|video|document|audio`) usando `sendMediaById` (reutiliza `mediaId` ya subido a Meta). Acepta:
+  - `mediaId` (string) — `id` que devuelve Meta Graph al subir el binario.
+  - `caption?` — sólo para image/video/document (audio no acepta caption por restricción de Meta).
+  - `filename?` — recomendado para document.
+  - `nextNodeId?` — auto-encadena al siguiente nodo (mismo bucle que MESSAGE).
+- **Tipo de nodo `CONDITION`** — branch sin entrega (transparente al usuario). Cada `branch` tiene un `when`:
+  - `{ kind:'var', var, op:'eq'|'neq'|'contains'|'matches', value }` — evalúa contra `session.data[var]`.
+  - `{ kind:'time', from:'HH:MM', to:'HH:MM' }` — soporta cruce de medianoche (`22:00 → 06:00`).
+  - `{ kind:'weekday', days:number[] }` — `0`=domingo … `6`=sábado, hora local del server.
+  - `elseNextNodeId` (obligatorio) — fallback si ninguna rama matchea.
+- **Interpolación `{{var}}`** (`bot/interpolate.ts`) — todos los textos entregables (`MESSAGE.text`, `MENU.text`, `MEDIA.caption`, `CAPTURE.text`) reemplazan `{{nombre}}` por `session.data[nombre]` antes de enviarse. Tokens sin valor colapsan a `''`. Regex restringida a identificadores válidos (`[a-zA-Z_][a-zA-Z0-9_]*`).
+- **Subida de media para el editor** — endpoint `POST /api/wapi/configs/:id/bot/media` (multipart, 100MB) que invoca `WapiMediaService.uploadToMeta` y devuelve `{ mediaId, mediaType, size, mime }`. El editor visual sube el binario una sola vez y persiste el `mediaId` en el nodo MEDIA.
+- **Frontend — Drawer extendido** (`NodeEditorDrawer.tsx`):
+  - `CaptureEditor`: input `saveAs`, select de validación (preset/regex/none) con campo regex condicional, selects `next` y `retry (opcional)`.
+  - `MediaEditor`: file picker (accept según `mediaType`) → upload → muestra `mediaId` resultante, caption (no audio), filename (document), select `next`.
+  - `ConditionEditor`: lista de branches con `BranchWhenEditor` (var/time/weekday — chips de días para weekday), `else` obligatorio.
+- **Frontend — Vistas custom de nodo** (`nodeViews.tsx`): `CaptureNodeView` (warning, ✓/✗ handles), `MediaNodeView` (success.dark, badge tipo + filename), `ConditionNodeView` (grey.700, un handle por branch + `else`).
+- **Frontend — Toolbar** (`WapiBotsPage.tsx`): botones `CAPTURE` / `MEDIA` / `COND` antes de `HANDOFF`. MiniMap coloreado por kind. Auto-layout (dagre) recalcula `nodeHeight` por kind.
+- **Schema Prisma** — `WapiBotSession.data Json? @default("{}")`. Migración `20260507120000_wapi_bot_session_data` aplicada vía SQL directa (psql/WSL — `prisma generate` falló por DLL lock en Windows).
+
+#### Changed
+- **`WapiBotEngineService.handle`** — máquina de estado:
+  - `text` con `currentNodeKind=CAPTURE` → intenta validar; éxito ⇒ persiste `data` y avanza por `nextNodeId`; falla ⇒ `retryNodeId` o re-entrega prompt.
+  - `text` con `currentNodeKind=MENU` → re-entrega menú (igual que antes).
+  - `text` con cualquier otro estado → cierra sesión y re-arranca desde `startNodeId`.
+  - El bucle `deliverChain`: `CONDITION` se evalúa con `pickConditionBranch` y continúa al destino sin entregar; `MESSAGE`/`MEDIA` con `nextNodeId` auto-encadenan.
+  - Persistencia: nuevo `system.kind: 'bot-capture' | 'bot-media' | 'bot-condition'` (los tres filtran del inbox del operador junto con `bot-menu` / `bot-message`).
+- **`validateBotFlow`** — valida `kind`-aware: regex compilable en CAPTURE, `HH:MM` en CONDITION-time, `days[]` 0..6 en weekday, `audio` sin caption, refs a `nextNodeId`/`retryNodeId`/`branches[].nextNodeId`/`elseNextNodeId` resuelven y no auto-referencian.
+
+#### Tests
+- `interpolate.spec.ts` (9 casos): tokens vacíos, valores ausentes, no-string casts, identificadores inválidos preservados literalmente, etc.
+- `wapi-bot.types.spec.ts` (+6 casos): CAPTURE con preset email + retry, CAPTURE con regex inválida (rechazada), MEDIA audio + caption (rechazada), MEDIA con `mediaId` vacío, CONDITION con time cruzando medianoche, CONDITION con weekday vacío.
+- `wapi-bot-engine.service.spec.ts` (+5 casos): CAPTURE válido → guarda data y entrega siguiente con `{{var}}` interpolado, CAPTURE inválido + retry, CAPTURE inválido sin retry re-entrega prompt, MEDIA → MESSAGE encadena, CONDITION-var con match → branch correcta + interpolación.
+- 22 + 17 = 39 specs `wapi-bot/*` pasando (era 27). Frontend `tsc --noEmit` ✅.
+
+#### Cómo probarlo
+1. **Editor visual** (`/dashboard/wapi/bots`): elegí una config. Toolbar nueva con `CAPTURE`/`MEDIA`/`COND`.
+2. **CAPTURE**: agregar nodo CAPTURE con `text="¿Tu email?"`, `saveAs="email"`, validate preset `email`. Conectar `✓` a un MESSAGE con `text="Gracias {{email}}"`. Marcar el CAPTURE como inicial. Guardar. Mandar texto desde un usuario externo: el bot pide email; si tipea uno inválido, re-entrega el prompt; si tipea uno válido, responde "Gracias usuario@dominio.com".
+3. **MEDIA**: agregar MEDIA, elegir tipo `image`, subir un PNG (el editor llama al endpoint de upload y guarda el `mediaId`), conectar a un MESSAGE. Probar inbound — el bot envía la imagen y luego el mensaje.
+4. **CONDITION-time**: armar `MENU → CONDITION (time 09:00–18:00) → MESSAGE "horario laboral" / else MESSAGE "fuera de horario"`. Probar a distintas horas (cambiando la hora del server o esperando).
+
 ### 4.N.1 — Editor visual del bot (react-flow) + nodo MESSAGE
 
 #### Added

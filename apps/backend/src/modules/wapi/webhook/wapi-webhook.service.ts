@@ -9,6 +9,8 @@ import { WapiMediaService } from '../media/wapi-media.service';
 import { WapiMediaException } from '../media/wapi-media.types';
 import { WapiButtonActionService } from '../button-actions/wapi-button-action.service';
 import { WapiBotEngineService } from '../bot/wapi-bot-engine.service';
+import { WapiBotFeatureService } from '../bot/wapi-bot-feature.service';
+import { WapiBotRouterService } from '../bot/wapi-bot-router.service';
 import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
 import { WapiSendException } from '../sender/wapi-sender.types';
@@ -94,6 +96,8 @@ export class WapiWebhookService {
     private readonly optOut: WapiOptOutService,
     private readonly buttonActions: WapiButtonActionService,
     private readonly botEngine: WapiBotEngineService,
+    private readonly botFeature: WapiBotFeatureService,
+    private readonly botRouter: WapiBotRouterService,
   ) {}
 
   async process(
@@ -449,19 +453,31 @@ export class WapiWebhookService {
         botEnabled: true,
         botFlow: true,
         botSessionTtlMin: true,
+        botTopics: true,
+        botRouter: true,
       } as never,
     })) as
       | (Awaited<ReturnType<typeof this.prisma.scoped.wapiConfig.findFirst>> & {
           botEnabled: boolean;
           botFlow: unknown;
           botSessionTtlMin: number;
+          botTopics: unknown;
+          botRouter: unknown;
         })
       | null;
     if (!cfg || !cfg.isActive) return;
 
     // 0. Bot guiado (4.M). Si está activo y maneja el inbound, omitimos welcome/optout/4.K.
     let botHandled = false;
-    if (cfg.botEnabled && cfg.botFlow && (input.inboundText !== null || input.isBotButton)) {
+    // 4.O.1 — gate AND con feature flag (env + per-org). El motor también
+    // chequea internamente, pero acortamos antes de armar el inbound.
+    const botFeatureOn = await this.botFeature.isEnabled();
+    if (
+      botFeatureOn &&
+      cfg.botEnabled &&
+      (cfg.botTopics || cfg.botFlow) &&
+      (input.inboundText !== null || input.isBotButton)
+    ) {
       const botInbound = input.isBotButton && input.buttonInfo
         ? {
             kind: 'button' as const,
@@ -481,6 +497,8 @@ export class WapiWebhookService {
             botEnabled: cfg.botEnabled,
             botFlow: cfg.botFlow,
             botSessionTtlMin: cfg.botSessionTtlMin,
+            botTopics: cfg.botTopics,
+            botRouter: cfg.botRouter,
           },
           {
             configId: cfg.id,
@@ -570,6 +588,7 @@ export class WapiWebhookService {
         conversationId: input.conversationId,
         phone: input.phone,
         button: input.buttonInfo,
+        botFeatureOn,
       });
     }
   }
@@ -586,10 +605,16 @@ export class WapiWebhookService {
       accessTokenEnc: string;
       isTestMode: boolean;
       optOutConfirmMessage: string | null;
+      botEnabled: boolean;
+      botFlow: unknown;
+      botSessionTtlMin: number;
+      botTopics: unknown;
+      botRouter: unknown;
     };
     conversationId: string;
     phone: string;
     button: ExtractedButtonInfo;
+    botFeatureOn: boolean;
   }): Promise<void> {
     const resolved = await this.buttonActions.resolve({
       buttonId: input.button.buttonId,
@@ -619,6 +644,52 @@ export class WapiWebhookService {
         kind: 'opt-out-confirm',
       });
     }
+    // 4.O.1 — Acción BOT: el payload del botón (buttonId) pasa por el router
+    // del bot, que decide qué tema arrancar. Rompe cualquier sesión activa por
+    // diseño — un payload nuevo manda. Si el feature está off (env u org),
+    // ignoramos silenciosamente: el payload llegó pero no podemos servirlo.
+    if (resolved.action === 'BOT') {
+      if (!input.botFeatureOn || !input.cfg.botEnabled) {
+        this.logger.debug(
+          `BOT action ignored (feature off) configId=${input.cfg.id} buttonId=${input.button.buttonId}`,
+        );
+        return;
+      }
+      const match = this.botRouter.resolve(
+        this.parseRouter(input.cfg.botRouter),
+        { kind: 'template-payload', payload: input.button.buttonId },
+      );
+      if (!match) {
+        this.logger.warn(
+          `BOT action sin topic resuelto buttonId=${input.button.buttonId} configId=${input.cfg.id}`,
+        );
+        return;
+      }
+      await this.botEngine.startTopic(
+        {
+          id: input.cfg.id,
+          phoneNumberId: input.cfg.phoneNumberId,
+          accessTokenEnc: input.cfg.accessTokenEnc,
+          isTestMode: input.cfg.isTestMode,
+          botEnabled: input.cfg.botEnabled,
+          botFlow: input.cfg.botFlow,
+          botSessionTtlMin: input.cfg.botSessionTtlMin,
+          botTopics: input.cfg.botTopics,
+          botRouter: input.cfg.botRouter,
+        },
+        input.conversationId,
+        input.phone,
+        match.topicId,
+        match.seedData,
+      );
+    }
+  }
+
+  /** Parser barato para router: el engine ya lo valida; acá sólo lo necesitamos
+   *  como objeto opaco para el RouterService. */
+  private parseRouter(raw: unknown): import('../bot/wapi-bot.types').BotRouter | null {
+    if (!raw || typeof raw !== 'object') return null;
+    return raw as import('../bot/wapi-bot.types').BotRouter;
   }
 
   /**
