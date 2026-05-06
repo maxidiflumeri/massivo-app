@@ -26,6 +26,7 @@ import StarIcon from '@mui/icons-material/Star';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import RouteIcon from '@mui/icons-material/Route';
+import DataObjectIcon from '@mui/icons-material/DataObject';
 import type { BotTopic } from './types';
 import type { ValidationError } from './validateClient';
 
@@ -39,8 +40,11 @@ interface Props {
   onRename: (id: string) => void;
   onDelete: (id: string) => void;
   onOpenRouter: () => void;
+  onOpenVariables: () => void;
   routerHasErrors: boolean;
   routerRulesCount: number;
+  variablesHasErrors: boolean;
+  variablesCount: number;
 }
 
 /**
@@ -57,8 +61,11 @@ export function TopicsListView({
   onRename,
   onDelete,
   onOpenRouter,
+  onOpenVariables,
   routerHasErrors,
   routerRulesCount,
+  variablesHasErrors,
+  variablesCount,
 }: Props) {
   const [search, setSearch] = useState('');
 
@@ -100,6 +107,16 @@ export function TopicsListView({
           {filtered.length} de {topics.length} tema(s)
         </Typography>
         <Box sx={{ flex: 1 }} />
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<DataObjectIcon />}
+          onClick={onOpenVariables}
+          color={variablesHasErrors ? 'warning' : 'primary'}
+        >
+          Variables ({variablesCount})
+          {variablesHasErrors && <WarningAmberIcon fontSize="small" sx={{ ml: 0.5 }} />}
+        </Button>
         <Button
           variant="outlined"
           size="small"

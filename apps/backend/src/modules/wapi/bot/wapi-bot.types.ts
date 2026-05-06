@@ -720,3 +720,165 @@ export function validateBotRouter(
     },
   };
 }
+
+// =====================================================================
+// 4.O.4 — Variables declarativas
+// =====================================================================
+//
+// Hasta 4.O.3 las variables eran implícitas: salían de CAPTURE.saveAs y de
+// named groups del router (template-payload). El editor obligaba a tipear
+// `{{var}}` a mano. 4.O.4 introduce un panel donde se declaran de antemano —
+// el editor las ofrece como picker en TextFields y Select en CAPTURE.saveAs /
+// CONDITION.var.var. La declaración se persiste en `botVariables` (publicado)
+// y `botVariablesDraft` (borrador), paralelo a topics/router.
+//
+// El motor las usa para sembrar `session.data` con `defaultValue` antes del
+// overlay con seedData del router. No afectan el shape de los nodos: una
+// variable no declarada referenciada en `{{x}}` se sigue tratando como '' al
+// interpolar (warning en validación, no error).
+
+export type BotVariableType = 'string' | 'number' | 'boolean';
+
+export interface BotVariable {
+  /** Identificador en `{{name}}` y session.data — [a-zA-Z_][a-zA-Z0-9_]*. */
+  name: string;
+  type: BotVariableType;
+  /** Texto opcional para que el editor muestre tooltip / ayuda. */
+  description?: string;
+  /**
+   * Valor inicial al arrancar una sesión. Si no está, la variable queda
+   * undefined hasta que un CAPTURE/seedData la complete. El tipo del valor
+   * debe ser compatible con `type`.
+   */
+  defaultValue?: string | number | boolean;
+}
+
+const VAR_DECL_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/**
+ * 4.O.4 — Valida un array de BotVariable. Garantiza:
+ *  - Cada variable tiene name válido y type ∈ {string,number,boolean}.
+ *  - Names únicos.
+ *  - defaultValue (si está) coincide con el type declarado.
+ */
+export function validateBotVariables(input: unknown): {
+  ok: boolean;
+  errors: BotFlowValidationError[];
+  variables: BotVariable[] | null;
+} {
+  const errors: BotFlowValidationError[] = [];
+  if (input === null || input === undefined) {
+    return { ok: true, errors: [], variables: [] };
+  }
+  if (!Array.isArray(input)) {
+    return {
+      ok: false,
+      errors: [{ path: '', message: 'variables debe ser array' }],
+      variables: null,
+    };
+  }
+  const seen = new Set<string>();
+  const out: BotVariable[] = [];
+  for (let i = 0; i < input.length; i++) {
+    const v = input[i] as Record<string, unknown> | null;
+    const vp = `[${i}]`;
+    if (!v || typeof v !== 'object') {
+      errors.push({ path: vp, message: 'objeto requerido' });
+      continue;
+    }
+    if (typeof v.name !== 'string' || !v.name.trim()) {
+      errors.push({ path: `${vp}.name`, message: 'requerido' });
+      continue;
+    }
+    if (!VAR_DECL_NAME_RE.test(v.name)) {
+      errors.push({
+        path: `${vp}.name`,
+        message: 'debe matchear [a-zA-Z_][a-zA-Z0-9_]*',
+      });
+      continue;
+    }
+    if (seen.has(v.name)) {
+      errors.push({ path: `${vp}.name`, message: `duplicado: ${v.name}` });
+      continue;
+    }
+    seen.add(v.name);
+    if (v.type !== 'string' && v.type !== 'number' && v.type !== 'boolean') {
+      errors.push({ path: `${vp}.type`, message: 'esperado string|number|boolean' });
+      continue;
+    }
+    if (v.description !== undefined && v.description !== null) {
+      if (typeof v.description !== 'string') {
+        errors.push({ path: `${vp}.description`, message: 'string requerido' });
+        continue;
+      }
+    }
+    let defaultValue: BotVariable['defaultValue'];
+    if (v.defaultValue !== undefined && v.defaultValue !== null) {
+      const t = typeof v.defaultValue;
+      if (t !== v.type) {
+        errors.push({
+          path: `${vp}.defaultValue`,
+          message: `tipo no coincide con ${v.type}`,
+        });
+        continue;
+      }
+      defaultValue = v.defaultValue as BotVariable['defaultValue'];
+    }
+    out.push({
+      name: v.name,
+      type: v.type,
+      ...(typeof v.description === 'string' && v.description.length > 0
+        ? { description: v.description }
+        : {}),
+      ...(defaultValue !== undefined ? { defaultValue } : {}),
+    });
+  }
+  if (errors.length > 0) return { ok: false, errors, variables: null };
+  return { ok: true, errors: [], variables: out };
+}
+
+/**
+ * 4.O.4 — Auto-importa variables implícitas (CAPTURE.saveAs, named groups del
+ * router) en la lista declarada. Útil para flows pre-existentes que no tenían
+ * panel de variables y al primer save de draft no perderlas. Devuelve un
+ * superset: las ya declaradas tienen prioridad (no se pisan).
+ */
+export function inferImplicitVariables(
+  topics: BotTopic[] | null,
+  router: BotRouter | null,
+  declared: BotVariable[] | null,
+): BotVariable[] {
+  const map = new Map<string, BotVariable>();
+  for (const v of declared ?? []) map.set(v.name, v);
+
+  const addString = (name: string) => {
+    if (!VAR_DECL_NAME_RE.test(name)) return;
+    if (!map.has(name)) {
+      map.set(name, { name, type: 'string' });
+    }
+  };
+
+  for (const t of topics ?? []) {
+    for (const node of Object.values(t.flow.nodes)) {
+      if (node.kind === 'CAPTURE' && typeof node.saveAs === 'string') {
+        addString(node.saveAs);
+      }
+      if (node.kind === 'CONDITION') {
+        for (const b of node.branches) {
+          if (b.when.kind === 'var') addString(b.when.var);
+        }
+      }
+    }
+  }
+  for (const r of router?.rules ?? []) {
+    if (r.kind === 'template-payload') {
+      // Extrae named groups del pattern `(?<name>...)`.
+      const re = /\(\?<([a-zA-Z_][a-zA-Z0-9_]*)>/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(r.pattern)) !== null) {
+        addString(m[1] as string);
+      }
+    }
+  }
+  return Array.from(map.values());
+}

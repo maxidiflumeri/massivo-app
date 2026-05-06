@@ -19,7 +19,8 @@ import { TenantContextInterceptor } from '../../../common/auth/tenant-context.in
 import { PoliciesGuard } from '../../../common/auth/policies.guard';
 import { CheckPolicies } from '../../../common/auth/check-policies.decorator';
 import { WapiBotService } from './wapi-bot.service';
-import { UpdateBotConfigDto } from './wapi-bot.dto';
+import { WapiBotSandboxService } from './wapi-bot-sandbox.service';
+import { SandboxStepDto, SaveBotDraftDto, UpdateBotConfigDto } from './wapi-bot.dto';
 import { WapiBotFeatureGuard } from './wapi-bot-feature.service';
 import type { AppAbility } from '@massivo/permissions';
 
@@ -34,7 +35,10 @@ const BOT_MEDIA_MAX_BYTES = 100 * 1024 * 1024;
 @UseGuards(ClerkAuthGuard, TenantContextGuard, WapiBotFeatureGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
 export class WapiBotController {
-  constructor(private readonly service: WapiBotService) {}
+  constructor(
+    private readonly service: WapiBotService,
+    private readonly sandbox: WapiBotSandboxService,
+  ) {}
 
   @Get()
   @CheckPolicies((ability: AppAbility) => ability.can('read', 'WapiConfig'))
@@ -65,6 +69,57 @@ export class WapiBotController {
       mimetype: file.mimetype,
       originalname: file.originalname,
       size: file.size,
+    });
+  }
+
+  /**
+   * 4.O.3 — Guarda el borrador del bot (botTopicsDraft / botRouterDraft) sin
+   * tocar la versión publicada. El editor visual escribe acá; el motor de
+   * prod sigue ejecutando la última publicada.
+   */
+  @Patch('draft')
+  @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
+  saveDraft(@Param('id') id: string, @Body() dto: SaveBotDraftDto) {
+    return this.service.saveDraft(id, dto);
+  }
+
+  /**
+   * 4.O.3 — Publica el borrador a producción. Copia draft → activo, limpia
+   * draft, sella `botPublishedAt`. 400 si no hay borrador o el draft es inválido.
+   */
+  @Post('publish')
+  @HttpCode(HttpStatus.OK)
+  @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
+  publish(@Param('id') id: string) {
+    return this.service.publish(id);
+  }
+
+  /**
+   * 4.O.3 — Descarta el borrador. La versión publicada queda intacta.
+   */
+  @Post('discard-draft')
+  @HttpCode(HttpStatus.OK)
+  @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
+  discardDraft(@Param('id') id: string) {
+    return this.service.discardDraft(id);
+  }
+
+  /**
+   * 4.O.3 — Step del sandbox/emulador del bot. Corre el flow del draft (o de
+   * la versión publicada según `dto.source`) en memoria — NO toca Meta ni
+   * persiste nada en DB. Sesión per (org, configId, userId, phone). Permite
+   * probar cambios antes de publicar.
+   */
+  @Post('sandbox/step')
+  @HttpCode(HttpStatus.OK)
+  @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
+  sandboxStep(@Param('id') id: string, @Body() dto: SandboxStepDto) {
+    return this.sandbox.step(id, {
+      phone: dto.phone,
+      reset: dto.reset,
+      resetOnly: dto.resetOnly,
+      source: dto.source,
+      inbound: dto.inbound,
     });
   }
 }

@@ -156,6 +156,19 @@ export interface BotRouter {
   defaultTopicId?: string;
 }
 
+// =====================================================================
+// 4.O.4 — Variables declarativas (mirror del backend)
+// =====================================================================
+
+export type BotVariableType = 'string' | 'number' | 'boolean';
+
+export interface BotVariable {
+  name: string;
+  type: BotVariableType;
+  description?: string;
+  defaultValue?: string | number | boolean;
+}
+
 export interface BotConfigSnapshot {
   configId: string;
   botEnabled: boolean;
@@ -164,6 +177,14 @@ export interface BotConfigSnapshot {
   botFlow: BotFlow | null;
   botTopics: BotTopic[] | null;
   botRouter: BotRouter | null;
+  botVariables: BotVariable[] | null;
+  /** 4.O.3 — borrador. null si no hay cambios sin publicar. */
+  botTopicsDraft: BotTopic[] | null;
+  botRouterDraft: BotRouter | null;
+  botVariablesDraft: BotVariable[] | null;
+  botDraftUpdatedAt: string | null;
+  botPublishedAt: string | null;
+  hasUnpublishedChanges: boolean;
 }
 
 export interface UpdateBotPayload {
@@ -172,6 +193,58 @@ export interface UpdateBotPayload {
   botFlow?: BotFlow | null;
   botTopics?: BotTopic[] | null;
   botRouter?: BotRouter | null;
+  botVariables?: BotVariable[] | null;
+}
+
+export interface SaveBotDraftPayload {
+  botTopics?: BotTopic[] | null;
+  botRouter?: BotRouter | null;
+  botVariables?: BotVariable[] | null;
+}
+
+// 4.O.3 — Sandbox
+export type SandboxSource = 'draft' | 'published';
+
+export type SandboxInbound =
+  | { kind: 'text'; body: string }
+  | { kind: 'button'; buttonId: string }
+  | { kind: 'template-payload'; payload: string };
+
+export interface SandboxStepRequest {
+  phone: string;
+  reset?: boolean;
+  resetOnly?: boolean;
+  source?: SandboxSource;
+  inbound?: SandboxInbound;
+}
+
+export interface SandboxOutMessage {
+  id: string;
+  nodeId: string;
+  topicId: string;
+  type: 'text' | 'interactive' | 'image' | 'video' | 'audio' | 'document' | 'sticker';
+  body: string;
+  buttons?: { id: string; title: string }[];
+  media?: {
+    mediaType: 'image' | 'video' | 'audio' | 'document' | 'sticker';
+    mediaId: string;
+    mime?: string | null;
+    filename?: string | null;
+    localPath?: string | null;
+  };
+  handoff?: { escalate: boolean };
+}
+
+export interface SandboxStepResponse {
+  messages: SandboxOutMessage[];
+  session: {
+    topicId: string;
+    nodeId: string;
+    data: Record<string, unknown>;
+  } | null;
+  unavailable?: boolean;
+  errors?: { scope: string; path: string; message: string }[];
+  sourceUsed: 'draft' | 'published' | 'none';
 }
 
 export interface BotMediaUploadResult {

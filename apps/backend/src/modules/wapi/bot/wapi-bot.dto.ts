@@ -1,4 +1,15 @@
-import { IsArray, IsBoolean, IsInt, IsObject, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Max,
+  Min,
+} from 'class-validator';
 
 /**
  * DTO para PATCH /wapi/configs/:id/bot. botFlow / botTopics / botRouter se
@@ -29,4 +40,59 @@ export class UpdateBotConfigDto {
   @IsOptional()
   @IsObject()
   botRouter?: Record<string, unknown> | null;
+
+  // 4.O.4 — variables declarativas
+  @IsOptional()
+  @IsArray()
+  botVariables?: unknown[] | null;
+}
+
+/**
+ * 4.O.3 — DTO para PATCH /wapi/configs/:id/bot/draft. Persiste topics+router
+ * en columnas separadas (`botTopicsDraft` / `botRouterDraft`) sin tocar prod.
+ * El editor visual escribe acá; recién al hacer publish se copia a las
+ * columnas activas que usa el motor.
+ */
+export class SaveBotDraftDto {
+  @IsOptional()
+  @IsArray()
+  botTopics?: unknown[] | null;
+
+  @IsOptional()
+  @IsObject()
+  botRouter?: Record<string, unknown> | null;
+
+  // 4.O.4 — variables del draft.
+  @IsOptional()
+  @IsArray()
+  botVariables?: unknown[] | null;
+}
+
+/**
+ * 4.O.3 — DTO para POST /wapi/configs/:id/bot/sandbox/step. Cliente virtual
+ * del simulador (no se manda nada a Meta). Ver `WapiBotSandboxService.step`.
+ */
+export class SandboxStepDto {
+  @IsString()
+  @MaxLength(40)
+  phone!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  reset?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  resetOnly?: boolean;
+
+  @IsOptional()
+  @IsIn(['draft', 'published'])
+  source?: 'draft' | 'published';
+
+  @IsOptional()
+  @IsObject()
+  inbound?:
+    | { kind: 'text'; body: string }
+    | { kind: 'button'; buttonId: string }
+    | { kind: 'template-payload'; payload: string };
 }

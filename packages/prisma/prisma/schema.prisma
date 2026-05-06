@@ -570,6 +570,20 @@ model WapiConfig {
   // tema 'default' al vuelo si topics está vacío).
   botTopics             Json?
   botRouter             Json?
+  // 4.O.3 — Draft/Publish workflow. botTopicsDraft/botRouterDraft son la versión en edición
+  // (probada en sandbox interno). Recién al publicar se copian a botTopics/botRouter para
+  // que el motor de prod las use. botDraftUpdatedAt/botPublishedAt permiten al UI mostrar
+  // si hay cambios sin publicar y desde cuándo.
+  botTopicsDraft        Json?
+  botRouterDraft        Json?
+  // 4.O.4 — Variables declarativas. Array<{name,type,description?,defaultValue?}>.
+  // El motor las usa para sembrar session.data al iniciar sesión nueva (antes
+  // de aplicar seedData del router). botVariablesDraft mantiene la versión en
+  // edición — al publicar se copia a botVariables.
+  botVariables          Json?
+  botVariablesDraft     Json?
+  botDraftUpdatedAt     DateTime?
+  botPublishedAt        DateTime?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

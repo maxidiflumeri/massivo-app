@@ -21,6 +21,51 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.O.4 — Variables declarativas en el bot
+
+#### Added
+- **Tipos `BotVariable` + validación** (`wapi-bot.types.ts`): tipos válidos `string|number|boolean`, regex de nombre `^[a-zA-Z_][a-zA-Z0-9_]*$`, unicidad, type-match del `defaultValue`. Helper `inferImplicitVariables` escanea `CAPTURE.saveAs`, `CONDITION.var` y named groups `(?<name>...)` en template-payload patterns para sugerir variables a declarar. Refs `{{var}}` no declaradas siguen funcionando (compat) — sólo aparecen como **warning** en `validateBotConfig` (no bloquean publish).
+- **Migración `20260509100000_wapi_bot_variables`**: agrega `botVariables` (jsonb) y `botVariablesDraft` (jsonb) a `WapiConfig`. Aplicada con `npx prisma migrate deploy`.
+- **Persistencia draft+publish** en `WapiBotService` (`saveDraft`/`publish`/`discardDraft`/`update`) — mismo patrón draft↔activo que topics+router.
+- **`bot-flow-runtime.ts`**: helper `variableDefaults` derivado del array de variables, expuesto en `ResolvedFlow`. Usado por engine y sandbox para sembrar `data` al iniciar sesión.
+- **Defaults aplicados al iniciar sesión** en los 3 sites del engine (`wapi-bot-engine.service.ts`) y los 4 sites del sandbox (`wapi-bot-sandbox.service.ts`): `data = { ...variableDefaults, ...seedData }`. El `seedData` del router-restart (template-payload named groups o explicit) sobreescribe el default si lo definió.
+- **Frontend — `VariablesPanel.tsx`**: panel CRUD con tabla (name + type Select + description + default editor por tipo), header con count y botón "Importar N implícita(s)" que crea declaraciones para todas las refs detectadas en topics/router. Quick-add row arriba para agregar variables sin abrir modal.
+- **Frontend — `VarPickerTextField.tsx`**: wrapper de MUI TextField con adornment `{ }` (DataObjectIcon) que abre un menú con las variables declaradas (muestra type + description) e inserta `{{name}}` en la posición actual del cursor vía `selectionStart`/`selectionEnd`. Aplicado en MESSAGE/MENU/HANDOFF/CAPTURE.text + MEDIA.caption.
+- **Frontend — `VariableNameField`** (en `NodeEditorDrawer`): Select con todas las variables declaradas + opción "Otra…" que cae a un TextField libre para nombres ad-hoc. Aplicado en `CAPTURE.saveAs` y `CONDITION.when.var` (los dos lugares donde el flow *escribe* a una variable).
+- **`validateClient.validateVariables`**: paridad client-side de la validación del backend (regex, type, type-match del default, unicidad). Errores se ven en el badge "Variables (N) ⚠" del header de `TopicsListView` y en el Alert del editor.
+- **Wiring en `WapiBotsPage`**: nuevo `view = 'variables'` con breadcrumb + warning Alert + tip propios; botón Variables en `TopicsListView` con badge de errores; `botVariables` incluido en payload de `saveDraft`. `BotConfigSnapshot`, `UpdateBotPayload`, `SaveBotDraftPayload` y `materialize/discard` cargan `botVariablesDraft ?? botVariables`.
+
+### 4.O.3 — Sandbox + Draft/Publish workflow (Block 3 — UI sandbox panel)
+
+#### Added
+- **`SandboxDrawer.tsx`**: drawer lateral (estilo WhatsApp) que corre el bot del config seleccionado en el sandbox. Llama a `POST /api/wapi/configs/:id/bot/sandbox/step` con `phone` (persistido en localStorage) y `source: 'draft'|'published'` (toggle). Renderiza burbujas user/bot, expande media (caption + tipo), muestra botones interactivos (sólo el último mensaje los habilita para evitar respuestas a menus viejos), chip por mensaje con `topicId · nodeId`, banner del `sourceUsed` y de la sesión actual, alerta cuando el flow es `unavailable`. Reset session button. **No toca Meta** — el indicador "Fuente: draft/published" hace explícito qué versión se está probando.
+- **Toolbar de `WapiBotsPage` rediseñada**: 4 acciones — "Probar" (abre `SandboxDrawer`), "Descartar" (sólo visible con `hasUnpublishedChanges`, devuelve a la versión publicada), "Guardar borrador" (persiste topics+router en draft via `saveDraft`; aplica `botEnabled`/`botSessionTtlMin` en paralelo via `update()` si cambiaron — knobs runtime, no contenido), "Publicar" (deshabilitado sin draft o con errores; muestra confirm con resumen "Publicado actual: X temas/Y rules vs Borrador a publicar: X temas/Y rules"). Badge "Sin publicar" / "Publicado" con timestamp tooltip refleja el estado del snapshot.
+- **`materializeTopics` prefiere `botTopicsDraft`** sobre `botTopics`: el editor abre siempre con el último estado del borrador (no se pierden cambios sin publicar al recargar). Mismo fallback al cargar el router (`botRouterDraft ?? botRouter`).
+- **`botApi` extendido** con `saveDraft`, `publish`, `discardDraft`, `sandboxStep`. Tipos `BotConfigSnapshot` con campos draft + `SaveBotDraftPayload`, `SandboxStepRequest`, `SandboxStepResponse`, `SandboxOutMessage`, `SandboxSource`, `SandboxInbound` espejan el backend.
+
+### 4.O.3 — Sandbox + Draft/Publish workflow (Block 2 — sandbox engine)
+
+#### Added
+- **`bot-flow-runtime.ts`**: módulo de helpers puros reusable. Extraídos del engine `resolveTopics`, `handleCapture`, `pickConditionBranch`, `matchesBranch`, `parseHHMM` + tipos `BotData` / `ResolvedFlow`. Garantiza que el sandbox interpreta exactamente la misma lógica que prod (un bug en uno se reproduce en el otro). El engine ahora importa desde acá; cambio sin impacto observable (74→74 specs verdes post-refactor).
+- **`WapiBotSandboxService`** + endpoint `POST /api/wapi/configs/:id/bot/sandbox/step`. Corre `botTopicsDraft ?? botTopics ?? botFlow` en memoria — no toca Meta ni la DB de sesiones/mensajes. Sesión per `(orgId, configId, userId, phone)` con TTL lazy 30 min y cap de 10k sesiones por proceso. Mismo comportamiento que el motor de prod: router-restart para keyword/template-payload, CAPTURE con validación preset/regex, MENU con buttons (botoneras de hasta 3), MEDIA, MESSAGE/HANDOFF, CONDITION en memoria, chain con `BOT_MAX_AUTO_CHAIN`. Devuelve `{ messages, session, sourceUsed, unavailable?, errors? }`.
+- **`SandboxStepDto`** (phone obligatorio, `inbound: text|button` opcional, `reset` / `resetOnly` para limpiar sesión, `source: 'draft'|'published'` con default `'draft'`).
+- **Aislamiento multi-tenant verificado**: la key incluye `organizationId`, así dos orgs distintas que ejecuten sandbox con el mismo `configId` y `phone` numérico no colisionan. Cada user tampoco ve la sesión de otro user de la misma org.
+- **Tests `wapi-bot-sandbox.service.spec.ts` (+6)**: usa draft cuando existe, `source=published` lo sobreescribe, CAPTURE inválido reentrega el mismo nodo, `reset: true` limpia, aislamiento entre orgs, `unavailable=true` cuando no hay nada que correr. Total bot tests: **80 ✅**.
+
+### 4.O.3 — Sandbox + Draft/Publish workflow (Block 1 — backend draft persistence)
+
+#### Added
+- **Migración `20260508140000_wapi_bot_draft_publish`**: agrega 4 columnas a `WapiConfig` — `botTopicsDraft` (jsonb), `botRouterDraft` (jsonb), `botDraftUpdatedAt` (timestamp), `botPublishedAt` (timestamp). El motor de prod sigue ejecutando `botTopics` / `botRouter`; el draft vive aparte para que el editor visual pueda salvarse sin tocar la versión publicada.
+- **`WapiBotService.saveDraft(configId, dto)`**: persiste topics+router en las columnas `*Draft` con la misma validación que `update()`. Al guardar, sella `botDraftUpdatedAt = now`. Si sólo se manda router, valida refs contra topics del draft (o de prod como fallback). NO toca la versión publicada.
+- **`WapiBotService.publish(configId)`**: copia `botTopicsDraft` → `botTopics`, `botRouterDraft` → `botRouter`, limpia las columnas de draft, sella `botPublishedAt`. Re-valida la coherencia draft↔refs como defensa adicional. 400 si no hay draft o si el draft es inválido.
+- **`WapiBotService.discardDraft(configId)`**: limpia las 3 columnas de draft (topics/router/updatedAt). La versión publicada queda intacta.
+- **`BotConfigSnapshot` extendido** con `botTopicsDraft`, `botRouterDraft`, `botDraftUpdatedAt`, `botPublishedAt`, `hasUnpublishedChanges` (true si `botDraftUpdatedAt > botPublishedAt` o si nunca se publicó).
+- **Endpoints nuevos** en `WapiBotController` (reusan permisos `WapiConfig:read|update`):
+  - `PATCH /api/wapi/configs/:id/bot/draft` — `SaveBotDraftDto` (botTopics?, botRouter?).
+  - `POST /api/wapi/configs/:id/bot/publish`.
+  - `POST /api/wapi/configs/:id/bot/discard-draft`.
+- **Tests del servicio** (`wapi-bot.service.spec.ts`, +6 specs): saveDraft no toca prod, publish copia y limpia, discardDraft borra sólo el draft, `hasUnpublishedChanges` con timestamps, publish bloquea si router del draft referencia un topicId que no existe, publish falla sin draft.
+
 ### 4.O.2 — UI multi-topic + Router en el editor visual
 
 #### Fixed

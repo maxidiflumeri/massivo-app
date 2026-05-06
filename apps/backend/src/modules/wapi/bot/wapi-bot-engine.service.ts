@@ -10,18 +10,18 @@ import { interpolate } from './interpolate';
 import {
   BOT_MAX_AUTO_CHAIN,
   BOT_OPTION_PREFIX,
-  validateBotFlow,
-  validateBotTopics,
-  validateBotRouter,
-  type BotCaptureNode,
-  type BotConditionBranch,
-  type BotConditionNode,
   type BotFlow,
   type BotMediaNode,
   type BotNode,
-  type BotRouter,
-  type BotTopic,
 } from './wapi-bot.types';
+import {
+  DEFAULT_TOPIC_ID,
+  handleCapture,
+  pickConditionBranch,
+  resolveTopics as resolveTopicsRuntime,
+  type BotData,
+  type ResolvedFlow,
+} from './bot-flow-runtime';
 import { WapiBotFeatureService } from './wapi-bot-feature.service';
 import { WapiBotRouterService, type BotRouterInput } from './wapi-bot-router.service';
 
@@ -50,6 +50,8 @@ interface CfgForEngine {
   /** 4.O.1 — multi-tema. Si null/empty, el motor materializa `botFlow` como topic 'default'. */
   botTopics?: unknown;
   botRouter?: unknown;
+  /** 4.O.4 — variables declarativas (publicadas). Sembra defaults al iniciar sesión. */
+  botVariables?: unknown;
 }
 
 interface SessionRow {
@@ -61,19 +63,6 @@ interface SessionRow {
   endedAt: Date | null;
   data: unknown;
 }
-
-const DEFAULT_TOPIC_ID = 'default';
-
-interface ResolvedFlow {
-  topics: Map<string, BotTopic>;
-  router: BotRouter | null;
-}
-
-type BotData = Record<string, unknown>;
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^\+?[0-9 \-().]{6,}$/;
-const NUMBER_RE = /^-?\d+(\.\d+)?$/;
 
 /**
  * Motor de bot guiado (4.N + 4.N.2). Es invocado desde
@@ -145,7 +134,8 @@ export class WapiBotEngineService {
             await this.endSession(session.id, 'router-restart');
             session = null;
           }
-          data = { ...explicit.seedData };
+          // 4.O.4 — defaults declarados primero, luego seedData del router pisa.
+          data = { ...resolved.variableDefaults, ...explicit.seedData };
           nextTopicId = t.id;
           nextNodeId = t.flow.startNodeId;
         }
@@ -236,7 +226,8 @@ export class WapiBotEngineService {
         if (match) {
           const t = resolved.topics.get(match.topicId);
           if (t) {
-            data = { ...data, ...match.seedData };
+            // 4.O.4 — defaults primero, luego seedData del router pisa.
+            data = { ...resolved.variableDefaults, ...match.seedData };
             nextTopicId = t.id;
             nextNodeId = t.flow.startNodeId;
           }
@@ -245,6 +236,7 @@ export class WapiBotEngineService {
           // Backward compat: si hay topic 'default' pre-router, arrancar ahí.
           const def = resolved.topics.get(DEFAULT_TOPIC_ID);
           if (def) {
+            data = { ...resolved.variableDefaults };
             nextTopicId = def.id;
             nextNodeId = def.flow.startNodeId;
           }
@@ -295,7 +287,8 @@ export class WapiBotEngineService {
       phone,
       topic.id,
       topic.flow.startNodeId,
-      { ...seedData },
+      // 4.O.4 — defaults declarados, luego seedData del trigger externo pisa.
+      { ...resolved.variableDefaults, ...seedData },
       resolved,
       null,
     );
@@ -390,52 +383,23 @@ export class WapiBotEngineService {
   }
 
   /**
-   * Materializa el conjunto de topics + router. Prioridad: si `botTopics` está
-   * seteado y válido, usar eso. Si no, materializar `botFlow` legacy como un
-   * topic 'default' + router con defaultTopicId='default' (backward compat).
+   * Materializa el conjunto de topics + router via `resolveTopicsRuntime` y
+   * loguea los errores de validación. La lógica pura vive en bot-flow-runtime.ts
+   * (compartida con WapiBotSandboxService).
    */
   private resolveTopics(cfg: CfgForEngine): ResolvedFlow | null {
-    const topicsMap = new Map<string, BotTopic>();
-    let router: BotRouter | null = null;
-
-    if (cfg.botTopics) {
-      const v = validateBotTopics(cfg.botTopics);
-      if (!v.ok || !v.topics) {
-        this.logger.warn(
-          `botTopics inválidos configId=${cfg.id}: ${v.errors.map((e) => `${e.path} ${e.message}`).join('; ')}`,
-        );
-        return null;
-      }
-      for (const t of v.topics) topicsMap.set(t.id, t);
-      if (cfg.botRouter) {
-        const ids = new Set(topicsMap.keys());
-        const rv = validateBotRouter(cfg.botRouter, ids);
-        if (!rv.ok || !rv.router) {
-          this.logger.warn(
-            `botRouter inválido configId=${cfg.id}: ${rv.errors.map((e) => `${e.path} ${e.message}`).join('; ')}`,
-          );
-        } else {
-          router = rv.router;
-        }
-      }
-    } else if (cfg.botFlow) {
-      const v = validateBotFlow(cfg.botFlow);
-      if (!v.ok || !v.flow) {
-        this.logger.warn(
-          `botFlow inválido configId=${cfg.id}: ${v.errors.map((e) => `${e.path} ${e.message}`).join('; ')}`,
-        );
-        return null;
-      }
-      topicsMap.set(DEFAULT_TOPIC_ID, {
-        id: DEFAULT_TOPIC_ID,
-        label: 'Default',
-        flow: v.flow,
-      });
-      router = { rules: [], defaultTopicId: DEFAULT_TOPIC_ID };
-    } else {
-      return null;
+    const r = resolveTopicsRuntime({
+      topics: cfg.botTopics,
+      router: cfg.botRouter,
+      flow: cfg.botFlow,
+      variables: cfg.botVariables,
+    });
+    for (const e of r.errors) {
+      this.logger.warn(
+        `${e.scope === 'topics' ? 'botTopics' : e.scope === 'router' ? 'botRouter' : 'botFlow'} inválido configId=${cfg.id}: ${e.path} ${e.message}`,
+      );
     }
-    return { topics: topicsMap, router };
+    return r.resolved;
   }
 
   async endSessionsForConversation(configId: string, phone: string, reason: string): Promise<void> {
@@ -651,97 +615,6 @@ export class WapiBotEngineService {
 function sessionData(session: SessionRow | null): BotData {
   if (!session || !session.data || typeof session.data !== 'object') return {};
   return { ...(session.data as BotData) };
-}
-
-function handleCapture(
-  node: BotCaptureNode,
-  raw: string,
-  current: BotData,
-): { ok: true; data: BotData } | { ok: false } {
-  const value = (raw ?? '').trim();
-  if (!value) return { ok: false };
-  if (node.validate) {
-    if (node.validate.kind === 'preset') {
-      switch (node.validate.preset) {
-        case 'email':
-          if (!EMAIL_RE.test(value)) return { ok: false };
-          break;
-        case 'phone':
-          if (!PHONE_RE.test(value)) return { ok: false };
-          break;
-        case 'number':
-          if (!NUMBER_RE.test(value)) return { ok: false };
-          break;
-        case 'any':
-          break;
-      }
-    } else if (node.validate.kind === 'regex') {
-      try {
-        if (!new RegExp(node.validate.pattern).test(value)) return { ok: false };
-      } catch {
-        return { ok: false };
-      }
-    }
-  }
-  return { ok: true, data: { ...current, [node.saveAs]: value } };
-}
-
-function pickConditionBranch(
-  node: BotConditionNode,
-  data: BotData,
-  now: Date = new Date(),
-): { nextNodeId?: string; gotoTopic?: string } | null {
-  for (const b of node.branches) {
-    if (matchesBranch(b, data, now)) {
-      return { nextNodeId: b.nextNodeId, gotoTopic: b.gotoTopic };
-    }
-  }
-  if (node.elseNextNodeId || node.elseGotoTopic) {
-    return { nextNodeId: node.elseNextNodeId, gotoTopic: node.elseGotoTopic };
-  }
-  return null;
-}
-
-function matchesBranch(branch: BotConditionBranch, data: BotData, now: Date): boolean {
-  const w = branch.when;
-  if (w.kind === 'var') {
-    const raw = data[w.var];
-    const value = raw === undefined || raw === null ? '' : String(raw);
-    switch (w.op) {
-      case 'eq':
-        return value === w.value;
-      case 'neq':
-        return value !== w.value;
-      case 'contains':
-        return value.toLowerCase().includes(w.value.toLowerCase());
-      case 'matches':
-        try {
-          return new RegExp(w.value).test(value);
-        } catch {
-          return false;
-        }
-    }
-  }
-  if (w.kind === 'time') {
-    const [from, to] = w.between;
-    const cur = now.getHours() * 60 + now.getMinutes();
-    const fromMin = parseHHMM(from);
-    const toMin = parseHHMM(to);
-    if (fromMin === null || toMin === null) return false;
-    if (fromMin <= toMin) return cur >= fromMin && cur <= toMin;
-    // Cruza medianoche: 22:00..06:00.
-    return cur >= fromMin || cur <= toMin;
-  }
-  if (w.kind === 'weekday') {
-    return w.days.includes(now.getDay());
-  }
-  return false;
-}
-
-function parseHHMM(s: string): number | null {
-  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(s);
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
 }
 
 function buildPersistedContent(node: BotNode, data: BotData): Record<string, unknown> {

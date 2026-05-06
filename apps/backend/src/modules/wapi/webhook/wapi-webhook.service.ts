@@ -455,6 +455,7 @@ export class WapiWebhookService {
         botSessionTtlMin: true,
         botTopics: true,
         botRouter: true,
+        botVariables: true,
       } as never,
     })) as
       | (Awaited<ReturnType<typeof this.prisma.scoped.wapiConfig.findFirst>> & {
@@ -463,6 +464,7 @@ export class WapiWebhookService {
           botSessionTtlMin: number;
           botTopics: unknown;
           botRouter: unknown;
+          botVariables: unknown;
         })
       | null;
     if (!cfg || !cfg.isActive) return;
@@ -499,6 +501,7 @@ export class WapiWebhookService {
             botSessionTtlMin: cfg.botSessionTtlMin,
             botTopics: cfg.botTopics,
             botRouter: cfg.botRouter,
+            botVariables: (cfg as unknown as { botVariables?: unknown }).botVariables,
           },
           {
             configId: cfg.id,
@@ -610,6 +613,7 @@ export class WapiWebhookService {
       botSessionTtlMin: number;
       botTopics: unknown;
       botRouter: unknown;
+      botVariables: unknown;
     };
     conversationId: string;
     phone: string;
@@ -676,6 +680,7 @@ export class WapiWebhookService {
           botSessionTtlMin: input.cfg.botSessionTtlMin,
           botTopics: input.cfg.botTopics,
           botRouter: input.cfg.botRouter,
+          botVariables: (input.cfg as unknown as { botVariables?: unknown }).botVariables,
         },
         input.conversationId,
         input.phone,

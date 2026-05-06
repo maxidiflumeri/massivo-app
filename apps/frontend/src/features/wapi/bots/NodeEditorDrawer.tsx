@@ -39,7 +39,9 @@ import type {
   BotMenuOption,
   BotMessageNode,
   BotNode,
+  BotVariable,
 } from './types';
+import { VarPickerTextField } from './VarPickerTextField';
 
 export interface TopicOption {
   id: string;
@@ -57,6 +59,9 @@ interface Props {
   onSetStart: () => void;
   /** 4.O.2 — topics disponibles para destino `gotoTopic`. Excluye el topic actual. */
   availableTopics?: TopicOption[];
+  /** 4.O.4 — variables declaradas, usadas por VarPicker en text fields y por
+   *  los selects de CAPTURE.saveAs / CONDITION.var. */
+  variables?: BotVariable[];
 }
 
 function newOptionId(taken: Set<string>): string {
@@ -85,6 +90,7 @@ export function NodeEditorDrawer({
   onDelete,
   onSetStart,
   availableTopics = [],
+  variables = [],
 }: Props) {
   const node = selectedId ? flow.nodes[selectedId] : null;
   const allIds = Object.keys(flow.nodes);
@@ -156,10 +162,10 @@ export function NodeEditorDrawer({
               </Stack>
 
               {showText && (
-                <TextField
+                <VarPickerTextField
                   label={node.kind === 'CAPTURE' ? 'Prompt' : 'Texto'}
                   value={(node as { text: string }).text}
-                  onChange={(e) => onPatch({ text: e.target.value } as Partial<BotNode>)}
+                  onChange={(next) => onPatch({ text: next } as Partial<BotNode>)}
                   fullWidth
                   multiline
                   minRows={3}
@@ -167,6 +173,7 @@ export function NodeEditorDrawer({
                   size="small"
                   inputProps={{ maxLength: 1024 }}
                   helperText={`${(node as { text: string }).text.length} / 1024 — usá {{var}} para interpolar`}
+                  variables={variables}
                 />
               )}
 
@@ -209,6 +216,7 @@ export function NodeEditorDrawer({
                   allIds={allIds}
                   selfId={selectedId}
                   topics={availableTopics}
+                  variables={variables}
                   onPatch={onPatch}
                 />
               )}
@@ -220,6 +228,7 @@ export function NodeEditorDrawer({
                   selfId={selectedId}
                   configId={configId}
                   topics={availableTopics}
+                  variables={variables}
                   onPatch={onPatch}
                 />
               )}
@@ -230,6 +239,7 @@ export function NodeEditorDrawer({
                   allIds={allIds}
                   selfId={selectedId}
                   topics={availableTopics}
+                  variables={variables}
                   onPatch={onPatch}
                 />
               )}
@@ -370,12 +380,14 @@ function CaptureEditor({
   allIds,
   selfId,
   topics,
+  variables,
   onPatch,
 }: {
   node: BotCaptureNode;
   allIds: string[];
   selfId: string;
   topics: TopicOption[];
+  variables: BotVariable[];
   onPatch: (patch: Partial<BotNode>) => void;
 }) {
   const presetValue =
@@ -383,15 +395,12 @@ function CaptureEditor({
   const captureNoNext = !node.nextNodeId && !node.gotoTopic;
   return (
     <>
-      <TextField
+      <VariableNameField
         label="Guardar como (saveAs)"
-        size="small"
         value={node.saveAs}
-        onChange={(e) =>
-          onPatch({ saveAs: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') } as Partial<BotCaptureNode>)
-        }
-        helperText="Nombre de variable: solo letras/números/_, no empieza con número"
-        inputProps={{ maxLength: 40 }}
+        onChange={(v) => onPatch({ saveAs: v } as Partial<BotCaptureNode>)}
+        variables={variables}
+        helperText="Variable donde se guarda la respuesta. Elegí declarada o tipeá un nombre nuevo."
       />
       <FormControl size="small" fullWidth>
         <InputLabel id="cap-validate">Validación</InputLabel>
@@ -464,6 +473,7 @@ function MediaEditor({
   selfId,
   configId,
   topics,
+  variables,
   onPatch,
 }: {
   node: BotMediaNode;
@@ -471,6 +481,7 @@ function MediaEditor({
   selfId: string;
   configId: string;
   topics: TopicOption[];
+  variables: BotVariable[];
   onPatch: (patch: Partial<BotNode>) => void;
 }) {
   const api = useApi();
@@ -548,16 +559,17 @@ function MediaEditor({
         </Typography>
       )}
       {node.mediaType !== 'audio' && (
-        <TextField
+        <VarPickerTextField
           label="Caption (opcional)"
           size="small"
           value={node.caption ?? ''}
-          onChange={(e) => onPatch({ caption: e.target.value || undefined } as Partial<BotMediaNode>)}
+          onChange={(next) => onPatch({ caption: next || undefined } as Partial<BotMediaNode>)}
           multiline
           minRows={2}
           maxRows={6}
           inputProps={{ maxLength: 1024 }}
           helperText="Soporta {{var}}"
+          variables={variables}
         />
       )}
       {node.mediaType === 'document' && (
@@ -594,12 +606,14 @@ function ConditionEditor({
   allIds,
   selfId,
   topics,
+  variables,
   onPatch,
 }: {
   node: BotConditionNode;
   allIds: string[];
   selfId: string;
   topics: TopicOption[];
+  variables: BotVariable[];
   onPatch: (patch: Partial<BotNode>) => void;
 }) {
   function patchBranch(idx: number, patch: Partial<BotConditionBranch>) {
@@ -650,6 +664,7 @@ function ConditionEditor({
               <BranchWhenEditor
                 when={b.when}
                 onChange={(when) => patchBranch(idx, { when })}
+                variables={variables}
               />
               <Box sx={{ mt: 1 }}>
                 <NextOrTopicSelect
@@ -698,9 +713,11 @@ function ConditionEditor({
 function BranchWhenEditor({
   when,
   onChange,
+  variables,
 }: {
   when: BotConditionWhen;
   onChange: (w: BotConditionWhen) => void;
+  variables: BotVariable[];
 }) {
   return (
     <Stack gap={1}>
@@ -723,13 +740,14 @@ function BranchWhenEditor({
       </FormControl>
       {when.kind === 'var' && (
         <Stack direction="row" gap={1}>
-          <TextField
-            label="Variable"
-            size="small"
-            value={when.var}
-            onChange={(e) => onChange({ ...when, var: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') })}
-            sx={{ width: 120 }}
-          />
+          <Box sx={{ width: 160 }}>
+            <VariableNameField
+              label="Variable"
+              value={when.var}
+              onChange={(name) => onChange({ ...when, var: name })}
+              variables={variables}
+            />
+          </Box>
           <FormControl size="small" sx={{ width: 120 }}>
             <InputLabel>Op</InputLabel>
             <Select
@@ -913,6 +931,93 @@ function NextNodeSelect({
         {targetMissing && (
           <MenuItem value={value} disabled>
             {value} (no existe)
+          </MenuItem>
+        )}
+      </Select>
+    </FormControl>
+  );
+}
+
+/**
+ * 4.O.4 — Editor de "nombre de variable" usado por CAPTURE.saveAs y por el
+ * `var` de las branches de CONDITION. Si hay variables declaradas, muestra un
+ * Select; si elige `__custom__` o no hay declaradas, cae a TextField libre.
+ * Mantiene el contrato del backend: cualquier nombre con regex válida.
+ */
+function VariableNameField({
+  label,
+  value,
+  onChange,
+  variables,
+  helperText,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  variables: BotVariable[];
+  helperText?: string;
+}) {
+  const isDeclared = variables.some((v) => v.name === value);
+  const [customMode, setCustomMode] = useState(
+    () => variables.length === 0 || (value !== '' && !isDeclared),
+  );
+  const useSelect = !customMode && variables.length > 0;
+  if (!useSelect) {
+    return (
+      <TextField
+        label={label}
+        size="small"
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
+        helperText={
+          helperText ?? 'sólo letras/números/_' +
+          (variables.length > 0 ? '' : ' (no hay variables declaradas)')
+        }
+        inputProps={{ maxLength: 40 }}
+        fullWidth
+        InputProps={
+          variables.length > 0
+            ? {
+                endAdornment: (
+                  <Button size="small" onClick={() => setCustomMode(false)} sx={{ mr: -1 }}>
+                    elegir declarada
+                  </Button>
+                ),
+              }
+            : undefined
+        }
+      />
+    );
+  }
+  return (
+    <FormControl size="small" fullWidth>
+      <InputLabel>{label}</InputLabel>
+      <Select
+        label={label}
+        value={isDeclared ? value : ''}
+        onChange={(e) => {
+          const v = String(e.target.value);
+          if (v === '__custom__') {
+            setCustomMode(true);
+            return;
+          }
+          onChange(v);
+        }}
+      >
+        {variables.map((v) => (
+          <MenuItem key={v.name} value={v.name}>
+            <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+              {v.name}
+            </Typography>
+            <Typography variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
+              {v.type}
+            </Typography>
+          </MenuItem>
+        ))}
+        <MenuItem value="__custom__">+ otra (no declarada)</MenuItem>
+        {!isDeclared && value && (
+          <MenuItem value="" disabled>
+            actual: <code style={{ marginLeft: 4 }}>{value}</code> (no declarada)
           </MenuItem>
         )}
       </Select>

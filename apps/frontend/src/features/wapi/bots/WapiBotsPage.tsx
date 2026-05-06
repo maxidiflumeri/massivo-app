@@ -30,6 +30,9 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import EditIcon from '@mui/icons-material/Edit';
 import RouteIcon from '@mui/icons-material/Route';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import PublishIcon from '@mui/icons-material/Publish';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import ScienceIcon from '@mui/icons-material/Science';
 import {
   ReactFlow,
   Controls,
@@ -64,14 +67,18 @@ import type {
   BotNodeKind,
   BotRouter,
   BotTopic,
+  BotVariable,
 } from './types';
 import { autoLayout } from './flowLayout';
 import { nodeTypes } from './nodeViews';
 import { NodeEditorDrawer } from './NodeEditorDrawer';
-import { validateRouter, validateTopics } from './validateClient';
+import { validateRouter, validateTopics, validateVariables } from './validateClient';
 import { RouterPanel } from './RouterPanel';
 import { TopicsListView } from './TopicsListView';
 import { TopicDialog } from './TopicDialog';
+import { SandboxDrawer } from './SandboxDrawer';
+import { VariablesPanel } from './VariablesPanel';
+import { collectImplicitVariableNames } from './implicitVars';
 
 const EMPTY_FLOW: BotFlow = {
   startNodeId: 'start',
@@ -113,6 +120,9 @@ function nodeIdPrefix(kind: BotNodeKind): string {
 }
 
 function materializeTopics(snap: BotConfigSnapshot): BotTopic[] {
+  // 4.O.3 — preferimos draft. El editor SIEMPRE arranca en el último estado
+  // de borrador para no perder cambios; si no hay draft cargamos publicado.
+  if (snap.botTopicsDraft && snap.botTopicsDraft.length > 0) return snap.botTopicsDraft;
   if (snap.botTopics && snap.botTopics.length > 0) return snap.botTopics;
   if (snap.botFlow) {
     return [{ id: 'default', label: 'Principal', flow: snap.botFlow }];
@@ -120,12 +130,21 @@ function materializeTopics(snap: BotConfigSnapshot): BotTopic[] {
   return [{ id: 'default', label: 'Principal', flow: structuredClone(EMPTY_FLOW) }];
 }
 
+function fmtTimestamp(iso: string | null): string {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
 function defaultRouter(topics: BotTopic[]): BotRouter {
   const first = topics[0]?.id;
   return { rules: [], defaultTopicId: first };
 }
 
-type View = 'list' | 'topic' | 'router';
+type View = 'list' | 'topic' | 'router' | 'variables';
 
 export function WapiBotsPage() {
   return (
@@ -148,6 +167,7 @@ function BotsEditorInner() {
     { id: 'default', label: 'Principal', flow: structuredClone(EMPTY_FLOW) },
   ]);
   const [router, setRouter] = useState<BotRouter>({ rules: [], defaultTopicId: 'default' });
+  const [variables, setVariables] = useState<BotVariable[]>([]);
   const [activeTopicId, setActiveTopicId] = useState<string>('default');
   const [view, setView] = useState<View>('list');
   const [topicDialogOpen, setTopicDialogOpen] = useState(false);
@@ -159,6 +179,8 @@ function BotsEditorInner() {
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sandboxOpen, setSandboxOpen] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const reactFlow = useReactFlow();
   const { mode } = useColorMode();
   const layoutAppliedFor = useRef<string | null>(null);
@@ -199,12 +221,14 @@ function BotsEditorInner() {
           return hasPos ? t : { ...t, flow: autoLayout(t.flow) };
         });
         setTopics(laidOut);
-        setRouter(snap.botRouter ?? defaultRouter(laidOut));
+        setRouter(snap.botRouterDraft ?? snap.botRouter ?? defaultRouter(laidOut));
+        setVariables(snap.botVariablesDraft ?? snap.botVariables ?? []);
         setActiveTopicId(laidOut[0]?.id ?? 'default');
         setView('list');
         layoutAppliedFor.current = selectedConfigId;
         setSelectedNodeId(null);
         setDrawerOpen(false);
+        setSandboxOpen(false);
       } catch (e) {
         notify.error((e as Error).message || 'No se pudo cargar el bot');
       } finally {
@@ -342,8 +366,17 @@ function BotsEditorInner() {
   const topicIdSet = useMemo(() => new Set(topics.map((t) => t.id)), [topics]);
   const topicsValidation = useMemo(() => validateTopics(topics), [topics]);
   const routerValidation = useMemo(() => validateRouter(router, topicIdSet), [router, topicIdSet]);
-  const fullyValid = topicsValidation.ok && routerValidation.ok;
-  const allErrors = [...topicsValidation.errors, ...routerValidation.errors];
+  const variablesValidation = useMemo(() => validateVariables(variables), [variables]);
+  const implicitVarNames = useMemo(
+    () => collectImplicitVariableNames(topics, router),
+    [topics, router],
+  );
+  const fullyValid = topicsValidation.ok && routerValidation.ok && variablesValidation.ok;
+  const allErrors = [
+    ...topicsValidation.errors,
+    ...routerValidation.errors,
+    ...variablesValidation.errors,
+  ];
   const activeTopicErrors = useMemo(
     () => topicsValidation.errors.filter((e) => e.path.startsWith(`topics[${activeTopicId}]`)),
     [topicsValidation, activeTopicId],
@@ -590,26 +623,130 @@ function BotsEditorInner() {
     });
   }
 
-  async function handleSave() {
+  /**
+   * 4.O.3 — Guarda el bot como BORRADOR. El motor de prod NO ve estos cambios
+   * hasta que el usuario haga clic en "Publicar". Los flags de runtime
+   * (botEnabled / botSessionTtlMin) sí se aplican on the fly via `update()`
+   * porque no son contenido del flow — son knobs de operación.
+   */
+  async function handleSaveDraft() {
     if (!selectedConfigId) return;
-    if (enabled && !fullyValid) {
-      notify.error('No se puede habilitar con flow/router inválido. Revisá los errores.');
+    if (!topicsValidation.ok) {
+      notify.error('Hay temas con errores. Revisá antes de guardar el borrador.');
+      return;
+    }
+    if (!routerValidation.ok) {
+      notify.error('El router tiene errores. Revisá antes de guardar el borrador.');
+      return;
+    }
+    if (!variablesValidation.ok) {
+      notify.error('Las variables tienen errores. Revisá antes de guardar el borrador.');
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      const snap = await botApi.update(api, selectedConfigId, {
-        botEnabled: enabled,
-        botSessionTtlMin: ttl,
+      const snap = await botApi.saveDraft(api, selectedConfigId, {
         botTopics: topics,
         botRouter: router,
-        botFlow: null,
+        botVariables: variables,
       });
-      setSnapshot(snap);
-      notify.success('Bot guardado');
+      // Aplicar enabled/ttl si cambiaron respecto al snapshot.
+      const enabledChanged = snapshot ? snap.botEnabled !== enabled : true;
+      const ttlChanged = snapshot ? snap.botSessionTtlMin !== ttl : true;
+      let final = snap;
+      if (enabledChanged || ttlChanged) {
+        final = await botApi.update(api, selectedConfigId, {
+          ...(enabledChanged ? { botEnabled: enabled } : {}),
+          ...(ttlChanged ? { botSessionTtlMin: ttl } : {}),
+        });
+      }
+      setSnapshot(final);
+      notify.success('Borrador guardado');
     } catch (e) {
-      const msg = (e as Error).message || 'No se pudo guardar';
+      const msg = (e as Error).message || 'No se pudo guardar el borrador';
+      setError(msg);
+      notify.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * 4.O.3 — Publica el borrador a producción. Confirma con el usuario y muestra
+   * un resumen comparativo (publicado actual vs borrador) para que sepa qué
+   * está empujando live.
+   */
+  async function handlePublish() {
+    if (!selectedConfigId || !snapshot) return;
+    if (!fullyValid) {
+      notify.error('Hay errores en el bot. No se puede publicar.');
+      return;
+    }
+    const draftTopicCount = topics.length;
+    const draftRulesCount = router.rules.length;
+    const publishedTopicCount = snapshot.botTopics?.length ?? 0;
+    const publishedRulesCount = snapshot.botRouter?.rules.length ?? 0;
+    const lines = [
+      'Vas a publicar el borrador a producción. Todos los inbounds van a empezar a usar esta versión.',
+      '',
+      `Publicado actual: ${publishedTopicCount} tema(s), ${publishedRulesCount} regla(s).`,
+      `Borrador a publicar: ${draftTopicCount} tema(s), ${draftRulesCount} regla(s).`,
+    ];
+    const ok = await confirm({
+      title: 'Publicar bot',
+      message: lines.join('\n'),
+      confirmText: 'Publicar',
+    });
+    if (!ok) return;
+    setPublishing(true);
+    setError(null);
+    try {
+      const snap = await botApi.publish(api, selectedConfigId);
+      setSnapshot(snap);
+      notify.success('Bot publicado');
+    } catch (e) {
+      const msg = (e as Error).message || 'No se pudo publicar';
+      setError(msg);
+      notify.error(msg);
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  /**
+   * 4.O.3 — Descarta el borrador y recarga el editor con la versión publicada.
+   */
+  async function handleDiscardDraft() {
+    if (!selectedConfigId || !snapshot) return;
+    const ok = await confirm({
+      title: 'Descartar borrador',
+      message:
+        'Vas a perder los cambios sin publicar. La versión publicada queda intacta y se recarga en el editor.',
+      destructive: true,
+      confirmText: 'Descartar',
+    });
+    if (!ok) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const snap = await botApi.discardDraft(api, selectedConfigId);
+      setSnapshot(snap);
+      const incomingTopics = materializeTopics(snap);
+      const laidOut = incomingTopics.map((t) => {
+        const hasPos = Object.values(t.flow.nodes).some((n) => n.position);
+        return hasPos ? t : { ...t, flow: autoLayout(t.flow) };
+      });
+      setTopics(laidOut);
+      setRouter(snap.botRouterDraft ?? snap.botRouter ?? defaultRouter(laidOut));
+      setVariables(snap.botVariablesDraft ?? snap.botVariables ?? []);
+      setActiveTopicId(laidOut[0]?.id ?? 'default');
+      setView('list');
+      setSelectedNodeId(null);
+      setDrawerOpen(false);
+      notify.success('Borrador descartado');
+    } catch (e) {
+      const msg = (e as Error).message || 'No se pudo descartar el borrador';
       setError(msg);
       notify.error(msg);
     } finally {
@@ -686,15 +823,73 @@ function BotsEditorInner() {
           sx={{ width: 110 }}
           disabled={loading || !selectedConfigId}
         />
+        {snapshot?.hasUnpublishedChanges && (
+          <Tooltip title={`Borrador guardado: ${fmtTimestamp(snapshot.botDraftUpdatedAt)}`}>
+            <Chip
+              size="small"
+              color="warning"
+              variant="outlined"
+              icon={<EditIcon fontSize="small" />}
+              label="Sin publicar"
+            />
+          </Tooltip>
+        )}
+        {snapshot?.botPublishedAt && !snapshot.hasUnpublishedChanges && (
+          <Tooltip title={`Publicado: ${fmtTimestamp(snapshot.botPublishedAt)}`}>
+            <Chip size="small" color="success" variant="outlined" label="Publicado" />
+          </Tooltip>
+        )}
         <Box sx={{ flex: 1 }} />
+        <Tooltip title="Probar el bot en sandbox (no toca Meta)">
+          <span>
+            <Button
+              size="small"
+              variant="outlined"
+              color="info"
+              startIcon={<ScienceIcon />}
+              onClick={() => setSandboxOpen(true)}
+              disabled={loading || !selectedConfigId}
+            >
+              Probar
+            </Button>
+          </span>
+        </Tooltip>
+        {snapshot?.hasUnpublishedChanges && (
+          <Tooltip title="Descartar el borrador y volver a la versión publicada">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                color="warning"
+                startIcon={<DeleteOutlineIcon />}
+                onClick={handleDiscardDraft}
+                disabled={saving || publishing || loading}
+              >
+                Descartar
+              </Button>
+            </span>
+          </Tooltip>
+        )}
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={saving ? <CircularProgress size={14} color="inherit" /> : <SaveIcon />}
+          onClick={handleSaveDraft}
+          disabled={saving || publishing || loading || !selectedConfigId}
+        >
+          Guardar borrador
+        </Button>
         <Button
           variant="contained"
           size="small"
-          startIcon={saving ? <CircularProgress size={14} color="inherit" /> : <SaveIcon />}
-          onClick={handleSave}
-          disabled={saving || loading || !selectedConfigId}
+          color="primary"
+          startIcon={publishing ? <CircularProgress size={14} color="inherit" /> : <PublishIcon />}
+          onClick={handlePublish}
+          disabled={
+            !snapshot?.hasUnpublishedChanges || saving || publishing || loading || !fullyValid
+          }
         >
-          Guardar
+          Publicar
         </Button>
       </Paper>
 
@@ -728,6 +923,22 @@ function BotsEditorInner() {
                     size="small"
                     icon={<WarningAmberIcon fontSize="small" />}
                     label={`${routerValidation.errors.length} error(es)`}
+                    color="warning"
+                    variant="outlined"
+                  />
+                )}
+              </Stack>
+            ) : view === 'variables' ? (
+              <Stack direction="row" alignItems="center" gap={0.5}>
+                <Typography variant="body2" fontWeight={500}>
+                  Variables
+                </Typography>
+                <Chip size="small" label={`${variables.length} declarada(s)`} variant="outlined" />
+                {!variablesValidation.ok && (
+                  <Chip
+                    size="small"
+                    icon={<WarningAmberIcon fontSize="small" />}
+                    label={`${variablesValidation.errors.length} error(es)`}
                     color="warning"
                     variant="outlined"
                   />
@@ -859,14 +1070,24 @@ function BotsEditorInner() {
       {!fullyValid && view !== 'list' && (
         <Alert severity="warning" icon={<WarningAmberIcon />} sx={{ mb: 1 }}>
           {allErrors.length} error(es) — no se podrá habilitar el bot hasta corregirlos.
-          {(view === 'router' ? routerValidation.errors : activeTopicErrors)
+          {(view === 'router'
+            ? routerValidation.errors
+            : view === 'variables'
+              ? variablesValidation.errors
+              : activeTopicErrors
+          )
             .slice(0, 4)
             .map((e, i) => (
               <Typography key={i} variant="caption" sx={{ display: 'block', ml: 1 }}>
                 <code>{e.path}</code> — {e.message}
               </Typography>
             ))}
-          {(view === 'router' ? routerValidation.errors : activeTopicErrors).length > 4 && (
+          {(view === 'router'
+            ? routerValidation.errors
+            : view === 'variables'
+              ? variablesValidation.errors
+              : activeTopicErrors
+          ).length > 4 && (
             <Typography variant="caption" sx={{ display: 'block', ml: 1 }}>
               … y más en otros tabs
             </Typography>
@@ -900,8 +1121,15 @@ function BotsEditorInner() {
             setSelectedNodeId(null);
             setDrawerOpen(false);
           }}
+          onOpenVariables={() => {
+            setView('variables');
+            setSelectedNodeId(null);
+            setDrawerOpen(false);
+          }}
           routerHasErrors={!routerValidation.ok}
           routerRulesCount={router.rules.length}
+          variablesHasErrors={!variablesValidation.ok}
+          variablesCount={variables.length}
         />
       ) : view === 'topic' ? (
         <Box
@@ -957,7 +1185,7 @@ function BotsEditorInner() {
             />
           </ReactFlow>
         </Box>
-      ) : (
+      ) : view === 'router' ? (
         <Box
           sx={{
             flex: 1,
@@ -976,6 +1204,25 @@ function BotsEditorInner() {
             errors={routerValidation.errors}
           />
         </Box>
+      ) : (
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 1,
+            p: 2,
+            overflow: 'auto',
+          }}
+        >
+          <VariablesPanel
+            variables={variables}
+            errors={variablesValidation.errors}
+            implicitNames={implicitVarNames}
+            onChange={setVariables}
+          />
+        </Box>
       )}
 
       <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -989,7 +1236,9 @@ function BotsEditorInner() {
             ? `Tip: click "Editar flow" para entrar al canvas del tema. Botón "Router" para mappings de payload→tema.`
             : view === 'topic'
               ? 'Tip: arrastrá desde el handle derecho para conectar. Click en un nodo para editarlo. Usá "Saltar a tema" para inter-topic.'
-              : 'Las rules se evalúan en orden. La 1ª que matchea gana.'}
+              : view === 'router'
+                ? 'Las rules se evalúan en orden. La 1ª que matchea gana.'
+                : 'Variables declarativas: defaults aplicados al iniciar sesión + autocompletado en la UI.'}
         </Typography>
       </Box>
 
@@ -1003,6 +1252,7 @@ function BotsEditorInner() {
         onSetStart={setSelectedAsStart}
         configId={selectedConfigId}
         availableTopics={drawerTopics}
+        variables={variables}
       />
 
       <TopicDialog
@@ -1011,6 +1261,14 @@ function BotsEditorInner() {
         editing={topicDialogEditing}
         takenIds={dialogTakenIds}
         onSubmit={handleTopicDialogSubmit}
+      />
+
+      <SandboxDrawer
+        open={sandboxOpen}
+        onClose={() => setSandboxOpen(false)}
+        configId={selectedConfigId}
+        hasDraft={!!snapshot?.hasUnpublishedChanges}
+        hasPublished={!!snapshot?.botTopics && snapshot.botTopics.length > 0}
       />
     </Box>
   );

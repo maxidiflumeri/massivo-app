@@ -1,4 +1,4 @@
-import type { BotFlow, BotRouter, BotTopic } from './types';
+import type { BotFlow, BotRouter, BotTopic, BotVariable } from './types';
 
 export interface ValidationError {
   path: string;
@@ -306,5 +306,47 @@ export function validateRouter(
   if (router.defaultTopicId !== undefined) {
     checkTopic(router.defaultTopicId, 'defaultTopicId');
   }
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * 4.O.4 — Espejo cliente del backend `validateBotVariables`. Bloquea publish si
+ * algún declarado tiene shape inválido. Las referencias `{{x}}` no declaradas
+ * se reportan como warnings (no errors) y NO bloquean publish.
+ */
+export function validateVariables(variables: BotVariable[]): {
+  ok: boolean;
+  errors: ValidationError[];
+} {
+  const errors: ValidationError[] = [];
+  const seen = new Set<string>();
+  variables.forEach((v, i) => {
+    const p = `variables[${i}]`;
+    if (!v.name || !v.name.trim()) {
+      errors.push({ path: `${p}.name`, message: 'requerido' });
+    } else if (!VAR_NAME_RE.test(v.name)) {
+      errors.push({ path: `${p}.name`, message: 'nombre inválido' });
+    } else if (seen.has(v.name)) {
+      errors.push({ path: `${p}.name`, message: `nombre duplicado: ${v.name}` });
+    } else {
+      seen.add(v.name);
+    }
+    if (v.type !== 'string' && v.type !== 'number' && v.type !== 'boolean') {
+      errors.push({ path: `${p}.type`, message: 'string | number | boolean' });
+    }
+    if (v.description !== undefined && typeof v.description !== 'string') {
+      errors.push({ path: `${p}.description`, message: 'debe ser string' });
+    }
+    if (v.defaultValue !== undefined) {
+      const t = typeof v.defaultValue;
+      if (v.type === 'string' && t !== 'string') {
+        errors.push({ path: `${p}.defaultValue`, message: 'esperado string' });
+      } else if (v.type === 'number' && (t !== 'number' || !Number.isFinite(v.defaultValue))) {
+        errors.push({ path: `${p}.defaultValue`, message: 'esperado number finito' });
+      } else if (v.type === 'boolean' && t !== 'boolean') {
+        errors.push({ path: `${p}.defaultValue`, message: 'esperado boolean' });
+      }
+    }
+  });
   return { ok: errors.length === 0, errors };
 }

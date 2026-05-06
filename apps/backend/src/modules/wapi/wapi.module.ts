@@ -28,6 +28,7 @@ import {
   WapiBotFeatureService,
 } from './bot/wapi-bot-feature.service';
 import { WapiBotRouterService } from './bot/wapi-bot-router.service';
+import { WapiBotSandboxService } from './bot/wapi-bot-sandbox.service';
 
 @Module({
   imports: [EventsModule],
@@ -60,6 +61,7 @@ import { WapiBotRouterService } from './bot/wapi-bot-router.service';
     WapiBotFeatureService,
     WapiBotFeatureGuard,
     WapiBotRouterService,
+    WapiBotSandboxService,
   ],
   exports: [
     WapiQueueService,
