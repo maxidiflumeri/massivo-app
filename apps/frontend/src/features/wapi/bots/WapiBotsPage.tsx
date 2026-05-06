@@ -26,6 +26,7 @@ import HeadsetMicIcon from '@mui/icons-material/HeadsetMic';
 import KeyboardIcon from '@mui/icons-material/Keyboard';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
+import FunctionsIcon from '@mui/icons-material/Functions';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import EditIcon from '@mui/icons-material/Edit';
 import RouteIcon from '@mui/icons-material/Route';
@@ -107,6 +108,7 @@ function defaultNodeFor(kind: BotNodeKind): BotNode {
     return { kind: 'CAPTURE', text: 'Tu respuesta?', saveAs: 'respuesta', nextNodeId: '' };
   if (kind === 'MEDIA') return { kind: 'MEDIA', mediaType: 'image', mediaId: '' };
   if (kind === 'CONDITION') return { kind: 'CONDITION', branches: [] };
+  if (kind === 'SET_VAR') return { kind: 'SET_VAR', varName: '', value: '' };
   return { kind: 'HANDOFF', text: 'Te derivamos.', escalate: true };
 }
 
@@ -116,6 +118,7 @@ function nodeIdPrefix(kind: BotNodeKind): string {
   if (kind === 'CAPTURE') return 'cap';
   if (kind === 'MEDIA') return 'media';
   if (kind === 'CONDITION') return 'cond';
+  if (kind === 'SET_VAR') return 'set';
   return 'handoff';
 }
 
@@ -250,7 +253,7 @@ function BotsEditorInner() {
   const rfNodes: Node[] = useMemo(() => {
     return Object.entries(flow.nodes).map(([id, node]) => ({
       id,
-      type: node.kind.toLowerCase(),
+      type: node.kind === 'SET_VAR' ? 'setvar' : node.kind.toLowerCase(),
       position: node.position ?? { x: 0, y: 0 },
       data: { id, node, isStart: id === flow.startNodeId },
       selected: id === selectedNodeId,
@@ -330,6 +333,20 @@ function BotsEditorInner() {
             labelStyle: { fontSize: 11 },
           });
         }
+      } else if (
+        node.kind === 'SET_VAR' &&
+        node.nextNodeId &&
+        !node.gotoTopic &&
+        flow.nodes[node.nextNodeId]
+      ) {
+        out.push({
+          id: `${id}__next__${node.nextNodeId}`,
+          source: id,
+          sourceHandle: 'next',
+          target: node.nextNodeId,
+          markerEnd: { type: MarkerType.ArrowClosed },
+          style: { stroke: '#9e9e9e', strokeDasharray: '4 3' },
+        });
       } else if (node.kind === 'CONDITION') {
         node.branches.forEach((b) => {
           if (b.gotoTopic) return;
@@ -494,6 +511,8 @@ function BotsEditorInner() {
             elseNextNodeId:
               node.elseNextNodeId === selectedNodeId ? undefined : node.elseNextNodeId,
           } as BotConditionNode;
+        } else if (node.kind === 'SET_VAR' && node.nextNodeId === selectedNodeId) {
+          cleaned[id] = { ...node, nextNodeId: undefined };
         } else {
           cleaned[id] = node;
         }
@@ -1039,6 +1058,16 @@ function BotsEditorInner() {
               COND
             </Button>
           </Tooltip>
+          <Tooltip title="Agregar SET_VAR (asignación interna de variable)">
+            <Button
+              size="small"
+              startIcon={<FunctionsIcon />}
+              onClick={() => addNode('SET_VAR')}
+              variant="outlined"
+            >
+              SET VAR
+            </Button>
+          </Tooltip>
           <Tooltip title="Agregar HANDOFF">
             <Button
               size="small"
@@ -1356,6 +1385,16 @@ function applyConnection(flow: BotFlow, conn: Connection): BotFlow {
       };
     }
   }
+  if (src.kind === 'SET_VAR' && conn.sourceHandle === 'next') {
+    if (conn.target === conn.source) return flow;
+    return {
+      ...flow,
+      nodes: {
+        ...flow.nodes,
+        [conn.source]: { ...src, nextNodeId: conn.target, gotoTopic: undefined },
+      },
+    };
+  }
   return flow;
 }
 
@@ -1403,6 +1442,9 @@ function disconnectEdges(flow: BotFlow, edgeIds: Set<string>): BotFlow {
         nextNodes[source] = { ...node, elseNextNodeId: undefined } as BotConditionNode;
         changed = true;
       }
+    } else if (node.kind === 'SET_VAR' && handle === 'next') {
+      nextNodes[source] = { ...node, nextNodeId: undefined };
+      changed = true;
     }
   }
   return changed ? { ...flow, nodes: nextNodes } : flow;
@@ -1418,7 +1460,12 @@ function rewriteGotoTopic(flow: BotFlow, oldId: string, newId: string): BotFlow 
       );
       if (opts !== node.options) changed = true;
       nodes[id] = { ...node, options: opts };
-    } else if (node.kind === 'MESSAGE' || node.kind === 'CAPTURE' || node.kind === 'MEDIA') {
+    } else if (
+      node.kind === 'MESSAGE' ||
+      node.kind === 'CAPTURE' ||
+      node.kind === 'MEDIA' ||
+      node.kind === 'SET_VAR'
+    ) {
       if (node.gotoTopic === oldId) {
         changed = true;
         nodes[id] = { ...node, gotoTopic: newId } as BotNode;

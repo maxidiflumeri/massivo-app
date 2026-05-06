@@ -122,7 +122,7 @@ export function VariablesPanel({ variables, errors, implicitNames, onChange }: P
       </Alert>
 
       <Paper variant="outlined" sx={{ p: 1.5 }}>
-        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+        <Stack direction="row" alignItems="flex-start" gap={1} flexWrap="wrap">
           <TextField
             size="small"
             label="Nombre"
@@ -160,6 +160,7 @@ export function VariablesPanel({ variables, errors, implicitNames, onChange }: P
               !VAR_NAME_RE.test(draftName.trim()) ||
               declaredNames.has(draftName.trim())
             }
+            sx={{ height: 40 }}
           >
             Agregar
           </Button>

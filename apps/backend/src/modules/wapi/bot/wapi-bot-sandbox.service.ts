@@ -9,6 +9,7 @@ import {
   type BotNode,
 } from './wapi-bot.types';
 import {
+  applySetVar,
   DEFAULT_TOPIC_ID,
   handleCapture,
   pickConditionBranch,
@@ -395,6 +396,20 @@ export class WapiBotSandboxService {
         if (!currentId) break;
         continue;
       }
+      if (node.kind === 'SET_VAR') {
+        data = applySetVar(node, data, r.resolved.variableTypes);
+        if (node.gotoTopic) {
+          const next = r.resolved.topics.get(node.gotoTopic);
+          if (!next) break;
+          topic = next;
+          topicId = next.id;
+          currentId = next.flow.startNodeId;
+          continue;
+        }
+        currentId = node.nextNodeId ?? null;
+        if (!currentId) break;
+        continue;
+      }
       emit(node, currentId, topicId, data);
       finalNode = node;
       finalId = currentId;
@@ -546,7 +561,7 @@ function buildOutMessage(
   topicId: string,
   data: BotData,
 ): SandboxOutMessage | null {
-  if (node.kind === 'CONDITION') return null;
+  if (node.kind === 'CONDITION' || node.kind === 'SET_VAR') return null;
   if (node.kind === 'MENU') {
     return {
       id,

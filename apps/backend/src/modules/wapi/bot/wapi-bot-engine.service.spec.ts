@@ -645,6 +645,103 @@ describe('WapiBotEngineService', () => {
     expect(bodies).not.toContain('Sos B');
   });
 
+  it('SET_VAR (4.O.5): asigna valor con interpolación, no entrega mensaje, avanza al next', async () => {
+    const flow: BotFlow = {
+      startNodeId: 'ask',
+      nodes: {
+        ask: { kind: 'CAPTURE', text: 'Tu nombre?', saveAs: 'nombre', nextNodeId: 'set' },
+        set: {
+          kind: 'SET_VAR',
+          varName: 'saludo',
+          value: 'Hola {{nombre}}',
+          nextNodeId: 'gate',
+        },
+        gate: {
+          kind: 'CONDITION',
+          branches: [
+            {
+              id: 'b1',
+              when: { kind: 'var', var: 'saludo', op: 'eq', value: 'Hola Juan' },
+              nextNodeId: 'yes',
+            },
+          ],
+          elseNextNodeId: 'no',
+        },
+        yes: { kind: 'MESSAGE', text: 'Hola Juan!' },
+        no: { kind: 'MESSAGE', text: 'no match' },
+      },
+    };
+    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+      id: 'sess-1',
+      currentNodeId: 'ask',
+      expiresAt: new Date(Date.now() + 60_000),
+      endedAt: null,
+      data: {},
+    });
+    const out = await withTenant(() =>
+      svc.handle(
+        { ...cfg, botFlow: flow },
+        {
+          configId: 'cfg-1',
+          conversationId: 'conv-1',
+          phone: '5491100',
+          inbound: { kind: 'text', body: 'Juan' },
+        },
+      ),
+    );
+    expect(out.handled).toBe(true);
+    const bodies = sender.sendText.mock.calls.map((c) => c[1].body);
+    // SET_VAR no envía mensaje, gate evalúa "Hola Juan" === "Hola Juan" → branch yes.
+    expect(bodies).toContain('Hola Juan!');
+    expect(bodies).not.toContain('no match');
+  });
+
+  it('SET_VAR (4.O.5): coerce a number cuando la variable está declarada como number', async () => {
+    const flow: BotFlow = {
+      startNodeId: 'set',
+      nodes: {
+        set: {
+          kind: 'SET_VAR',
+          varName: 'edad',
+          value: '42', // string, debe coercer a 42 (number)
+          nextNodeId: 'gate',
+        },
+        gate: {
+          kind: 'CONDITION',
+          branches: [
+            {
+              id: 'b1',
+              when: { kind: 'var', var: 'edad', op: 'eq', value: '42' },
+              nextNodeId: 'yes',
+            },
+          ],
+          elseNextNodeId: 'no',
+        },
+        yes: { kind: 'MESSAGE', text: 'OK' },
+        no: { kind: 'MESSAGE', text: 'NO' },
+      },
+    };
+    prismaScoped.wapiBotSession.findFirst.mockResolvedValue(null);
+    const out = await withTenant(() =>
+      svc.handle(
+        {
+          ...cfg,
+          botFlow: flow,
+          botVariables: [{ name: 'edad', type: 'number' }],
+        },
+        {
+          configId: 'cfg-1',
+          conversationId: 'conv-1',
+          phone: '5491100',
+          inbound: { kind: 'text', body: 'hola' },
+        },
+      ),
+    );
+    expect(out.handled).toBe(true);
+    const bodies = sender.sendText.mock.calls.map((c) => c[1].body);
+    expect(bodies).toContain('OK');
+  });
+
   it('CONDITION: ninguna rama → elseNextNodeId', async () => {
     const condFlow: BotFlow = {
       startNodeId: 'gate',

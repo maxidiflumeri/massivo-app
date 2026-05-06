@@ -63,7 +63,7 @@ export function validateClient(
     errors.push({ path: 'startNodeId', message: 'El nodo inicial no existe' });
   }
   for (const [id, node] of Object.entries(flow.nodes)) {
-    if (node.kind !== 'MEDIA' && node.kind !== 'CONDITION') {
+    if (node.kind !== 'MEDIA' && node.kind !== 'CONDITION' && node.kind !== 'SET_VAR') {
       if (!node.text || node.text.trim().length === 0) {
         errors.push({ path: `nodes.${id}.text`, message: 'Texto vacío' });
       }
@@ -154,6 +154,27 @@ export function validateClient(
       }
       checkGoto(node.gotoTopic, topicIds, `nodes.${id}.gotoTopic`, errors);
       checkRef(flow, id, node.nextNodeId, `nodes.${id}.nextNodeId`, errors, false);
+    } else if (node.kind === 'SET_VAR') {
+      if (!node.varName || !node.varName.trim()) {
+        errors.push({ path: `nodes.${id}.varName`, message: 'requerido' });
+      } else if (!VAR_NAME_RE.test(node.varName)) {
+        errors.push({ path: `nodes.${id}.varName`, message: 'nombre inválido' });
+      }
+      const tv = typeof node.value;
+      if (tv !== 'string' && tv !== 'number' && tv !== 'boolean') {
+        errors.push({ path: `nodes.${id}.value`, message: 'string|number|boolean' });
+      } else if (tv === 'number' && !Number.isFinite(node.value as number)) {
+        errors.push({ path: `nodes.${id}.value`, message: 'number debe ser finito' });
+      }
+      const hasGoto = checkGoto(node.gotoTopic, topicIds, `nodes.${id}.gotoTopic`, errors);
+      if (node.nextNodeId && node.nextNodeId !== '') {
+        checkRef(flow, id, node.nextNodeId, `nodes.${id}.nextNodeId`, errors, true);
+      } else if (!hasGoto) {
+        errors.push({
+          path: `nodes.${id}.nextNodeId`,
+          message: 'nextNodeId o gotoTopic requerido',
+        });
+      }
     } else if (node.kind === 'CONDITION') {
       if (node.branches.length === 0) {
         errors.push({ path: `nodes.${id}.branches`, message: 'al menos 1 rama' });

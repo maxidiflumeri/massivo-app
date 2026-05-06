@@ -4,7 +4,14 @@
  */
 export const BOT_OPTION_PREFIX = 'bot:';
 
-export type BotNodeKind = 'MENU' | 'MESSAGE' | 'HANDOFF' | 'CAPTURE' | 'MEDIA' | 'CONDITION';
+export type BotNodeKind =
+  | 'MENU'
+  | 'MESSAGE'
+  | 'HANDOFF'
+  | 'CAPTURE'
+  | 'MEDIA'
+  | 'CONDITION'
+  | 'SET_VAR';
 
 export interface BotNodePosition {
   x: number;
@@ -109,13 +116,29 @@ export interface BotConditionNode {
   position?: BotNodePosition;
 }
 
+/**
+ * 4.O.5 — SET_VAR: nodo interno (no envía mensaje al usuario). Asigna `value` a
+ * `session.data[varName]` y avanza al `nextNodeId` (o `gotoTopic`). El motor
+ * coerce al tipo declarado en `botVariables` si la variable está declarada.
+ * Strings se interpolan con `{{otraVar}}` antes de asignar.
+ */
+export interface BotSetVarNode {
+  kind: 'SET_VAR';
+  varName: string;
+  value: string | number | boolean;
+  nextNodeId?: string;
+  gotoTopic?: string;
+  position?: BotNodePosition;
+}
+
 export type BotNode =
   | BotMenuNode
   | BotMessageNode
   | BotHandoffNode
   | BotCaptureNode
   | BotMediaNode
-  | BotConditionNode;
+  | BotConditionNode
+  | BotSetVarNode;
 
 export interface BotFlow {
   startNodeId: string;

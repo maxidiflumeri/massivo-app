@@ -48,7 +48,14 @@ export const BOT_OPTION_PREFIX = 'bot:';
  */
 export const BOT_MAX_AUTO_CHAIN = 8;
 
-export type BotNodeKind = 'MENU' | 'MESSAGE' | 'HANDOFF' | 'CAPTURE' | 'MEDIA' | 'CONDITION';
+export type BotNodeKind =
+  | 'MENU'
+  | 'MESSAGE'
+  | 'HANDOFF'
+  | 'CAPTURE'
+  | 'MEDIA'
+  | 'CONDITION'
+  | 'SET_VAR';
 
 export interface BotNodePosition {
   x: number;
@@ -171,13 +178,41 @@ export interface BotConditionNode {
   position?: BotNodePosition;
 }
 
+/**
+ * 4.O.5 — SET_VAR: nodo interno (no envía mensaje al usuario). Asigna un valor
+ * a una variable de session.data y avanza al `nextNodeId` (o `gotoTopic`).
+ *
+ * Diseño:
+ * - Una sola asignación por nodo (más explícito en el flow visual).
+ * - `value` se guarda como string|number|boolean en el flow. Si es string, se
+ *   pasa por `interpolate({{otraVar}}, data)` antes de asignar — permite copiar
+ *   o derivar valores. Si la variable destino está declarada en `botVariables`,
+ *   el motor coerciona el resultado al tipo declarado (number → Number(), boolean
+ *   → 'true'/'1' truthy). Si la coerción falla, escribe el valor bruto y queda
+ *   a cargo de CONDITION/CAPTURE downstream interpretarlo.
+ * - Cuenta como un step dentro de `BOT_MAX_AUTO_CHAIN` para cortar loops
+ *   (SET_VAR → CONDITION → SET_VAR → ...).
+ * - No es terminal silencioso: si no tiene next ni gotoTopic, queda como nodo
+ *   sin salida (validación lo marca como warning — el motor avanza igual y
+ *   termina el chain ahí, dejando la sesión esperando).
+ */
+export interface BotSetVarNode {
+  kind: 'SET_VAR';
+  varName: string;
+  value: string | number | boolean;
+  nextNodeId?: string;
+  gotoTopic?: string;
+  position?: BotNodePosition;
+}
+
 export type BotNode =
   | BotMenuNode
   | BotMessageNode
   | BotHandoffNode
   | BotCaptureNode
   | BotMediaNode
-  | BotConditionNode;
+  | BotConditionNode
+  | BotSetVarNode;
 
 export interface BotFlow {
   startNodeId: string;
@@ -249,6 +284,7 @@ const VALID_KINDS: ReadonlySet<BotNodeKind> = new Set([
   'CAPTURE',
   'MEDIA',
   'CONDITION',
+  'SET_VAR',
 ]);
 
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -347,8 +383,8 @@ export function validateBotFlow(input: unknown): {
       });
       continue;
     }
-    // text requerido para todos menos MEDIA y CONDITION
-    if (node.kind !== 'MEDIA' && node.kind !== 'CONDITION') {
+    // text requerido para todos menos MEDIA, CONDITION y SET_VAR (internos sin output)
+    if (node.kind !== 'MEDIA' && node.kind !== 'CONDITION' && node.kind !== 'SET_VAR') {
       if (typeof node.text !== 'string' || !node.text.trim()) {
         errors.push({ path: `nodes.${id}.text`, message: 'requerido' });
       }
@@ -552,6 +588,34 @@ export function validateBotFlow(input: unknown): {
       validateNextRef(nodesMap, id, node.elseNextNodeId, `nodes.${id}.elseNextNodeId`, errors, false);
       validateGotoTopic(node.elseGotoTopic, `nodes.${id}.elseGotoTopic`, errors);
     }
+    if (node.kind === 'SET_VAR') {
+      if (typeof node.varName !== 'string' || !node.varName.trim()) {
+        errors.push({ path: `nodes.${id}.varName`, message: 'requerido' });
+      } else if (!VAR_NAME_RE.test(node.varName)) {
+        errors.push({
+          path: `nodes.${id}.varName`,
+          message: 'debe matchear [a-zA-Z_][a-zA-Z0-9_]*',
+        });
+      }
+      const tv = typeof node.value;
+      if (tv !== 'string' && tv !== 'number' && tv !== 'boolean') {
+        errors.push({
+          path: `nodes.${id}.value`,
+          message: 'esperado string|number|boolean',
+        });
+      } else if (tv === 'number' && !Number.isFinite(node.value as number)) {
+        errors.push({ path: `nodes.${id}.value`, message: 'number debe ser finito' });
+      }
+      const hasGoto = validateGotoTopic(node.gotoTopic, `nodes.${id}.gotoTopic`, errors);
+      validateNextRef(
+        nodesMap,
+        id,
+        node.nextNodeId,
+        `nodes.${id}.nextNodeId`,
+        errors,
+        !hasGoto,
+      );
+    }
   }
   if (errors.length > 0) return { ok: false, errors, flow: null };
   return { ok: true, errors: [], flow: input as BotFlow };
@@ -618,7 +682,12 @@ export function validateBotTopics(input: unknown): {
           errors.push({ path: `${np}.${label}`, message: `topic inexistente: ${ref}` });
         }
       };
-      if (node.kind === 'MESSAGE' || node.kind === 'CAPTURE' || node.kind === 'MEDIA') {
+      if (
+        node.kind === 'MESSAGE' ||
+        node.kind === 'CAPTURE' ||
+        node.kind === 'MEDIA' ||
+        node.kind === 'SET_VAR'
+      ) {
         checkRef(node.gotoTopic, 'gotoTopic');
       }
       if (node.kind === 'MENU') {
@@ -867,6 +936,9 @@ export function inferImplicitVariables(
         for (const b of node.branches) {
           if (b.when.kind === 'var') addString(b.when.var);
         }
+      }
+      if (node.kind === 'SET_VAR' && typeof node.varName === 'string') {
+        addString(node.varName);
       }
     }
   }

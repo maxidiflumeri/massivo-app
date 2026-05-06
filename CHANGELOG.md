@@ -21,6 +21,17 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.O.5 — Nodo SET_VAR (asignación interna de variables)
+
+#### Added
+- **Tipo `BotSetVarNode`** (backend + frontend): nuevo `kind: 'SET_VAR'` con `varName`, `value: string|number|boolean`, `nextNodeId?` y `gotoTopic?`. **Nodo interno**: no produce mensaje al usuario — sólo asigna `session.data[varName] = value` y avanza al siguiente nodo en la misma vuelta del chain (counted vs `BOT_MAX_AUTO_CHAIN`).
+- **Coerción por tipo declarado** (`bot-flow-runtime.ts → applySetVar`): si la variable está declarada en `botVariables`, se coerce al tipo (`number → Number()`, `boolean → ['true','1','yes','si','sí']`, `string → String()` con interpolación `{{otraVar}}`). Si no está declarada, se guarda raw (con interpolación si es string). Centralizado para que engine y sandbox compartan exactamente la misma semántica.
+- **Validación** (`wapi-bot.types.ts.validateBotFlow` + `validateClient.ts`): regex de `varName`, type del `value`, finitud del number, exigencia de `nextNodeId | gotoTopic`. SET_VAR queda excluido del check de `text` requerido. `inferImplicitVariables` ahora también escanea `SET_VAR.varName` para sugerir declarar.
+- **Engine + Sandbox** (`wapi-bot-engine.service.ts`, `wapi-bot-sandbox.service.ts`): handler en el chain loop después de CONDITION (`applySetVar` + cambio de topic vía `gotoTopic` o `nextNodeId`). `deliverNode`/`buildOutMessage` defensivamente devuelven `null` para SET_VAR (no emite mensaje). 2 specs nuevos en `wapi-bot-engine.service.spec.ts` (interpolación + coerción a number) — 80→82 verdes.
+- **Frontend — `SetVarNodeView`** (`nodeViews.tsx`): card visual con header gris + `FunctionsIcon`, borde dashed, chip "interno", muestra `{{varName}} = "valor"` en monospace y warning "sin salida" si no hay destino. Handle de entrada (target) y salida (source/`next`).
+- **Frontend — `SetVarEditor`** (`NodeEditorDrawer.tsx`): Select de variables declaradas con `VariableNameField` + input de valor que cambia según el tipo declarado: `number → TextField type="number"` (no deja escribir letras), `boolean → Switch true/false`, `string|undeclared → VarPickerTextField` con interpolación `{{var}}`. Cambiar la variable seleccionada coerce el valor existente al tipo nuevo. Destination con `NextOrTopicSelect` (nodo o gotoTopic).
+- **Toolbar + addNode + flowLayout**: botón "SET VAR" en la palette (icono `FunctionsIcon`), `defaultNodeFor('SET_VAR')` con `varName: '', value: ''`, `nodeIdPrefix → 'set'`. Edge gris dashed renderizada para SET_VAR.next, integrado en `disconnectEdges`/`onConnect`/`rewriteGotoTopic`/auto-rewire on delete y `nodeHeight` en `flowLayout.ts`.
+
 ### 4.O.4 — Variables declarativas en el bot
 
 #### Added

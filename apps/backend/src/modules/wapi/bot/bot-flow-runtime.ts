@@ -7,6 +7,7 @@
  * que prod (un bug en uno se reproduce en el otro). Sin logger, sin DB, sin
  * sender — sólo funciones puras sobre tipos del bot.
  */
+import { interpolate } from './interpolate';
 import {
   validateBotFlow,
   validateBotRouter,
@@ -16,8 +17,10 @@ import {
   type BotConditionBranch,
   type BotConditionNode,
   type BotRouter,
+  type BotSetVarNode,
   type BotTopic,
   type BotVariable,
+  type BotVariableType,
 } from './wapi-bot.types';
 
 export const DEFAULT_TOPIC_ID = 'default';
@@ -33,6 +36,12 @@ export interface ResolvedFlow {
    * pasó variables o todas son sin defaultValue.
    */
   variableDefaults: BotData;
+  /**
+   * 4.O.5 — Tipo declarado por nombre de variable. Usado por `applySetVar` para
+   * coercer el valor asignado al tipo correcto. Variables no declaradas no
+   * aparecen acá (el SET_VAR escribe el valor sin coercer).
+   */
+  variableTypes: Map<string, BotVariableType>;
 }
 
 export interface ResolveTopicsInput {
@@ -66,7 +75,7 @@ export function resolveTopics(input: ResolveTopicsInput): ResolveTopicsResult {
   const errors: ResolveTopicsResult['errors'] = [];
   const topicsMap = new Map<string, BotTopic>();
   let router: BotRouter | null = null;
-  const variableDefaults = buildVariableDefaults(input.variables);
+  const { defaults: variableDefaults, types: variableTypes } = buildVariableMaps(input.variables);
 
   if (input.topics) {
     const v = validateBotTopics(input.topics);
@@ -86,7 +95,7 @@ export function resolveTopics(input: ResolveTopicsInput): ResolveTopicsResult {
         router = rv.router;
       }
     }
-    return { resolved: { topics: topicsMap, router, variableDefaults }, errors };
+    return { resolved: { topics: topicsMap, router, variableDefaults, variableTypes }, errors };
   }
 
   if (input.flow) {
@@ -101,29 +110,34 @@ export function resolveTopics(input: ResolveTopicsInput): ResolveTopicsResult {
       flow: v.flow,
     });
     router = { rules: [], defaultTopicId: DEFAULT_TOPIC_ID };
-    return { resolved: { topics: topicsMap, router, variableDefaults }, errors };
+    return { resolved: { topics: topicsMap, router, variableDefaults, variableTypes }, errors };
   }
 
   return { resolved: null, errors };
 }
 
 /**
- * 4.O.4 — Construye el record de defaults a partir de las variables declaradas.
- * Variables sin defaultValue NO entran al record (queda undefined → motor las
- * trata como '' al interpolar). Si el shape es inválido se devuelve `{}` y se
- * ignora — la validación dura corre al persistir, no al ejecutar.
+ * 4.O.4 — Construye `defaults` (record value-by-name) y `types` (map de
+ * type-by-name) a partir de las variables declaradas. Variables sin
+ * defaultValue NO entran a `defaults`. Si el shape es inválido se devuelven
+ * mapas vacíos — la validación dura corre al persistir, no al ejecutar.
  */
-function buildVariableDefaults(input: unknown): BotData {
-  if (!input) return {};
+function buildVariableMaps(input: unknown): {
+  defaults: BotData;
+  types: Map<string, BotVariableType>;
+} {
+  if (!input) return { defaults: {}, types: new Map() };
   const v = validateBotVariables(input);
-  if (!v.ok || !v.variables) return {};
-  const out: BotData = {};
+  if (!v.ok || !v.variables) return { defaults: {}, types: new Map() };
+  const defaults: BotData = {};
+  const types = new Map<string, BotVariableType>();
   for (const variable of v.variables) {
+    types.set(variable.name, variable.type);
     if (variable.defaultValue !== undefined) {
-      out[variable.name] = variable.defaultValue;
+      defaults[variable.name] = variable.defaultValue;
     }
   }
-  return out;
+  return { defaults, types };
 }
 
 /**
@@ -137,6 +151,69 @@ export function variableDefaultsFromDeclared(declared: BotVariable[] | null): Bo
     if (v.defaultValue !== undefined) out[v.name] = v.defaultValue;
   }
   return out;
+}
+
+/**
+ * 4.O.5 — Aplica un nodo SET_VAR a `data`. Devuelve un nuevo objeto con
+ * `node.varName` seteado al valor coerced al tipo declarado (si existe en
+ * `variableTypes`). Si la variable no está declarada, escribe el valor crudo
+ * (con interpolación si era string).
+ *
+ * Coerción:
+ * - string: si `node.value` es string, se interpola `{{otraVar}}`. Si es
+ *   number/boolean, se castea con String().
+ * - number: si `node.value` es number, se asigna tal cual. Si es string, se
+ *   interpola y se intenta `Number()`. NaN → se escribe el string crudo (la
+ *   interpolación pudo no resolver una var).
+ * - boolean: si `node.value` es boolean, se asigna tal cual. Si es string, se
+ *   interpola y se evalúa truthy: 'true' / '1' / 'yes' / 'si' / 'sí' = true,
+ *   resto = false.
+ */
+export function applySetVar(
+  node: BotSetVarNode,
+  data: BotData,
+  variableTypes: Map<string, BotVariableType>,
+): BotData {
+  const declaredType = variableTypes.get(node.varName);
+  const raw = node.value;
+  let resolved: string | number | boolean;
+  if (typeof raw === 'string') {
+    resolved = interpolate(raw, data);
+  } else {
+    resolved = raw;
+  }
+  if (!declaredType) {
+    return { ...data, [node.varName]: resolved };
+  }
+  if (declaredType === 'string') {
+    return {
+      ...data,
+      [node.varName]: typeof resolved === 'string' ? resolved : String(resolved),
+    };
+  }
+  if (declaredType === 'number') {
+    if (typeof resolved === 'number') {
+      return { ...data, [node.varName]: resolved };
+    }
+    if (typeof resolved === 'boolean') {
+      return { ...data, [node.varName]: resolved ? 1 : 0 };
+    }
+    const n = Number(resolved);
+    return {
+      ...data,
+      [node.varName]: Number.isFinite(n) ? n : resolved,
+    };
+  }
+  // boolean
+  if (typeof resolved === 'boolean') {
+    return { ...data, [node.varName]: resolved };
+  }
+  if (typeof resolved === 'number') {
+    return { ...data, [node.varName]: resolved !== 0 };
+  }
+  const s = String(resolved).trim().toLowerCase();
+  const truthy = s === 'true' || s === '1' || s === 'yes' || s === 'si' || s === 'sí';
+  return { ...data, [node.varName]: truthy };
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

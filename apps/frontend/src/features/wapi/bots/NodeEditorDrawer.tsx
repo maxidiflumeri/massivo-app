@@ -39,6 +39,7 @@ import type {
   BotMenuOption,
   BotMessageNode,
   BotNode,
+  BotSetVarNode,
   BotVariable,
 } from './types';
 import { VarPickerTextField } from './VarPickerTextField';
@@ -95,7 +96,8 @@ export function NodeEditorDrawer({
   const node = selectedId ? flow.nodes[selectedId] : null;
   const allIds = Object.keys(flow.nodes);
   const isStart = selectedId === flow.startNodeId;
-  const showText = node && node.kind !== 'MEDIA' && node.kind !== 'CONDITION';
+  const showText =
+    node && node.kind !== 'MEDIA' && node.kind !== 'CONDITION' && node.kind !== 'SET_VAR';
 
   return (
     <Drawer
@@ -235,6 +237,17 @@ export function NodeEditorDrawer({
 
               {node.kind === 'CONDITION' && (
                 <ConditionEditor
+                  node={node}
+                  allIds={allIds}
+                  selfId={selectedId}
+                  topics={availableTopics}
+                  variables={variables}
+                  onPatch={onPatch}
+                />
+              )}
+
+              {node.kind === 'SET_VAR' && (
+                <SetVarEditor
                   node={node}
                   allIds={allIds}
                   selfId={selectedId}
@@ -1022,6 +1035,118 @@ function VariableNameField({
         )}
       </Select>
     </FormControl>
+  );
+}
+
+/**
+ * 4.O.5 — Editor del nodo SET_VAR. Permite elegir una variable declarada (o
+ * tipear un nombre nuevo) y asignarle un valor. El input cambia según el tipo
+ * declarado: number → TextField numérico, boolean → Switch, string (o no
+ * declarada) → VarPickerTextField con interpolación `{{var}}`.
+ */
+function SetVarEditor({
+  node,
+  allIds,
+  selfId,
+  topics,
+  variables,
+  onPatch,
+}: {
+  node: BotSetVarNode;
+  allIds: string[];
+  selfId: string;
+  topics: TopicOption[];
+  variables: BotVariable[];
+  onPatch: (patch: Partial<BotNode>) => void;
+}) {
+  const declared = variables.find((v) => v.name === node.varName);
+  const declaredType = declared?.type ?? 'string';
+  const noNext = !node.nextNodeId && !node.gotoTopic;
+
+  function setValueForType(nextType: 'string' | 'number' | 'boolean') {
+    if (nextType === 'number') {
+      const n = Number(node.value);
+      onPatch({ value: Number.isFinite(n) ? n : 0 } as Partial<BotSetVarNode>);
+    } else if (nextType === 'boolean') {
+      const b =
+        node.value === true ||
+        (typeof node.value === 'string' &&
+          ['true', '1', 'yes', 'si', 'sí'].includes(node.value.toLowerCase()));
+      onPatch({ value: b } as Partial<BotSetVarNode>);
+    } else {
+      onPatch({ value: String(node.value ?? '') } as Partial<BotSetVarNode>);
+    }
+  }
+
+  return (
+    <>
+      <VariableNameField
+        label="Variable a asignar"
+        value={node.varName}
+        onChange={(v) => {
+          const nextDeclared = variables.find((vv) => vv.name === v);
+          onPatch({ varName: v } as Partial<BotSetVarNode>);
+          if (nextDeclared) setValueForType(nextDeclared.type);
+        }}
+        variables={variables}
+        helperText="Elegí una declarada (recomendado) o tipeá un nombre nuevo."
+      />
+
+      {declaredType === 'boolean' ? (
+        <FormControlLabel
+          control={
+            <Switch
+              checked={node.value === true}
+              onChange={(e) => onPatch({ value: e.target.checked } as Partial<BotSetVarNode>)}
+            />
+          }
+          label={`Valor: ${node.value === true ? 'true' : 'false'}`}
+        />
+      ) : declaredType === 'number' ? (
+        <TextField
+          label="Valor (número)"
+          size="small"
+          type="number"
+          value={typeof node.value === 'number' ? node.value : Number(node.value) || 0}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            onPatch({ value: Number.isFinite(n) ? n : 0 } as Partial<BotSetVarNode>);
+          }}
+          inputProps={{ inputMode: 'decimal' }}
+          fullWidth
+        />
+      ) : (
+        <VarPickerTextField
+          label="Valor"
+          size="small"
+          value={typeof node.value === 'string' ? node.value : String(node.value ?? '')}
+          onChange={(next) => onPatch({ value: next } as Partial<BotSetVarNode>)}
+          fullWidth
+          inputProps={{ maxLength: 1024 }}
+          helperText={
+            declared
+              ? 'Soporta {{var}} para interpolar otras variables.'
+              : 'Variable no declarada → se guarda como string. Soporta {{var}}.'
+          }
+          variables={variables}
+        />
+      )}
+
+      <NextOrTopicSelect
+        nextNodeId={node.nextNodeId}
+        gotoTopic={node.gotoTopic}
+        allIds={allIds.filter((id) => id !== selfId)}
+        topics={topics}
+        onChange={(p) =>
+          onPatch({
+            nextNodeId: p.nextNodeId,
+            gotoTopic: p.gotoTopic,
+          } as Partial<BotSetVarNode>)
+        }
+        error={noNext || (!!node.nextNodeId && !node.gotoTopic && !allIds.includes(node.nextNodeId))}
+        label="Siguiente nodo"
+      />
+    </>
   );
 }
 

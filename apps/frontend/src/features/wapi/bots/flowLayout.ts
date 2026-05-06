@@ -38,9 +38,11 @@ export function autoLayout(flow: BotFlow): BotFlow {
       if (node.retryNodeId && flow.nodes[node.retryNodeId]) g.setEdge(id, node.retryNodeId);
     } else if (node.kind === 'CONDITION') {
       for (const b of node.branches) {
-        if (flow.nodes[b.nextNodeId]) g.setEdge(id, b.nextNodeId);
+        if (b.nextNodeId && flow.nodes[b.nextNodeId]) g.setEdge(id, b.nextNodeId);
       }
       if (node.elseNextNodeId && flow.nodes[node.elseNextNodeId]) g.setEdge(id, node.elseNextNodeId);
+    } else if (node.kind === 'SET_VAR' && node.nextNodeId && flow.nodes[node.nextNodeId]) {
+      g.setEdge(id, node.nextNodeId);
     }
   }
   dagre.layout(g);

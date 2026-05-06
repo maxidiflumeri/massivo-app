@@ -810,6 +810,25 @@ Monorepo con **pnpm workspaces** + **Turborepo**.
 **Pendiente (post-4.O.4)**:
 - Smoke E2E: declarar `nombre` con default `"cliente"` → mensaje `"Hola {{nombre}}"` sin CAPTURE → debe interpolar el default. Confirmar que las refs no declaradas devuelven literal `{{x}}` (compat).
 
+#### 4.O.5 — Nodo SET_VAR (asignación interna de variables) ✅
+
+Permite que el flow asigne valores a variables sin pedírselos al usuario. Útil para precargar defaults condicionales (p.ej. asignar `prioridad="alta"` en una rama de CONDITION sin un CAPTURE), preparar payloads de handoff o normalizar datos derivados.
+
+**Backend ✅**
+- [x] `BotSetVarNode` con `kind: 'SET_VAR'`, `varName`, `value: string|number|boolean`, `nextNodeId? | gotoTopic?` (`wapi-bot.types.ts` + `validateBotFlow` + `inferImplicitVariables`). Excluido del check de `text` requerido.
+- [x] `applySetVar` en `bot-flow-runtime.ts`: coerce al tipo declarado en `botVariables` (number → `Number()`, boolean → `['true','1','yes','si','sí']`, string → interpola `{{var}}` con `interpolate()`). Sin declarar → escribe raw (string interpolado, otros tipos directos). `ResolvedFlow` ahora expone `variableTypes: Map<string, BotVariableType>`.
+- [x] Engine + Sandbox: handler en el chain loop después de CONDITION — no llama a `deliverNode`, avanza solo al `nextNodeId` o cambia topic vía `gotoTopic`. Defensivamente `deliverNode`/`buildOutMessage` retornan null para SET_VAR.
+- [x] 2 specs nuevos en `wapi-bot-engine.service.spec.ts`: (a) interpolación + no entrega de mensaje; (b) coerción de string `'42'` a number cuando la variable está declarada como number. Total: 80→82 verdes.
+
+**Frontend ✅**
+- [x] `BotSetVarNode` mirror en `types.ts` + validación en `validateClient.ts`.
+- [x] `SetVarNodeView` en `nodeViews.tsx`: card con header gris + `FunctionsIcon`, borde dashed, chip "interno", muestra `{{varName}} = "valor"` en monospace, warning "sin salida" si falta destino. Handles target/source.
+- [x] `SetVarEditor` en `NodeEditorDrawer.tsx`: `VariableNameField` para varName + input por tipo (number → `type="number"`, boolean → Switch, string|undeclared → `VarPickerTextField` con interpolación). Cambiar la variable coerce el valor existente al nuevo tipo.
+- [x] Toolbar: botón "SET VAR" en `WapiBotsPage` con `FunctionsIcon`, `defaultNodeFor('SET_VAR')` con `varName: '', value: ''`, `nodeIdPrefix → 'set'`. Edge gris dashed (igual que else de CONDITION) para `next`. Integrado en `onConnect`/`disconnectEdges`/`rewriteGotoTopic`/auto-rewire on delete + `flowLayout.ts`.
+
+**Pendiente (post-4.O.5)**:
+- Smoke en sandbox: nodo SET_VAR antes de un MESSAGE con `{{varName}}` → confirmar que el mensaje renderiza el valor asignado. Confirmar que el chain no genera un mensaje extra.
+
 **Aceptación 4.L:**
 - Crear un virtual number `+5491100000001` ligado a un `WapiConfig` de prueba.
 - Desde el chat-simulator: el cliente virtual escribe "hola" → aparece en el inbox real del team. El operador responde con texto / foto / audio / documento → el simulator muestra el mensaje en la vista cliente con caption + media renderizada. Reacciones (cliente → operador) y botones (template inbound) funcionan end-to-end. Statuses delivered/read se reflejan en los checks azules del operador.

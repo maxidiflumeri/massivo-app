@@ -15,6 +15,7 @@ import {
   type BotNode,
 } from './wapi-bot.types';
 import {
+  applySetVar,
   DEFAULT_TOPIC_ID,
   handleCapture,
   pickConditionBranch,
@@ -333,6 +334,20 @@ export class WapiBotEngineService {
         if (!currentId) break;
         continue;
       }
+      if (node.kind === 'SET_VAR') {
+        data = applySetVar(node, data, resolved.variableTypes);
+        if (node.gotoTopic) {
+          const next = resolved.topics.get(node.gotoTopic);
+          if (!next) break;
+          topic = next;
+          topicId = next.id;
+          currentId = next.flow.startNodeId;
+          continue;
+        }
+        currentId = node.nextNodeId ?? null;
+        if (!currentId) break;
+        continue;
+      }
       await this.deliverNode(cfg, conversationId, phone, currentId, topic.flow, data);
       finalNode = node;
       finalId = currentId;
@@ -516,7 +531,7 @@ export class WapiBotEngineService {
   ): Promise<void> {
     const node = flow.nodes[nodeId];
     if (!node) return;
-    if (node.kind === 'CONDITION') return;
+    if (node.kind === 'CONDITION' || node.kind === 'SET_VAR') return;
     try {
       const senderCfg = {
         phoneNumberId: cfg.phoneNumberId,
