@@ -62,6 +62,19 @@ export interface SendMediaByIdInput {
   filename?: string;
 }
 
+/**
+ * Envío interactivo con quick reply buttons. Meta limita a 3 botones por
+ * mensaje. Usado por el motor de bot guiado (4.M) para presentar nodos MENU.
+ * Header/footer son opcionales — body es obligatorio.
+ */
+export interface SendInteractiveButtonsInput {
+  to: string;
+  body: string;
+  header?: string;
+  footer?: string;
+  buttons: Array<{ id: string; title: string }>;
+}
+
 export interface SendResult {
   metaMessageId: string;
   raw: unknown;

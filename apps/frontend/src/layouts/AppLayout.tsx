@@ -28,7 +28,10 @@ export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { mode, toggleMode } = useColorMode();
-  const isFullBleed = location.pathname.startsWith('/dashboard/wapi/inbox');
+  const isFullBleed =
+    location.pathname.startsWith('/dashboard/wapi/inbox') ||
+    location.pathname.startsWith('/dashboard/wapi/bots') ||
+    location.pathname.startsWith('/dashboard/dev/wapi/chat');
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     return localStorage.getItem(COLLAPSED_KEY) === '1';

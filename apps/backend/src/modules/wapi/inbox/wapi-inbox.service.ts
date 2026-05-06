@@ -18,6 +18,7 @@ import {
   type SendTextInput,
 } from '../sender/wapi-sender.types';
 import { WapiMediaService } from '../media/wapi-media.service';
+import { WapiBotEngineService } from '../bot/wapi-bot-engine.service';
 import {
   WapiMediaException,
   type WapiMediaType,
@@ -80,7 +81,25 @@ export class WapiInboxService {
     private readonly events: EventsService,
     private readonly encryption: EncryptionService,
     private readonly media: WapiMediaService,
+    private readonly botEngine: WapiBotEngineService,
   ) {}
+
+  /**
+   * Cierra cualquier sesión de bot activa para esta conversación. Llamado
+   * desde assign/take/resolve para evitar que el bot siga respondiendo cuando
+   * un operador ya tomó la cuerda. Best-effort.
+   */
+  private async endBotSessionsFor(conversationId: string, reason: string): Promise<void> {
+    try {
+      const conv = await this.prisma.scoped.wapiConversation.findFirst({
+        where: { id: conversationId },
+        select: { configId: true, phone: true },
+      });
+      if (conv) await this.botEngine.endSessionsForConversation(conv.configId, conv.phone, reason);
+    } catch {
+      // best-effort
+    }
+  }
 
   private requireContext() {
     const ctx = TenantContext.current();
@@ -609,6 +628,7 @@ export class WapiInboxService {
       } as never,
       select: { id: true, assignedUserId: true, status: true },
     });
+    await this.endBotSessionsFor(updated.id, 'operator-assign');
     this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
       id: updated.id,
       status: updated.status,
@@ -671,6 +691,7 @@ export class WapiInboxService {
       });
     }
 
+    await this.endBotSessionsFor(updated.id, 'resolved');
     this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
       id: updated.id,
       status: updated.status,

@@ -38,6 +38,7 @@ describe('WapiWebhookService', () => {
   let encryption: { decrypt: jest.Mock };
   let optOut: { resolveKeywords: jest.Mock; matchKeyword: jest.Mock; check: jest.Mock; add: jest.Mock };
   let buttonActions: { resolve: jest.Mock; apply: jest.Mock };
+  let botEngine: { handle: jest.Mock; isBotButtonId: jest.Mock; endSessionsForConversation: jest.Mock };
   let svc: WapiWebhookService;
 
   beforeEach(() => {
@@ -67,6 +68,11 @@ describe('WapiWebhookService', () => {
       resolve: jest.fn().mockResolvedValue(null),
       apply: jest.fn().mockResolvedValue(undefined),
     };
+    botEngine = {
+      handle: jest.fn().mockResolvedValue({ handled: false }),
+      isBotButtonId: jest.fn((id: string | null | undefined) => typeof id === 'string' && id.startsWith('bot:')),
+      endSessionsForConversation: jest.fn().mockResolvedValue(undefined),
+    };
     svc = new WapiWebhookService(
       { scoped: prismaScoped } as never,
       events as never,
@@ -75,6 +81,7 @@ describe('WapiWebhookService', () => {
       encryption as never,
       optOut as never,
       buttonActions as never,
+      botEngine as never,
     );
   });
 
@@ -430,6 +437,120 @@ describe('WapiWebhookService', () => {
       );
       expect(buttonActions.resolve).not.toHaveBeenCalled();
       expect(buttonActions.apply).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('4.M — bot guiado', () => {
+    beforeEach(() => {
+      prismaScoped.wapiConfig.findFirst.mockResolvedValue({
+        id: 'cfg-1',
+        phoneNumberId: 'pn-A',
+        accessTokenEnc: 'tok',
+        isActive: true,
+        isTestMode: true,
+        welcomeMessage: 'Bienvenido!',
+        optOutConfirmMessage: null,
+        optOutKeywords: null,
+        botEnabled: true,
+        botFlow: { startNodeId: 'a', nodes: { a: { kind: 'HANDOFF', text: 'h' } } },
+        botSessionTtlMin: 30,
+      });
+    });
+
+    it('bot maneja texto inbound → no se dispara welcome ni button actions', async () => {
+      botEngine.handle.mockResolvedValue({ handled: true });
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.IN', from: '5491100', timestamp: '1714780000', type: 'text',
+          text: { body: 'hola' },
+        }),
+        mapA,
+      );
+      expect(botEngine.handle).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'cfg-1', botEnabled: true }),
+        expect.objectContaining({
+          configId: 'cfg-1',
+          conversationId: 'conv-1',
+          phone: '5491100',
+          inbound: { kind: 'text', body: 'hola' },
+        }),
+      );
+      // Welcome NO se envió porque botHandled corta el resto.
+      expect(sender.sendText).not.toHaveBeenCalled();
+    });
+
+    it('button con prefijo bot: → se enruta al engine, no a buttonActions de 4.K', async () => {
+      botEngine.handle.mockResolvedValue({ handled: true });
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.BTN', from: '5491100', timestamp: '1714780000', type: 'interactive',
+          interactive: { type: 'button_reply', button_reply: { id: 'bot:soporte', title: 'Soporte' } },
+        }),
+        mapA,
+      );
+      expect(botEngine.handle).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          inbound: expect.objectContaining({ kind: 'button', buttonId: 'bot:soporte' }),
+        }),
+      );
+      expect(buttonActions.resolve).not.toHaveBeenCalled();
+      expect(buttonActions.apply).not.toHaveBeenCalled();
+    });
+
+    it('button SIN prefijo bot: con bot activo → va a buttonActions (4.K)', async () => {
+      buttonActions.resolve.mockResolvedValue({ action: 'INBOX', source: 'default' });
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.BTN', from: '5491100', timestamp: '1714780000', type: 'interactive',
+          interactive: { type: 'button_reply', button_reply: { id: 'INBOX', title: 'Hablar' } },
+          context: { id: 'wamid.OUT' },
+        }),
+        mapA,
+      );
+      expect(botEngine.handle).not.toHaveBeenCalled();
+      expect(buttonActions.resolve).toHaveBeenCalledWith({
+        buttonId: 'INBOX', contextMetaMessageId: 'wamid.OUT',
+      });
+      expect(buttonActions.apply).toHaveBeenCalled();
+    });
+
+    it('bot termina en HANDOFF con escalate → marca priority + emite update', async () => {
+      botEngine.handle.mockResolvedValue({ handled: true, ended: true, escalate: true });
+      prismaScoped.wapiConversation.update.mockResolvedValueOnce({
+        id: 'conv-1', status: 'UNASSIGNED', assignedUserId: null,
+        lastMessageAt: new Date('2026-05-05T10:00:00Z'),
+        unreadCount: 1, priority: true,
+      });
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.IN', from: '5491100', timestamp: '1714780000', type: 'text',
+          text: { body: 'humano' },
+        }),
+        mapA,
+      );
+      const priorityCall = prismaScoped.wapiConversation.update.mock.calls.find(
+        (c) => (c[0] as any).data?.priority === true,
+      );
+      expect(priorityCall).toBeDefined();
+      const eventNames = events.emitToTeam.mock.calls.map((c) => c[1]);
+      expect(eventNames).toContain('wapi.conversation.updated');
+    });
+
+    it('si bot devuelve handled=false → flujo normal (welcome de primera conv)', async () => {
+      botEngine.handle.mockResolvedValue({ handled: false });
+      sender.sendText.mockResolvedValue({ metaMessageId: 'wamid.WELCOME' });
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.IN', from: '5491100', timestamp: '1714780000', type: 'text',
+          text: { body: 'hola' },
+        }),
+        mapA,
+      );
+      expect(botEngine.handle).toHaveBeenCalled();
+      // Welcome SÍ se envía porque el bot dijo handled=false.
+      const sentBodies = sender.sendText.mock.calls.map((c) => c[1]?.body);
+      expect(sentBodies).toContain('Bienvenido!');
     });
   });
 

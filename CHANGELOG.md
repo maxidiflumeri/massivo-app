@@ -21,6 +21,96 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.N.1 — Editor visual del bot (react-flow) + nodo MESSAGE
+
+#### Added
+- **Tipo de nodo `MESSAGE`** — texto plano (sin botones). Acepta `nextNodeId` opcional: con él, el motor encadena automáticamente al siguiente nodo en el mismo inbound (`MESSAGE → MESSAGE → MENU/HANDOFF`); sin él, es terminal silencioso (la sesión queda hasta TTL). Tope `BOT_MAX_AUTO_CHAIN=8` para cortar loops accidentales.
+- **`validateBotFlow` extendido** — acepta `kind: 'MESSAGE'`, valida `nextNodeId` (debe resolver, no auto-referenciar). Mensajes de error refinados.
+- **`WapiBotEngineService.handle`** — ahora ejecuta un bucle de `deliverNode` hasta agotar la cadena de MESSAGE. Última node final determina sesión/end:
+  - `HANDOFF` → end + escalate (igual que antes).
+  - `MENU` → upsert sesión con su id.
+  - `MESSAGE` terminal → upsert sesión apuntando al MESSAGE (siguiente texto del usuario re-arranca el bot).
+- **Persistencia outbound** — `system.kind: 'bot-message'` para los MESSAGE del bot (filtrado del inbox del operador junto con `'bot-menu'`).
+- **`BotNodePosition` + `position?` en cada nodo** — metadata del editor visual (react-flow). El motor la ignora; sólo persiste para que el flow se renderice idéntico tras recargar.
+- **Editor visual con react-flow** — `WapiBotsPage.tsx` reescrito como canvas estilo draw.io:
+  - Nodos custom por kind (MENU/MESSAGE/HANDOFF) con colores distintos y handle por opción (MENU) o handle único (MESSAGE).
+  - Conectar arrastrando handles → setea `nextNodeId` del MENU-option o del MESSAGE.
+  - Borrar edge (Delete/Backspace) → desconecta esa relación en el flow.
+  - Auto-layout con dagre (rankdir=LR). Botón `AutoFixHigh` para reordenar.
+  - Drag de nodos → persiste `position` en el flow JSON.
+  - Toolbar full-bleed: selector de número + switch ON/OFF + TTL + botones Add MENU/MESSAGE/HANDOFF + Auto-layout + Save.
+  - Drawer derecho al click sobre nodo: edita texto, opciones (MENU), nextNodeId (MESSAGE), escalate (HANDOFF), marcar como inicial, eliminar nodo (limpia referencias).
+  - MiniMap, Background, Controls integrados. Snapshot del estado guardado debajo.
+- **Layout** — `/dashboard/wapi/bots` agregado al `isFullBleed` de `AppLayout` (canvas a viewport completo, scroll interno).
+
+#### Changed
+- **`isBotInteractionMessage`** — ahora también filtra `system.kind === 'bot-message'` (operator no ve los MESSAGE automáticos del bot).
+- **`buildPersistedContent`** — soporta MESSAGE → `{ text, system:{kind:'bot-message'} }`.
+
+#### Tests
+- `wapi-bot.types.spec.ts` (+5 casos): MESSAGE con nextNodeId válido, MESSAGE terminal, MESSAGE con nextNodeId fantasma, MESSAGE auto-referencia, MESSAGE con text vacío.
+- `wapi-bot-engine.service.spec.ts` (+3 casos): MESSAGE → MENU encadena, MESSAGE → MESSAGE → HANDOFF (3 sendText + ended), MESSAGE terminal upsertea sesión.
+- 27/27 specs `wapi-bot/*` pasando. Frontend typecheck ✅.
+
+#### Deps
+- `@xyflow/react@latest` (editor de flow), `dagre@latest` (auto-layout), `@types/dagre@dev` en `apps/frontend`.
+
+#### Cómo probarlo
+1. **Editor**: ir a `/dashboard/wapi/bots`. Pickear una WapiConfig.
+2. **Crear MESSAGE**: click en `MESSAGE` (toolbar). Aparece un nodo nuevo en el centro del canvas. Click → drawer derecho → editar texto.
+3. **Conectar nodos**: arrastrar desde el handle (círculo violeta) del MESSAGE → soltar sobre otro nodo. Se crea una flecha. El drawer del MESSAGE refleja el nuevo `nextNodeId`.
+4. **Conectar opción de MENU**: arrastrar desde el handle a la derecha de cada opción del MENU al nodo destino. La flecha aparece con la etiqueta de la opción.
+5. **Borrar conexión**: clickear la flecha → tecla Delete (o Backspace).
+6. **Auto-layout**: si los nodos están desordenados, click en `AutoFixHigh` (varita mágica) → dagre los reordena horizontalmente.
+7. **Eliminar nodo**: drawer derecho → "Eliminar". Las referencias a ese nodo (en MENUs y MESSAGE.nextNodeId) se limpian automáticamente.
+8. **Marcar inicial**: drawer derecho → "Marcar inicial". La chip START se mueve a ese nodo.
+9. **Probar chain MESSAGE en runtime** (Dev Simulator):
+   - Diseñar flow: `start (MESSAGE: "Hola!" next→bienvenida) → bienvenida (MESSAGE: "¿En qué te ayudamos?" next→menu1) → menu1 (MENU con opciones)`. Activar Bot ON, Guardar.
+   - En `/dashboard/dev/wapi/chat` mandar texto cliente. El bot manda los 3 mensajes en secuencia: 2 MESSAGE + 1 MENU con botones.
+   - El operator-view (panel derecho) NO ve los MESSAGE/MENU del bot, solo los inputs del cliente y, si llega a HANDOFF, el handoff.
+10. **Validación**: si dejás un MESSAGE con nextNodeId apuntando a un nodo borrado, el Alert lista el error y no podés guardar con `botEnabled=ON`.
+
+### 4.N — Bot guiado por número (menús con botones + handoff a operador)
+
+#### Added
+- **Schema** — `WapiConfig.botEnabled Boolean @default(false)`, `botFlow Json?`, `botSessionTtlMin Int @default(30)`. Nuevo modelo `WapiBotSession` (`organizationId`, `teamId`, `configId`, `phone`, `currentNodeId`, `startedAt`, `lastInboundAt`, `expiresAt`, `endedAt?`, `endedReason?`) con `@@unique([configId, phone])` + índices por org/team/expiresAt. Migración `20260507100000_wapi_bot_module`. `WapiBotSession` agregado a `TENANT_SCOPED_MODELS`.
+- **`WapiSenderService.sendInteractiveButtons`** — wrapper sobre Meta `interactive` type=button (máx 3 botones, `title` truncado a 20 chars). Tipos `SendInteractiveButtonsInput` exportados.
+- **`WapiBotEngineService`** (`apps/backend/src/modules/wapi/bot/wapi-bot-engine.service.ts`) — núcleo del bot:
+  - `handle(cfg, input)` retorna `{ handled, ended?, escalate? }`. Detecta inbound (texto / button con prefijo `bot:` / button NO bot).
+  - **Disambiguación template (4.K) vs bot**: bot prefija ids con `bot:` (`BOT_OPTION_PREFIX`). Si llega un button con `bot:` y NO hay sesión → `handled=true` silencioso (no rearma flow, evita doble-render). Si NO arranca con `bot:` → `handled=false` y delega al webhook (4.K templates).
+  - **Sesión por (configId, phone)** con TTL configurable. Texto inicial sin sesión → entrega `startNode` y crea sesión. Texto con sesión activa → re-renderiza el menú actual (no avanza). Sesión expirada → cierra (`endedReason='expired'`) y rearranca.
+  - **HANDOFF terminal** → manda texto, cierra sesión (`endedReason='handoff'`), retorna `ended=true` + `escalate?`. El webhook marca `priority=true` en la conversación si `escalate`.
+  - **Persistencia outbound**: cada mensaje del bot queda en `WapiMessage` con `system: { kind: 'bot-menu' | 'bot-handoff' }` y se emite `wapi.message.new` por socket.
+  - `endSessionsForConversation(configId, phone, reason)` — cierra todas las sesiones activas de un teléfono (lo llama `WapiInboxService.assign/resolve` para que el operador "tome" la conversación sin que el bot siga interceptando).
+- **`validateBotFlow`** (`wapi-bot.types.ts`) — validación estructural: `startNodeId` requerido + existente, MENU con 1–3 opciones, `nextNodeId` resuelve, ids de opción únicos, text no vacío, kind ∈ {MENU, HANDOFF}. Devuelve `{ ok, errors[], flow }`.
+- **`WapiBotService` + `WapiBotController`** — `GET /api/wapi/configs/:id/bot` (snapshot) y `PATCH` (update). Bloquea habilitar bot si flow inválido o ausente. CASL reusa `WapiConfig` (read/update).
+- **Webhook integration** — `wapi-webhook.service.ts`: `handleInboundMessage` calcula `isBotButton` con `botEngine.isBotButtonId()`; `tryAutoReplies` carga `botEnabled/botFlow/botSessionTtlMin` y llama `botEngine.handle()` **antes** de welcome/optout/4.K. Si `botHandled` → return early. HANDOFF + escalate → `WapiConversation.priority=true` + `wapi.conversation.updated`. 4.K solo dispara cuando `!isBotButton`.
+- **Inbox integration** — `WapiInboxService.assign()` y `.resolve()` ahora llaman `botEngine.endSessionsForConversation()` (razones `'operator-assign'` / `'resolved'`). Fin de sesión bot ⇄ ciclo operador.
+- **Frontend editor** — `/dashboard/wapi/bots` (`WapiBotsPage.tsx` + `bots/api.ts` + `bots/types.ts`). Selector de WapiConfig, switch `botEnabled`, TTL, selector de nodo inicial, lista vertical de cards (MENU/HANDOFF) con texto + opciones (id, label≤20, nextNodeId via Select). Botones para agregar MENU/HANDOFF/opción. Validación cliente espejada del backend con Alert listando errores. Nueva entrada en sidebar grupo WhatsApp "Bot guiado" (icon `SmartToyIcon`).
+
+#### Changed
+- **`WapiWebhookService` constructor** — 8° arg nuevo `WapiBotEngineService`. Tests + spec actualizados.
+- **`WapiInboxService` constructor** — 7° arg nuevo `WapiBotEngineService`. Spec actualizado con mock provider.
+
+#### Tests
+- `wapi-bot.types.spec.ts` (9 casos del validador): flow mínimo válido, falta/inexistente startNodeId, nextNodeId fantasma, MENU vacío / >3 opciones, ids duplicados, text vacío, kind inválido.
+- `wapi-bot-engine.service.spec.ts` (10 casos): bot deshabilitado → handled=false, flow inválido tolerado, texto inicial sin sesión → entrega startNode + crea sesión, button con sesión → avanza, button sin sesión → silencioso, button NO bot → delega, texto con sesión → re-renderiza, HANDOFF → ended+escalate+cierra sesión, sesión expirada → rearranca, `endSessionsForConversation` cierra todas activas.
+- `wapi-webhook.service.spec.ts` ampliado con bloque `4.M — bot guiado` (5 casos integrando engine en webhook).
+- 161/161 specs wapi pasando. Frontend typecheck ✅.
+
+#### Cómo probarlo (sin Meta)
+1. **Habilitar Dev Simulator**: en `.env` del frontend `VITE_ENABLE_DEV_SIMULATOR=true` y backend `ENABLE_DEV_SIMULATOR=true`. Reiniciar ambos.
+2. **Crear o pickear una `WapiConfig` con `isTestMode=true`** (el sender no llama Meta cuando está activo, solo logea). En `/dashboard/wapi/configs` editar y marcar Test Mode.
+3. **Diseñar el flow**: ir a `/dashboard/wapi/bots`, seleccionar la config, dejar el flow por defecto o customizar (ej: MENU "¿En qué ayudamos?" con opciones Soporte→submenu y Hablar→handoff). Activar **Bot habilitado**, Guardar.
+4. **Probar inbound**: ir a `/dashboard/dev/wapi/chat`, pickear la misma config. Mandar texto del cliente (ej "hola"). Debería:
+   - Aparecer en el thread del operador el mensaje del cliente.
+   - Inmediatamente después, el mensaje del bot con los botones (interactivo). En `isTestMode` el sender no manda nada a Meta, pero queda persistido en `WapiMessage` con `system.kind='bot-menu'` y se ve en el thread.
+5. **Click en una opción del bot**: en el chat simulado, hay 3 botones rápidos arriba del composer del cliente — esos son para 4.K (INBOX/BAJA/IGNORAR), NO sirven para el bot. Para simular el reply del cliente al botón del bot, usar `POST /api/dev/wapi/simulate/inbound/button` con `buttonId='bot:<opcionId>'` (ej `bot:soporte`). Curl directo o agregar un input al chat simulado si querés.
+6. **Llegar a HANDOFF**: cuando el bot llega a un nodo HANDOFF, debería mandar el texto, cerrar la sesión (verificable en DB: `WapiBotSession.endedReason='handoff'`), y si `escalate=true` la conversación queda con ⭐ (priority) en el inbox.
+7. **Tomar la conversación**: en `/dashboard/wapi/inbox` clickear "Tomar". El operador asume control → `endSessionsForConversation('operator-assign')` cierra cualquier sesión activa (si había). Cualquier reply nuevo del cliente NO va a relanzar el bot mientras esté ASSIGNED.
+8. **Resolver**: al resolver, también se cierran sesiones (razón `'resolved'`).
+9. **Validar errores**: en el editor, intentar guardar con `botEnabled=true` y un MENU sin opciones → debe mostrar Alert + bloquear en backend (`BadRequestException`).
+
 ### 4.K — Botones interactivos en templates (INBOX / BAJA / IGNORAR)
 
 #### Added

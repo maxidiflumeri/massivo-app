@@ -8,6 +8,7 @@ import { inboxApi, quickRepliesApi } from './api';
 import { ConversationList, type InboxConfigOption } from './ConversationList';
 import { ConversationHeader } from './ConversationHeader';
 import { ConversationThread } from './ConversationThread';
+import { isBotInteractionMessage } from './MessageBubble';
 import { MessageComposer } from './MessageComposer';
 import { AssignDialog } from './AssignDialog';
 import { ResolveDialog } from './ResolveDialog';
@@ -514,7 +515,7 @@ export function WapiInboxPage() {
               onToggleRead={handleToggleRead}
             />
             <ConversationThread
-              messages={messages}
+              messages={messages.filter((m) => !isBotInteractionMessage(m))}
               loading={thLoading}
               hasMore={msgMore}
               onLoadMore={loadOlderMessages}

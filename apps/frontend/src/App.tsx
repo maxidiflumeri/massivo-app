@@ -19,6 +19,7 @@ import { WapiTemplatesListPage } from './features/wapi/templates/WapiTemplatesLi
 import { WapiTemplateEditorPage } from './features/wapi/templates/WapiTemplateEditorPage';
 import { WapiInboxPage } from './features/wapi/inbox/WapiInboxPage';
 import { WapiQuickRepliesPage } from './features/wapi/quick-replies/WapiQuickRepliesPage';
+import { WapiBotsPage } from './features/wapi/bots/WapiBotsPage';
 import { WapiSimulatorPage } from './features/dev/WapiSimulatorPage';
 import { WapiSimulatorChatPage } from './features/dev/WapiSimulatorChatPage';
 
@@ -60,6 +61,7 @@ export function App() {
         <Route path="wapi/configs" element={<WapiConfigsPage />} />
         <Route path="wapi/inbox" element={<WapiInboxPage />} />
         <Route path="wapi/quick-replies" element={<WapiQuickRepliesPage />} />
+        <Route path="wapi/bots" element={<WapiBotsPage />} />
         <Route path="wapi/templates" element={<WapiTemplatesListPage />} />
         <Route path="wapi/templates/new" element={<WapiTemplateEditorPage />} />
         {DEV_SIMULATOR_ENABLED && (

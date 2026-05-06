@@ -135,6 +135,7 @@ model Organization {
   wapiOptOuts         WapiOptOut[]
   wapiQuickReplies    WapiQuickReply[]
   wapiResolutionNotes WapiResolutionNote[]
+  wapiBotSessions     WapiBotSession[]
 
   contacts       Contact[]
   tags           Tag[]
@@ -175,6 +176,7 @@ model Team {
   wapiOptOuts         WapiOptOut[]
   wapiQuickReplies    WapiQuickReply[]
   wapiResolutionNotes WapiResolutionNote[]
+  wapiBotSessions     WapiBotSession[]
 
   contacts       Contact[]
   tags           Tag[]
@@ -546,6 +548,16 @@ model WapiConfig {
   // mensaje como si Meta hubiera respondido OK. Usado por la página
   // /dashboard/dev/wapi/chat para simular ida-vuelta completo sin tocar Meta.
   isTestMode            Boolean  @default(false)
+  // Bot guiado por número (4.M). Si botEnabled=true y botFlow no es null, el
+  // webhook intercepta los inbounds y los pasa por el motor de bot antes que
+  // welcome/opt-out/4.K. botFlow es un JSON con shape:
+  //   { startNodeId: string, nodes: { [id]: { kind: 'MENU'|'HANDOFF', text: string,
+  //     options?: [{ id, label, nextNodeId }] } } }
+  // sessionTtlMin define después de cuántos minutos sin interacción la sesión
+  // del bot expira (cliente vuelve a empezar en startNodeId al próximo inbound).
+  botEnabled            Boolean  @default(false)
+  botFlow               Json?
+  botSessionTtlMin      Int      @default(30)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -553,6 +565,7 @@ model WapiConfig {
   team          Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
   campaigns     WapiCampaign[]
   conversations WapiConversation[]
+  botSessions   WapiBotSession[]
 
   @@unique([teamId, phoneNumberId])
   @@index([organizationId])
@@ -785,6 +798,33 @@ model WapiResolutionNote {
   @@index([organizationId])
   @@index([teamId])
   @@index([conversationId, createdAt])
+}
+
+// Sesión de bot guiado (4.M). Una sesión activa = el cliente está navegando el
+// flow del bot. Cuando llega un inbound, el motor busca por (configId, phone) y
+// si existe + no expiró, decide el próximo nodo según la opción seleccionada.
+// Sesión finaliza cuando se llega a un nodo HANDOFF o el operador toma manual.
+model WapiBotSession {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  configId       String
+  phone          String
+  currentNodeId  String
+  startedAt      DateTime @default(now())
+  lastInboundAt  DateTime @default(now())
+  expiresAt      DateTime
+  endedAt        DateTime?
+  endedReason    String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  config       WapiConfig   @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, phone])
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([expiresAt])
 }
 
 // ============================================================

@@ -4,6 +4,7 @@ import {
   META_AUTH_CODES,
   META_RATE_LIMIT_CODES,
   WapiSendException,
+  type SendInteractiveButtonsInput,
   type SendMediaByIdInput,
   type SendMediaInput,
   type SendResult,
@@ -102,6 +103,41 @@ export class WapiSenderService {
       to: input.to,
       type: input.type,
       [input.type]: media,
+    });
+  }
+
+  /**
+   * Envía un mensaje interactive con quick reply buttons (Meta interactive
+   * type=button). Hasta 3 botones — Meta rechaza más. Usado por el bot guiado
+   * (4.M) para presentar las opciones de un nodo MENU.
+   */
+  async sendInteractiveButtons(
+    cfg: WapiSenderConfig,
+    input: SendInteractiveButtonsInput,
+  ): Promise<SendResult> {
+    if (!input.buttons || input.buttons.length === 0) {
+      throw new Error('sendInteractiveButtons requires at least 1 button');
+    }
+    if (input.buttons.length > 3) {
+      throw new Error('Meta limita interactive buttons a 3 por mensaje');
+    }
+    const interactive: Record<string, unknown> = {
+      type: 'button',
+      body: { text: input.body },
+      action: {
+        buttons: input.buttons.map((b) => ({
+          type: 'reply',
+          reply: { id: b.id, title: b.title.slice(0, 20) },
+        })),
+      },
+    };
+    if (input.header) interactive.header = { type: 'text', text: input.header };
+    if (input.footer) interactive.footer = { text: input.footer };
+    return this.post(cfg, {
+      messaging_product: 'whatsapp',
+      to: input.to,
+      type: 'interactive',
+      interactive,
     });
   }
 

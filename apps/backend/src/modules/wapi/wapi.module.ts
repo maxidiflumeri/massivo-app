@@ -20,6 +20,9 @@ import { WapiQuickRepliesController } from './quick-replies/wapi-quick-replies.c
 import { WapiQuickRepliesService } from './quick-replies/wapi-quick-replies.service';
 import { WapiOptOutService } from './opt-out/wapi-opt-out.service';
 import { WapiButtonActionService } from './button-actions/wapi-button-action.service';
+import { WapiBotEngineService } from './bot/wapi-bot-engine.service';
+import { WapiBotService } from './bot/wapi-bot.service';
+import { WapiBotController } from './bot/wapi-bot.controller';
 
 @Module({
   imports: [EventsModule],
@@ -30,6 +33,7 @@ import { WapiButtonActionService } from './button-actions/wapi-button-action.ser
     WapiWebhookController,
     WapiInboxController,
     WapiQuickRepliesController,
+    WapiBotController,
   ],
   providers: [
     WapiConfigsService,
@@ -46,6 +50,8 @@ import { WapiButtonActionService } from './button-actions/wapi-button-action.ser
     WapiQuickRepliesService,
     WapiOptOutService,
     WapiButtonActionService,
+    WapiBotEngineService,
+    WapiBotService,
   ],
   exports: [WapiQueueService, WapiSenderService, WapiMediaService, WapiWebhookService],
 })

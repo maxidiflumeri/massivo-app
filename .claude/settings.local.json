@@ -54,7 +54,11 @@
       "Bash(grep -E \"\\\\.ts$|^d\")",
       "Bash(tasklist)",
       "Bash(npx prisma *)",
-      "Bash(find node_modules/.pnpm/@prisma+client* -name \"index.d.ts\" -path \"*.prisma/client*\")"
+      "Bash(find node_modules/.pnpm/@prisma+client* -name \"index.d.ts\" -path \"*.prisma/client*\")",
+      "Bash(wait)",
+      "Bash(netstat -ano)",
+      "Bash(PRISMA_SKIP_DATAPROXY_IN_GENERATE=1 pnpm prisma generate --no-hints)",
+      "Bash(taskkill *)"
     ]
   }
 }

@@ -47,18 +47,30 @@ No avances sin confirmarme el plan del paso siguiente.
 
 ## Estado actual
 
-- **Fase actual:** Fase 4 — Canal WhatsApp Cloud API (**sub-A ✅, sub-B ✅, sub-C ✅, sub-D ✅, sub-E ✅, sub-F.1 ✅, sub-F.1.a ✅, sub-F.1.b ✅, sub-F.1.c ✅ (mapping vars), sub-F.2.a ✅, sub-F.2.b ✅, sub-F.2.c ✅ (markdown + dark mode preview), sub-F.2.d ✅ (media upload Meta + storage local + render por tipo), sub-F.3 ✅ (inbox backend), sub-F.4 ✅ (inbox frontend), sub-G ✅ (quick replies admin), sub-H ✅ (opt-out por keyword + worker guard), sub-I ✅ (welcome message), sub-K ✅ (botones interactivos: INBOX/BAJA/IGNORAR + payload variable), sub-L (MVP ✅ + ✅ chat ida-vuelta con `isTestMode`; pendiente virtual numbers + audit log), sub-L.1 ✅ (filtro inbox por línea)**; sigue **4.J live dashboard**; en marcha **4.M bot guiado simple**)
+- **Fase actual:** Fase 4 — Canal WhatsApp Cloud API (**sub-A ✅, sub-B ✅, sub-C ✅, sub-D ✅, sub-E ✅, sub-F.1 ✅, sub-F.1.a ✅, sub-F.1.b ✅, sub-F.1.c ✅ (mapping vars), sub-F.2.a ✅, sub-F.2.b ✅, sub-F.2.c ✅ (markdown + dark mode preview), sub-F.2.d ✅ (media upload Meta + storage local + render por tipo), sub-F.3 ✅ (inbox backend), sub-F.4 ✅ (inbox frontend), sub-G ✅ (quick replies admin), sub-H ✅ (opt-out por keyword + worker guard), sub-I ✅ (welcome message), sub-K ✅ (botones interactivos: INBOX/BAJA/IGNORAR + payload variable), sub-L (MVP ✅ + ✅ chat ida-vuelta con `isTestMode`; pendiente virtual numbers + audit log), sub-L.1 ✅ (filtro inbox por línea), sub-M ✅ (`isTestMode` + chat simulado), sub-N ✅ (bot guiado por número con menús + handoff), sub-N.1 ✅ (editor visual react-flow + nodo MESSAGE encadenable)**; sigue **4.J live dashboard**)
 - **Fases completadas:** Fase 0 ✅ + Fase 1 ✅ + Fase 2 ✅ + **Fase 3 ✅** (3.E inbound postergado, decisión del dueño)
-- **Última actualización:** 2026-05-05 (cierre Sesión 30, 4.K button actions end-to-end)
+- **Última actualización:** 2026-05-05 (cierre Sesión 32, 4.N.1 nodo MESSAGE + editor visual react-flow)
 - **Branch principal:** `main`
-- **Próximo paso al volver**: smoke test de **4.K** vía Dev Simulator chat:
-  1. Abrir `/dashboard/wapi/templates`, click en el ícono SmartButton (⚙️) de cualquier template con QUICK_REPLY → mapear botones a INBOX/BAJA/IGNORAR (opcional: agregar payload con `{{var}}`).
-  2. Abrir `/dashboard/dev/wapi/chat`, pickear la config en `isTestMode`, y mandar inbound de tipo button (en `WapiSimulatorChatPage` agregamos 3 botones rápidos INBOX/BAJA/IGNORAR — disparan `POST /api/dev/wapi/simulate/inbound/button`).
-  3. INBOX → la conversación debe aparecer con ⭐ en el inbox (filtro "Priorizadas" la aísla).
-  4. BAJA → debe quedar opted-out (verificar con campaña posterior que termina CANCELED + auto-reply de confirmación).
-  5. IGNORAR → sólo logea en backend, no muta DB.
+- **Próximo paso al volver**: smoke test de **4.N + 4.N.1 (bot guiado con editor visual)** end-to-end. Pasos detallados:
+  0. **Editor visual nuevo** (4.N.1): `/dashboard/wapi/bots` ahora es un canvas estilo draw.io (react-flow). Probar: agregar nodos con Toolbar (MENU/MESSAGE/HANDOFF), drag para mover, conectar handles (círculos violetas) → setea `nextNodeId`, click sobre nodo → drawer derecho para editar texto/opciones/escalate, botón AutoFix (varita) reordena con dagre. Click sobre flecha + Delete borra la conexión. Eliminar nodo limpia referencias.
+  0a. **Probar nodo MESSAGE**: armar `start (MESSAGE: "Hola!" → bienvenida) → bienvenida (MESSAGE: "¿Qué necesitás?" → menu1) → menu1 (MENU)`. En `/dashboard/dev/wapi/chat` con bot ON, mandar "hola" → llegan 3 mensajes en cadena (2 textos + 1 menú con botones). El operator-view filtra los `bot-message` y `bot-menu` (solo ve handoff o mensajes humanos).
+  Resto del smoke (igual que antes):
+  1. Backend + frontend running, con `ENABLE_DEV_SIMULATOR=true` y `VITE_ENABLE_DEV_SIMULATOR=true`.
+  2. Asegurar que la `WapiConfig` esté en `isTestMode=true` (sino el sender intenta pegarle a Meta y falla).
+  3. Abrir `/dashboard/wapi/bots`, seleccionar la config, dejar el flow por defecto (MENU → HANDOFF), tildar **Bot habilitado**, Guardar. Si hay error de validación la UI lo muestra con Alert.
+  4. Abrir `/dashboard/dev/wapi/chat`, pickear la misma config. Mandar texto desde el "cliente virtual" (ej "hola"). Esperado:
+     - El thread del operador muestra el mensaje del cliente.
+     - Inmediatamente el bot manda el menú con botones (queda persistido como `WapiMessage` con `system.kind='bot-menu'`, visible en el thread).
+     - En DB: `SELECT * FROM "WapiBotSession" WHERE phone='<phone>'` → debería existir una row con `currentNodeId='start'` (o el id que armaste).
+  5. Para simular el reply al botón del bot, hacer `POST http://localhost:3001/api/dev/wapi/simulate/inbound/button` con `{ "configId": "...", "from": "<phone>", "buttonId": "bot:<opcionId>", "buttonTitle": "..." }`. Verificar que el bot avanza al siguiente nodo (curl debe verse en logs del backend, y aparece nuevo mensaje del bot en el thread).
+  6. Llegar a un nodo HANDOFF: el bot manda el texto final, cierra la sesión (`endedReason='handoff'`), y si el HANDOFF tenía `escalate=true`, la conversación queda con ⭐ en `/dashboard/wapi/inbox`.
+  7. Tomar la conversación con "Tomar" en el inbox. Mandar otro texto del cliente: el bot ya NO debería responder (el assign cierra cualquier sesión activa con `endedReason='operator-assign'`).
+  8. Resolver y reabrir → mandar texto del cliente de nuevo: como ya no hay sesión activa, el bot rearranca con el startNode.
+  9. Edge case: editar el flow a algo inválido (MENU sin opciones), tildar enabled, Guardar → backend devuelve 400 (`BadRequestException`) y la UI muestra el error.
 
-  Después: avanzar con **4.M (bot guiado)** que ya quedó iniciado en esta sesión.
+  **Todo el detalle del 4.N en CHANGELOG sección "4.N — Bot guiado por número" (incluye guía paso-a-paso) y MIGRATION_PLAN.md sub-sección 4.N.**
+
+  Después del smoke: commitear, y el siguiente bloque pendiente es **4.J (live dashboard de campañas WAPI)** o cerrar **4.L** completo (virtual numbers + audit log). Decidir cuál arrancar.
 - **Cómo testear el inbox sin Meta (recordatorio)**:
   1. Tener una `WapiConfig` activa con `appSecretEnc = NULL` (en dev el webhook acepta sin verificar firma — ver `wapi-webhook.controller.ts:156-162`).
   2. POST a `http://localhost:3001/api/webhooks/wapi` con payload Meta válido (object `whatsapp_business_account`, entry → changes → field `messages`, value con `metadata.phone_number_id`, `contacts[]` y `messages[]` con `from`, `timestamp`, `type=text`, `text.body`).
@@ -557,6 +569,86 @@ Esta regla garantiza que la próxima IA/dev nunca arranque una fase sin checklis
 ---
 
 ## Bitácora de sesiones
+
+### 2026-05-05 — Sesión 32 (Claude Opus 4.7) — Sub-fase 4.N.1 (editor visual react-flow + nodo MESSAGE)
+
+- **Contexto**: continuación inmediata de Sesión 31. El dueño probó el bot 4.N y pidió:
+  1. Bug fix: el bot respondía con burbuja vacía en dev. Causa: `MessageBubble.extractText` no manejaba `type='interactive'` (leía `c[type].body` como string cuando es objeto). Fix con handler explícito → `inter?.body?.text ?? inter?.header?.text`.
+  2. Bot buttons clickeables directo desde el bubble, no en una fila aparte. Fix: prop chain `onInteractiveButtonClick` `MessageBubble` → `ConversationThread` → page.
+  3. En el chat del operator, ocultar la interacción del bot — solo ver el handoff. Fix: `isBotInteractionMessage` filtra `system.kind='bot-menu'` (outbound) + inbound con `bot:` button reply, preserva `bot-handoff`.
+  4. Dev chat pegado a la viewport como inbox, scroll interno solamente. Fix: agregar `/dashboard/dev/wapi/chat` al `isFullBleed` de `AppLayout`.
+  5. **Sumar nodo MESSAGE** (texto sin botones) al editor de bot.
+  6. **Reescribir el editor** como diagrama de flujo visual estilo draw.io.
+- **Decisión técnica**: `@xyflow/react` (~150KB, MIT, MUI-friendly) + `dagre` para auto-layout. `position?: {x, y}` opcional en cada nodo, persistida en el flow JSON pero ignorada por el motor.
+- **Backend — nodo MESSAGE**:
+  - `BotMessageNode { kind: 'MESSAGE', text, nextNodeId? }`. Con `nextNodeId` el motor encadena automáticamente al siguiente en el mismo inbound; sin él es terminal silencioso.
+  - `validateBotFlow` extendido: acepta MESSAGE, valida `nextNodeId` (debe resolver, no auto-referenciar).
+  - `WapiBotEngineService.handle` reescrito: ahora corre un loop de `deliverNode` con tope `BOT_MAX_AUTO_CHAIN=8`. La sesión queda en el último nodo del chain. `MESSAGE → MESSAGE → HANDOFF` en un solo inbound del cliente envía 3 mensajes secuenciales y cierra la sesión.
+  - `buildPersistedContent` para MESSAGE → `{ text:{body}, system:{kind:'bot-message'} }`.
+  - `isBotInteractionMessage` (frontend) extendido a `bot-message`.
+  - Tests: validador +5 (acepta MESSAGE+next, MESSAGE terminal, rechaza fantasma/auto-ref/text vacío). Engine +3 (chain MESSAGE→MENU upsertea sesión en MENU, MESSAGE→MESSAGE→HANDOFF emite 3 sendText + ended, MESSAGE terminal upsertea en el MESSAGE).
+  - `nest build` ✅ tras agregar type annotation explícita en el loop (`const node: BotNode | undefined = flow.nodes[currentId]`) para esquivar TS7022.
+- **Frontend — editor visual** (`apps/frontend/src/features/wapi/bots/`):
+  - `flowLayout.ts`: dagre con `rankdir=LR`, ancho 240, alto base 110 + 22px por opción de MENU.
+  - `nodeViews.tsx`: 3 custom node renderers (MENU/MESSAGE/HANDOFF) con MUI. MENU tiene un Handle source por opción (`op-{id}`). MESSAGE tiene `next`. HANDOFF no tiene source. Todos tienen target a la izquierda. Chip `START` para el inicial. Estilos por kind con colores (primary/info/secondary).
+  - `NodeEditorDrawer.tsx`: drawer derecho que se abre al click sobre nodo. Edita texto, opciones (MENU con id/label/nextNodeId via Select), nextNodeId (MESSAGE), escalate (HANDOFF). Botones "Marcar inicial" y "Eliminar" (limpia referencias en otros nodos).
+  - `validateClient.ts`: extraído del page; espejo cliente del backend con MESSAGE.
+  - `WapiBotsPage.tsx` reescrito en `ReactFlowProvider`. Toolbar con selector de config + switch ON/OFF + TTL + add MENU/MESSAGE/HANDOFF + AutoFix + Save. Canvas con MiniMap+Controls+Background. Drag persiste position al flow. `onConnect` setea `nextNodeId` (`applyConnection`). Borrar edge con Delete/Backspace dispara `disconnectEdges` que parsea el `id` del edge (formato `${source}__${handle}__${target}`) y limpia. Eliminar nodo limpia referencias automáticamente.
+  - `/dashboard/wapi/bots` agregado al `isFullBleed` de `AppLayout`.
+- **Deps**: `@xyflow/react`, `dagre`, `@types/dagre` instaladas en `apps/frontend`.
+- **Validaciones**: 27/27 specs `wapi-bot/*` pasando. `pnpm --filter @massivo/backend build` ✅. `pnpm --filter @massivo/frontend typecheck` ✅. Lint solo arrastra warnings pre-existentes.
+- **Tracking**: CHANGELOG sección `4.N.1` con guía de prueba paso a paso. MIGRATION_PLAN sub-sección `4.N.1`. PROGRESS estado actual + próximo paso actualizados.
+- **Próximo paso al volver**: smoke test con el dueño del editor visual (drag, conectar, autolayout, chain MESSAGE en runtime). Si confirma, el dueño mencionó que pediría más tipos de nodos ("despues de eso te pido algunos nodos mas q estoy pensando, pero vamos por partes").
+
+### 2026-05-05 — Sesión 31 (Claude Opus 4.7) — Sub-fase 4.N (bot guiado por número, end-to-end)
+
+- **Contexto**: con 4.K cerrado en Sesión 30, el dueño pidió avanzar autónomo con **bot guiado** (mini-IVR) sin pedir confirmaciones. Originalmente etiquetado "4.M" en notas internas; se renumeró a **4.N** porque 4.M ya estaba ocupado por `WapiConfig.isTestMode`.
+- **Schema** (`20260507100000_wapi_bot_module`):
+  - `WapiConfig.botEnabled Boolean @default(false)`, `botFlow Json?`, `botSessionTtlMin Int @default(30)`.
+  - Modelo nuevo `WapiBotSession` con `(organizationId, teamId, configId, phone, currentNodeId, startedAt, lastInboundAt, expiresAt, endedAt?, endedReason?)` y `@@unique([configId, phone])` + índices por org/team/expiresAt.
+  - `WapiBotSession` agregado a `TENANT_SCOPED_MODELS`.
+  - Para regenerar Prisma client hubo que matar el backend (`taskkill //PID <pid> //F`) porque sostenía `query_engine-windows.dll.node`.
+- **Backend — `WapiSenderService.sendInteractiveButtons`**: wrapper sobre Meta `interactive` type=button. Máx 3 botones, `title` truncado a 20 chars (límite Meta). Tipos `SendInteractiveButtonsInput` exportados.
+- **Backend — `WapiBotEngineService`** (`apps/backend/src/modules/wapi/bot/`):
+  - `handle(cfg, input) → { handled, ended?, escalate? }`. Inputs: `kind: 'text'|'button'`. Para button incluye `buttonId` y opcional `contextMetaMessageId` (para distinguir si está respondiendo a un template message).
+  - **Disambiguación clave bot vs template (4.K)**: bot prefija ids con `bot:` (`BOT_OPTION_PREFIX`). `isBotButtonId()` chequea el prefijo. Si llega button con `bot:` y NO hay sesión → `handled=true` silencioso (no rearma flow para evitar spam). Si NO arranca con `bot:` → `handled=false` y delega al webhook (4.K).
+  - **Sesión por (configId, phone)** con TTL configurable. Texto inicial sin sesión → entrega `startNode` y crea sesión. Texto con sesión activa → re-renderiza el menú actual (no avanza). Sesión expirada → cierra (`endedReason='expired'`) y rearranca.
+  - **HANDOFF terminal**: manda texto, cierra sesión (`endedReason='handoff'`), retorna `ended=true` + `escalate?`.
+  - **Persistencia**: cada outbound del bot queda en `WapiMessage` con `system: { kind: 'bot-menu' | 'bot-handoff' }` y se emite `wapi.message.new` por socket.
+  - `endSessionsForConversation(configId, phone, reason)` — cierra todas las sesiones activas. Lo llama `WapiInboxService.assign/resolve`.
+- **Backend — `validateBotFlow`** (`wapi-bot.types.ts`): valida startNodeId (existe en nodes), MENU con 1–3 opciones, nextNodeId resuelve, ids de opción únicos, text no vacío, kind ∈ {MENU, HANDOFF}. Devuelve `{ ok, errors[], flow }`.
+- **Backend — CRUD**: `WapiBotService.get(configId)` snapshot, `update(configId, dto)` valida flow y bloquea habilitar bot sin flow. `WapiBotController` expone `GET/PATCH /api/wapi/configs/:id/bot`. CASL reusa `WapiConfig` (read/update) — no nuevo subject. DTO con `class-validator`: `botFlow?: Record<string, unknown> | null` (validación estructural en el service).
+- **Backend — Webhook integration** (`wapi-webhook.service.ts`):
+  - Constructor: 8° arg `WapiBotEngineService`.
+  - `handleInboundMessage` calcula `isBotButton = buttonInfo ? botEngine.isBotButtonId(buttonInfo.buttonId) : false`.
+  - `tryAutoReplies` selecciona también `botEnabled, botFlow, botSessionTtlMin` y llama `botEngine.handle()` **antes** de welcome/optout/4.K. Si `botHandled` → return early.
+  - HANDOFF + escalate → `WapiConversation.update({priority: true})` + emit `wapi.conversation.updated`.
+  - 4.K (button actions de templates) sólo dispara cuando `!isBotButton`.
+- **Backend — Inbox integration** (`wapi-inbox.service.ts`): constructor + 7° arg `WapiBotEngineService`. Helper `endBotSessionsFor(conversationId, reason)`. Llamado desde `assign()` (`'operator-assign'`) y `resolve()` (`'resolved'`) para que el operador asuma sin que el bot intercepte.
+- **Frontend — `/dashboard/wapi/bots`** (`WapiBotsPage.tsx` + `bots/api.ts` + `bots/types.ts`):
+  - Selector de WapiConfig, switch `botEnabled`, TextField TTL (1–1440), selector de nodo inicial.
+  - Lista vertical de cards (MENU/HANDOFF). MENU: lista de opciones con id, label (≤20), nextNodeId via Select de nodos existentes (muestra "(no existe)" si target falta). Botón "Agregar opción" disabled si ya hay 3.
+  - HANDOFF: switch `escalate`.
+  - Validación cliente espejada del backend con Alert listando errores. Bloquea guardar con `enabled=true` + flow inválido.
+  - Sidebar: nueva entrada "Bot guiado" en grupo WhatsApp con `SmartToyIcon`.
+- **Tests**:
+  - `wapi-bot.types.spec.ts`: 9 casos del validador.
+  - `wapi-bot-engine.service.spec.ts`: 10 casos del engine (bot disabled, flow inválido, texto inicial, button avanza, button sin sesión silencioso, button NO bot, texto con sesión, HANDOFF, sesión expirada, endSessionsForConversation).
+  - `wapi-webhook.service.spec.ts`: bloque `4.M — bot guiado` con 5 casos integrando engine.
+  - `wapi-inbox.service.spec.ts`: agregado mock `WapiBotEngineService` en el test module (sino los specs viejos rompían por dep no resuelta).
+  - **161/161 wapi specs ✅**. Frontend typecheck ✅.
+- **Errores de la sesión**:
+  - **Prisma EPERM** al regenerar client por DLL del backend tomada en Windows. Resuelto matando el proceso.
+  - **TS2345** en controller por mismatch DTO ↔ service input: la DTO tipa `botFlow?: Record<string, unknown> | null` pero el service esperaba `BotFlow | null`. Fix: cambiar el input del service a `unknown` (validación estructural ya está en `validateBotFlow`).
+  - **TS2554** en webhook spec por nuevo arg constructor (8 vs 7).
+  - **9 specs de inbox failing** tras agregar dep `WapiBotEngineService` — fix con mock provider.
+- **Decisiones clave**:
+  - **Prefijo `bot:` en option ids**: única forma robusta de disambiguar reply de botón bot vs button reply de template (4.K) sin guardar metadata extra en cada outbound. Aprovecha que el id del button es lo único que vuelve en el inbound.
+  - **Sesión silenciosa en button sin sesión**: si un cliente vuelve a clickear un botón viejo después de que la sesión expiró (o que el operador la cerró), NO queremos rearmar el flow desde cero — eso sería confuso. Mejor `handled=true` silent y dejar que el operador maneje.
+  - **Validación cliente espejada del backend**: redundante a propósito. El backend es la única fuente de verdad pero el cliente da feedback inmediato sin round-trip.
+  - **CASL reusa WapiConfig**: no proliferar subjects para una funcionalidad que es sub-config de la línea.
+  - **No graph viz para el editor**: lista vertical es suficiente para 2–10 nodos, que es el sweet spot. Si crece, react-flow después.
+- **Pendiente para el dueño al volver**: smoke test paso-a-paso (ver "Próximo paso al volver" arriba). Después: commitear y decidir entre **4.J live dashboard** o cerrar **4.L** (virtual numbers + audit log).
 
 ### 2026-05-05 — Sesión 30 (Claude Opus 4.7) — Sub-fase 4.K (button actions) + arranque 4.M (bot guiado)
 

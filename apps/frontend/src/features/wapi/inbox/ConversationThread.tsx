@@ -10,6 +10,8 @@ interface Props {
   hasMore: boolean;
   onLoadMore: () => void;
   loadingMore: boolean;
+  /** Si está seteado, los botones interactivos del bot se vuelven clickeables. */
+  onInteractiveButtonClick?: (buttonId: string, title: string) => void;
 }
 
 export function ConversationThread({
@@ -18,6 +20,7 @@ export function ConversationThread({
   hasMore,
   onLoadMore,
   loadingMore,
+  onInteractiveButtonClick,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastIdRef = useRef<string | null>(null);
@@ -91,7 +94,11 @@ export function ConversationThread({
           return (
             <Box key={m.id}>
               {showDate && <DateDivider iso={m.timestamp} />}
-              <MessageBubble message={m} showTail={showTail} />
+              <MessageBubble
+                message={m}
+                showTail={showTail}
+                onInteractiveButtonClick={onInteractiveButtonClick}
+              />
             </Box>
           );
         })}

@@ -23,13 +23,16 @@ import type { WapiInboxMessage } from './types';
 interface Props {
   message: WapiInboxMessage;
   showTail: boolean;
+  /** Si está seteado, los botones interactivos del bubble se vuelven clickeables. */
+  onInteractiveButtonClick?: (buttonId: string, title: string) => void;
 }
 
-export function MessageBubble({ message, showTail }: Props) {
+export function MessageBubble({ message, showTail, onInteractiveButtonClick }: Props) {
   const fromMe = message.fromMe;
   const failed = message.status === 'failed';
   const isReaction = message.type === 'reaction';
   const text = extractText(message);
+  const interactiveButtons = extractInteractiveButtons(message);
 
   // Reacciones: bubble compacto sin meta (sin time/check)
   if (isReaction) {
@@ -107,10 +110,58 @@ export function MessageBubble({ message, showTail }: Props) {
             {renderWhatsAppMarkdown(text)}
           </Typography>
         )}
-        {!text && !hasMediaContent(message) && (
+        {!text && !hasMediaContent(message) && interactiveButtons.length === 0 && (
           <Typography variant="body2" sx={{ fontStyle: 'italic', opacity: 0.8 }}>
             {labelFor(message.type)}
           </Typography>
+        )}
+        {interactiveButtons.length > 0 && (
+          <Stack
+            direction="column"
+            gap={0.5}
+            sx={{
+              mt: 0.75,
+              pt: 0.75,
+              borderTop: 1,
+              borderColor: (t) =>
+                t.palette.mode === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+            }}
+          >
+            {interactiveButtons.map((b, i) => {
+              const clickable = !!onInteractiveButtonClick;
+              return (
+                <Box
+                  key={`${b.id}-${i}`}
+                  onClick={
+                    clickable ? () => onInteractiveButtonClick!(b.id, b.title) : undefined
+                  }
+                  sx={{
+                    textAlign: 'center',
+                    py: 0.5,
+                    px: 1,
+                    borderRadius: 1,
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: (t) => (t.palette.mode === 'dark' ? '#53bdeb' : '#027eb5'),
+                    bgcolor: (t) =>
+                      t.palette.mode === 'dark' ? 'rgba(83,189,235,0.08)' : 'rgba(2,126,181,0.06)',
+                    cursor: clickable ? 'pointer' : 'default',
+                    transition: 'background-color 120ms',
+                    ...(clickable && {
+                      '&:hover': {
+                        bgcolor: (t) =>
+                          t.palette.mode === 'dark'
+                            ? 'rgba(83,189,235,0.18)'
+                            : 'rgba(2,126,181,0.14)',
+                      },
+                    }),
+                  }}
+                >
+                  {b.title}
+                </Box>
+              );
+            })}
+          </Stack>
         )}
         <Stack
           direction="row"
@@ -377,6 +428,31 @@ function MediaErrorBox({ icon, text }: { icon: React.ReactNode; text: string }) 
   );
 }
 
+/**
+ * True si el mensaje pertenece a la interacción con el bot (4.N) y NO debería
+ * mostrarse al operador en el inbox real. Reglas:
+ *  - Outbound del bot con `system.kind = 'bot-menu'` (los menús que mandó el bot).
+ *  - Inbound del cliente que es un button reply al bot (id con prefijo `bot:`).
+ *
+ * El handoff (`bot-handoff`) sí se muestra: le da contexto al operador de por qué
+ * la conversación quedó en su inbox.
+ */
+export function isBotInteractionMessage(m: WapiInboxMessage): boolean {
+  if (!m.content || typeof m.content !== 'object') return false;
+  const c = m.content as Record<string, unknown>;
+  const sys = c.system as { kind?: string } | undefined;
+  if (sys?.kind === 'bot-menu' || sys?.kind === 'bot-message') return true;
+  if (m.fromMe) return false;
+  if (m.type === 'interactive') {
+    const inter = c.interactive as
+      | { button_reply?: { id?: string }; type?: string }
+      | undefined;
+    const btnId = inter?.button_reply?.id;
+    if (typeof btnId === 'string' && btnId.startsWith('bot:')) return true;
+  }
+  return false;
+}
+
 function extractText(m: WapiInboxMessage): string | null {
   if (m.mediaCaption) return m.mediaCaption;
   if (!m.content || typeof m.content !== 'object') return null;
@@ -384,6 +460,10 @@ function extractText(m: WapiInboxMessage): string | null {
   if (m.type === 'text') {
     const t = (c.text as { body?: string } | undefined)?.body;
     return t ?? null;
+  }
+  if (m.type === 'interactive') {
+    const inter = c.interactive as { body?: { text?: string }; header?: { text?: string } } | undefined;
+    return inter?.body?.text ?? inter?.header?.text ?? null;
   }
   const sub = c[m.type] as Record<string, unknown> | undefined;
   if (sub) {
@@ -393,6 +473,23 @@ function extractText(m: WapiInboxMessage): string | null {
     if (body) return body;
   }
   return null;
+}
+
+interface InteractiveButton {
+  id: string;
+  title: string;
+}
+
+function extractInteractiveButtons(m: WapiInboxMessage): InteractiveButton[] {
+  if (m.type !== 'interactive' || !m.content || typeof m.content !== 'object') return [];
+  const c = m.content as Record<string, unknown>;
+  const inter = c.interactive as
+    | { action?: { buttons?: Array<{ reply?: { id?: string; title?: string } }> } }
+    | undefined;
+  const btns = inter?.action?.buttons ?? [];
+  return btns
+    .map((b) => ({ id: b.reply?.id ?? '', title: b.reply?.title ?? '' }))
+    .filter((b) => b.title);
 }
 
 function extractReactionEmoji(m: WapiInboxMessage): string | null {

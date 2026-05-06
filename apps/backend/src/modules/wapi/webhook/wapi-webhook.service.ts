@@ -8,6 +8,7 @@ import { EventsService } from '../../events/events.service';
 import { WapiMediaService } from '../media/wapi-media.service';
 import { WapiMediaException } from '../media/wapi-media.types';
 import { WapiButtonActionService } from '../button-actions/wapi-button-action.service';
+import { WapiBotEngineService } from '../bot/wapi-bot-engine.service';
 import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
 import { WapiSendException } from '../sender/wapi-sender.types';
@@ -92,6 +93,7 @@ export class WapiWebhookService {
     private readonly encryption: EncryptionService,
     private readonly optOut: WapiOptOutService,
     private readonly buttonActions: WapiButtonActionService,
+    private readonly botEngine: WapiBotEngineService,
   ) {}
 
   async process(
@@ -392,15 +394,18 @@ export class WapiWebhookService {
       unreadCount: conversation.unreadCount,
     });
 
-    // Auto-respuestas (4.H opt-out + 4.I welcome + 4.K button actions).
+    // Auto-respuestas (4.H opt-out + 4.I welcome + 4.K button actions + 4.M bot).
     // Cargamos el config completo sólo si alguno de los disparadores aplica,
     // para no pegar a DB en cada inbound. Orden de aplicación:
-    //  1. Welcome (sólo primera conversación).
+    //  0. Bot guiado (4.M): intercepta texto e button replies con prefijo `bot:`
+    //     antes que el resto. Si el bot tomó cargo, no disparamos welcome/optout/4.K.
+    //  1. Welcome (sólo primera conversación, y sólo si el bot no la manejó).
     //  2. Opt-out por keyword (cierra ciclo, prevalece sobre handoff humano).
-    //  3. Button action (INBOX/BAJA/IGNORAR de templates interactive).
+    //  3. Button action (INBOX/BAJA/IGNORAR de templates interactive de campañas).
     const inboundText = msg.type === 'text' ? msg.text?.body ?? null : null;
     const couldTriggerOptOut = inboundText !== null;
     const buttonInfo = extractButtonInfo(msg);
+    const isBotButton = buttonInfo ? this.botEngine.isBotButtonId(buttonInfo.buttonId) : false;
     if (isNewConversation || couldTriggerOptOut || buttonInfo) {
       await this.tryAutoReplies({
         configId: tenant.configId,
@@ -410,6 +415,7 @@ export class WapiWebhookService {
         inboundText,
         teamId: tenant.teamId,
         buttonInfo,
+        isBotButton,
       });
     }
   }
@@ -427,8 +433,9 @@ export class WapiWebhookService {
     inboundText: string | null;
     teamId: string;
     buttonInfo: ExtractedButtonInfo | null;
+    isBotButton: boolean;
   }): Promise<void> {
-    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
+    const cfg = (await this.prisma.scoped.wapiConfig.findFirst({
       where: { id: input.configId },
       select: {
         id: true,
@@ -439,9 +446,91 @@ export class WapiWebhookService {
         welcomeMessage: true,
         optOutConfirmMessage: true,
         optOutKeywords: true,
-      },
-    });
+        botEnabled: true,
+        botFlow: true,
+        botSessionTtlMin: true,
+      } as never,
+    })) as
+      | (Awaited<ReturnType<typeof this.prisma.scoped.wapiConfig.findFirst>> & {
+          botEnabled: boolean;
+          botFlow: unknown;
+          botSessionTtlMin: number;
+        })
+      | null;
     if (!cfg || !cfg.isActive) return;
+
+    // 0. Bot guiado (4.M). Si está activo y maneja el inbound, omitimos welcome/optout/4.K.
+    let botHandled = false;
+    if (cfg.botEnabled && cfg.botFlow && (input.inboundText !== null || input.isBotButton)) {
+      const botInbound = input.isBotButton && input.buttonInfo
+        ? {
+            kind: 'button' as const,
+            buttonId: input.buttonInfo.buttonId,
+            contextMetaMessageId: input.buttonInfo.contextMetaMessageId,
+          }
+        : input.inboundText !== null
+          ? { kind: 'text' as const, body: input.inboundText }
+          : null;
+      if (botInbound) {
+        const result = await this.botEngine.handle(
+          {
+            id: cfg.id,
+            phoneNumberId: cfg.phoneNumberId,
+            accessTokenEnc: cfg.accessTokenEnc,
+            isTestMode: cfg.isTestMode,
+            botEnabled: cfg.botEnabled,
+            botFlow: cfg.botFlow,
+            botSessionTtlMin: cfg.botSessionTtlMin,
+          },
+          {
+            configId: cfg.id,
+            conversationId: input.conversationId,
+            phone: input.phone,
+            inbound: botInbound,
+          },
+        );
+        botHandled = result.handled;
+        // Si el bot terminó con HANDOFF + escalate → marcamos priority como 4.K.
+        if (result.ended && result.escalate) {
+          try {
+            const updated = await this.prisma.scoped.wapiConversation.update({
+              where: { id: input.conversationId },
+              data: { priority: true } as never,
+              select: {
+                id: true,
+                status: true,
+                assignedUserId: true,
+                lastMessageAt: true,
+                unreadCount: true,
+                priority: true,
+              } as never,
+            });
+            const u = updated as unknown as {
+              id: string;
+              status: string;
+              assignedUserId: string | null;
+              lastMessageAt: Date | null;
+              unreadCount: number;
+              priority: boolean;
+            };
+            this.events.emitToTeam(input.teamId, 'wapi.conversation.updated', {
+              id: u.id,
+              configId: cfg.id,
+              phone: input.phone,
+              status: u.status,
+              assignedUserId: u.assignedUserId,
+              lastMessageAt: u.lastMessageAt?.toISOString() ?? null,
+              unreadCount: u.unreadCount,
+              priority: u.priority,
+            });
+          } catch (err) {
+            this.logger.warn(`Bot HANDOFF escalate falló: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      }
+    }
+
+    if (botHandled) return;
 
     if (input.isNewConversation && cfg.welcomeMessage && cfg.welcomeMessage.trim()) {
       await this.sendAutoReply({
@@ -475,7 +564,7 @@ export class WapiWebhookService {
       }
     }
 
-    if (input.buttonInfo) {
+    if (input.buttonInfo && !input.isBotButton) {
       await this.handleButtonAction({
         cfg,
         conversationId: input.conversationId,

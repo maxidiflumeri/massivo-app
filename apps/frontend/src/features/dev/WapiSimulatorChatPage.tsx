@@ -29,6 +29,7 @@ import { inboxApi, quickRepliesApi } from '../wapi/inbox/api';
 import { ConversationHeader } from '../wapi/inbox/ConversationHeader';
 import { ConversationThread } from '../wapi/inbox/ConversationThread';
 import { MessageComposer } from '../wapi/inbox/MessageComposer';
+import { isBotInteractionMessage } from '../wapi/inbox/MessageBubble';
 import type {
   WapiConversationDetail,
   WapiInboxMediaType,
@@ -476,7 +477,7 @@ export function WapiSimulatorChatPage() {
                 onToggleRead={() => undefined}
               />
               <ConversationThread
-                messages={messages}
+                messages={messages.filter((m) => !isBotInteractionMessage(m))}
                 loading={loadingConv}
                 hasMore={false}
                 onLoadMore={() => undefined}
@@ -578,6 +579,15 @@ function ClientThread({
         hasMore={false}
         onLoadMore={() => undefined}
         loadingMore={false}
+        onInteractiveButtonClick={async (id, title) => {
+          if (sending) return;
+          setSending(true);
+          try {
+            await onSendButton(id, title);
+          } finally {
+            setSending(false);
+          }
+        }}
       />
       <Box sx={{ borderTop: 1, borderColor: 'divider', p: 1.5, bgcolor: 'background.paper' }}>
         <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
