@@ -156,6 +156,13 @@ export class WapiInboxController {
     return this.service.reopen(id);
   }
 
+  // 4.O.6 — "Poner en espera": ASSIGNED → WAITING con TTL.
+  @Post('conversations/:id/hold')
+  @CheckPolicies((a: AppAbility) => a.can('update', 'Conversation'))
+  hold(@Param('id') id: string) {
+    return this.service.putOnHold(id);
+  }
+
   @Get('conversations/:id/notes')
   @CheckPolicies((a: AppAbility) => a.can('read', 'Conversation'))
   listNotes(@Param('id') id: string) {

@@ -331,6 +331,10 @@ export function WapiInboxPage() {
                 ...(ev.assignedUserId !== undefined
                   ? { assignedUserId: ev.assignedUserId }
                   : {}),
+                ...(ev.lastAssignedUserId !== undefined
+                  ? { lastAssignedUserId: ev.lastAssignedUserId }
+                  : {}),
+                ...(ev.waitingUntil !== undefined ? { waitingUntil: ev.waitingUntil } : {}),
                 ...(ev.lastMessageAt !== undefined ? { lastMessageAt: ev.lastMessageAt } : {}),
                 ...(ev.resolvedAt !== undefined ? { resolvedAt: ev.resolvedAt } : {}),
                 ...(ev.unreadCount !== undefined ? { unreadCount: ev.unreadCount } : {}),
@@ -348,6 +352,10 @@ export function WapiInboxPage() {
                 ...(ev.assignedUserId !== undefined
                   ? { assignedUserId: ev.assignedUserId }
                   : {}),
+                ...(ev.lastAssignedUserId !== undefined
+                  ? { lastAssignedUserId: ev.lastAssignedUserId }
+                  : {}),
+                ...(ev.waitingUntil !== undefined ? { waitingUntil: ev.waitingUntil } : {}),
                 ...(ev.lastMessageAt !== undefined ? { lastMessageAt: ev.lastMessageAt } : {}),
                 ...(ev.resolvedAt !== undefined ? { resolvedAt: ev.resolvedAt } : {}),
                 ...(ev.unreadCount !== undefined ? { unreadCount: ev.unreadCount } : {}),
@@ -428,6 +436,16 @@ export function WapiInboxPage() {
       notify.success('Conversación reabierta');
     } catch (e) {
       notify.error((e as Error).message || 'No se pudo reabrir');
+    }
+  }
+
+  async function handleHold() {
+    if (!selectedId) return;
+    try {
+      await inboxApi.hold(api, selectedId);
+      notify.success('Conversación en espera de respuesta');
+    } catch (e) {
+      notify.error((e as Error).message || 'No se pudo poner en espera');
     }
   }
 
@@ -512,6 +530,7 @@ export function WapiInboxPage() {
               onUnassign={handleUnassign}
               onResolve={() => setResolveOpen(true)}
               onReopen={handleReopen}
+              onHold={handleHold}
               onToggleRead={handleToggleRead}
             />
             <ConversationThread

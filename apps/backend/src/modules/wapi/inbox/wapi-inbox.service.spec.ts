@@ -71,11 +71,17 @@ describe('WapiInboxService', () => {
     service = moduleRef.get(WapiInboxService);
   });
 
-  it('listConversations filtra por tab=mine con assignedUserId del ctx', async () => {
+  it('listConversations filtra por tab=mine: ASSIGNED a mí + WAITING con lastAssignedUserId=mí', async () => {
     prismaMock.wapiConversation.findMany.mockResolvedValue([]);
     await TenantContext.run(ctx, () => service.listConversations({ tab: 'mine' }));
     const args = prismaMock.wapiConversation.findMany.mock.calls[0][0];
-    expect(args.where.assignedUserId).toBe('u1');
+    // 4.O.6 — `mine` ahora es OR (ASSIGNED al usuario, WAITING con
+    // lastAssignedUserId=usuario). El filtro escalated se aplica siempre.
+    expect(args.where.escalated).toBe(true);
+    expect(args.where.OR).toEqual([
+      { status: 'ASSIGNED', assignedUserId: 'u1' },
+      { status: 'WAITING', lastAssignedUserId: 'u1' },
+    ]);
   });
 
   it('sendText falla si la ventana 24h está cerrada', async () => {
@@ -270,5 +276,111 @@ describe('WapiInboxService', () => {
     await expect(
       TenantContext.run(ctx, () => service.listMessages('c1', {})),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  // -- 4.O.6: bot suspension + WAITING ----------------------------------------
+
+  it('listConversations: filtra escalated=true en cualquier tab', async () => {
+    prismaMock.wapiConversation.findMany.mockResolvedValue([]);
+    await TenantContext.run(ctx, () => service.listConversations({ tab: 'all' }));
+    const args = prismaMock.wapiConversation.findMany.mock.calls[0][0];
+    expect(args.where.escalated).toBe(true);
+    expect(args.where.status).toEqual({ in: ['UNASSIGNED', 'ASSIGNED', 'WAITING'] });
+  });
+
+  it('assign suspende el bot, escala y guarda lastAssignedUserId', async () => {
+    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+      id: 'c1',
+      status: 'UNASSIGNED',
+    });
+    prismaMock.wapiConversation.update.mockResolvedValue({
+      id: 'c1',
+      status: 'ASSIGNED',
+      assignedUserId: 'u9',
+    });
+
+    await TenantContext.run(ctx, () => service.assign('c1', 'u9'));
+
+    expect(prismaMock.wapiConversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c1' },
+        data: expect.objectContaining({
+          assignedUserId: 'u9',
+          status: 'ASSIGNED',
+          botSuspended: true,
+          escalated: true,
+          waitingUntil: null,
+          lastAssignedUserId: 'u9',
+        }),
+      }),
+    );
+  });
+
+  it('resolve libera al bot y limpia waitingUntil', async () => {
+    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+      id: 'c1',
+      status: 'ASSIGNED',
+    });
+    prismaMock.wapiConversation.update.mockResolvedValue({
+      id: 'c1',
+      status: 'RESOLVED',
+      assignedUserId: 'u1',
+      resolvedAt: new Date(),
+    });
+
+    await TenantContext.run(ctx, () => service.resolve('c1', {}));
+
+    expect(prismaMock.wapiConversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'RESOLVED',
+          botSuspended: false,
+          waitingUntil: null,
+        }),
+      }),
+    );
+  });
+
+  it('putOnHold: ASSIGNED → WAITING con TTL del cfg, libera assignedUserId', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-05-06T12:00:00.000Z'));
+    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+      id: 'c1',
+      status: 'ASSIGNED',
+      assignedUserId: 'u1',
+      configId: 'cfg1',
+    });
+    prismaMock.wapiConfig.findFirst.mockResolvedValue({ botWaitingTtlMin: 90 });
+    prismaMock.wapiConversation.update.mockResolvedValue({
+      id: 'c1',
+      status: 'WAITING',
+      assignedUserId: null,
+    });
+
+    const out = await TenantContext.run(ctx, () => service.putOnHold('c1'));
+
+    expect(out.waitingUntil).toEqual(new Date('2026-05-06T13:30:00.000Z'));
+    expect(prismaMock.wapiConversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'WAITING',
+          waitingUntil: new Date('2026-05-06T13:30:00.000Z'),
+          lastAssignedUserId: 'u1',
+          assignedUserId: null,
+        }),
+      }),
+    );
+    jest.useRealTimers();
+  });
+
+  it('putOnHold rechaza conversaciones que no estén en ASSIGNED', async () => {
+    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+      id: 'c1',
+      status: 'UNASSIGNED',
+      assignedUserId: null,
+      configId: 'cfg1',
+    });
+    await expect(
+      TenantContext.run(ctx, () => service.putOnHold('c1')),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

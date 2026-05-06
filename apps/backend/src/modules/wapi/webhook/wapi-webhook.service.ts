@@ -225,9 +225,15 @@ export class WapiWebhookService {
     const isNewConversation = !existing;
     let conversation: { id: string; status: string; assignedUserId: string | null; unreadCount: number };
     if (existing) {
-      const reopen = existing.status === 'RESOLVED'
-        ? { status: existing.assignedUserId ? 'ASSIGNED' : 'UNASSIGNED', resolvedAt: null }
-        : {};
+      // 4.O.6 — NO auto-reopen de RESOLVED. El bot debe atender al cliente y
+      // sólo si llega a HANDOFF (o el template button INBOX) la conversación
+      // vuelve al inbox. Mantener status hace que la conversación quede oculta
+      // del inbox (por escalated=false) hasta que el bot decida escalar.
+      // En cambio, WAITING → UNASSIGNED (el cliente respondió, sale de espera).
+      const waitingTransition =
+        existing.status === 'WAITING'
+          ? { status: 'UNASSIGNED', waitingUntil: null }
+          : {};
       conversation = await this.prisma.scoped.wapiConversation.update({
         where: { id: existing.id },
         data: {
@@ -235,7 +241,7 @@ export class WapiWebhookService {
           window24hAt: new Date(ts.getTime() + 24 * 60 * 60_000),
           unreadCount: { increment: 1 },
           ...(profileName ? { name: profileName } : {}),
-          ...reopen,
+          ...waitingTransition,
         } as never,
         select: { id: true, status: true, assignedUserId: true, unreadCount: true },
       });

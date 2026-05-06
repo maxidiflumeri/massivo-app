@@ -522,6 +522,7 @@ enum WapiReportStatus {
 enum WapiConversationStatus {
   UNASSIGNED
   ASSIGNED
+  WAITING
   RESOLVED
 }
 
@@ -562,6 +563,10 @@ model WapiConfig {
   botEnabled            Boolean  @default(false)
   botFlow               Json?
   botSessionTtlMin      Int      @default(30)
+  // 4.O.6 — TTL del estado WAITING de una conversación. El operador "pone en
+  // espera" tras responder; si el cliente no contesta en este lapso, un worker
+  // periódico cierra la conversación automáticamente (RESOLVED + auto-nota).
+  botWaitingTtlMin      Int      @default(120)
   // 4.O.1 — sistema multi-tema. botTopics: Array<{id,label,flow:BotFlow}>.
   // botRouter: { rules: BotRouterRule[], defaultTopicId?: string } decide a qué
   // tema entrar según template-payload (regex named groups) o keyword exacto.
@@ -719,6 +724,21 @@ model WapiConversation {
   // INBOX en un template interactivo (4.K). El inbox tiene un filtro y un
   // badge ⭐ para destacarlas.
   priority       Boolean                @default(false)
+  // 4.O.6 — Sistema de suspensión del bot + estado WAITING.
+  // `escalated`: la conversación es visible en el inbox sólo si está escalada
+  //   (HANDOFF del bot, button INBOX action, take/assign manual). Conversaciones
+  //   manejadas por el bot sin escalar no aparecen en el inbox.
+  // `botSuspended`: el motor del bot hace early return si está en true. Se setea
+  //   en HANDOFF/INBOX-action/take, se libera en RESOLVED.
+  // `waitingUntil`: vencimiento del estado WAITING. Worker periódico cierra la
+  //   conversación cuando se vence (auto-resolve sin respuesta del cliente).
+  // `lastAssignedUserId`: el operador que la tenía antes de pasar a WAITING o
+  //   antes de soltarla. Se mantiene para que la UI muestre "atendida por X la
+  //   última vez" cuando vuelve a UNASSIGNED por respuesta del cliente.
+  escalated         Boolean   @default(false)
+  botSuspended      Boolean   @default(false)
+  waitingUntil      DateTime?
+  lastAssignedUserId String?
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
@@ -735,6 +755,9 @@ model WapiConversation {
   @@index([status])
   @@index([teamId, status, lastMessageAt])
   @@index([teamId, priority, lastMessageAt])
+  // 4.O.6 — listado del inbox filtra por escalated; worker de TTL busca WAITING vencidos.
+  @@index([teamId, escalated, lastMessageAt])
+  @@index([status, waitingUntil])
 }
 
 model WapiMessage {

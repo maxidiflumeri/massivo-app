@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { MeService } from './me.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -11,7 +12,11 @@ describe('MeService', () => {
     prismaMock = { user: { findUnique: jest.fn() } };
 
     const moduleRef = await Test.createTestingModule({
-      providers: [MeService, { provide: PrismaService, useValue: prismaMock }],
+      providers: [
+        MeService,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(undefined) } },
+      ],
     }).compile();
 
     service = moduleRef.get(MeService);

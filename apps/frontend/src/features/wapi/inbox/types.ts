@@ -1,7 +1,7 @@
 export const INBOX_TABS = ['mine', 'unassigned', 'others', 'resolved', 'all'] as const;
 export type InboxTab = (typeof INBOX_TABS)[number];
 
-export type WapiConversationStatus = 'UNASSIGNED' | 'ASSIGNED' | 'RESOLVED';
+export type WapiConversationStatus = 'UNASSIGNED' | 'ASSIGNED' | 'WAITING' | 'RESOLVED';
 
 export interface WapiConversationListItem {
   id: string;
@@ -10,6 +10,8 @@ export interface WapiConversationListItem {
   name: string | null;
   status: WapiConversationStatus;
   assignedUserId: string | null;
+  lastAssignedUserId: string | null;
+  waitingUntil: string | null;
   lastMessageAt: string | null;
   window24hAt: string | null;
   unreadCount: number;
@@ -80,6 +82,8 @@ export interface WapiConversationUpdatedEvent {
   phone?: string;
   status?: WapiConversationStatus;
   assignedUserId?: string | null;
+  lastAssignedUserId?: string | null;
+  waitingUntil?: string | null;
   lastMessageAt?: string | null;
   resolvedAt?: string | null;
   unreadCount?: number;

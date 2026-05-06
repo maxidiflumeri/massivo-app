@@ -21,6 +21,7 @@ import DoneIcon from '@mui/icons-material/Done';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
+import HourglassBottomIcon from '@mui/icons-material/HourglassBottom';
 import { formatPhone, formatRelative, initials } from './formatters';
 import type { InboxTab, WapiConversationListItem } from './types';
 
@@ -204,6 +205,30 @@ export function ConversationList({
   );
 }
 
+/**
+ * Defensa contra preview con shape inesperado (caía con
+ * `Objects are not valid as a React child (found: object with keys {text})`
+ * al rotar de tab con filtro activo). Si llega un objeto, log + descartar.
+ */
+function coerceSubtitle(preview: unknown): string {
+  if (typeof preview === 'string') return preview;
+  if (preview == null) return '';
+  if (typeof preview === 'object') {
+    // eslint-disable-next-line no-console
+    console.warn('[inbox] preview con shape inesperado, descartando:', preview);
+    const body = (preview as { body?: unknown; text?: unknown }).body;
+    if (typeof body === 'string') return body;
+    const text = (preview as { text?: unknown }).text;
+    if (typeof text === 'string') return text;
+    if (text && typeof text === 'object') {
+      const inner = (text as { body?: unknown }).body;
+      if (typeof inner === 'string') return inner;
+    }
+    return '';
+  }
+  return String(preview);
+}
+
 function ConversationRow({
   item,
   selected,
@@ -216,7 +241,7 @@ function ConversationRow({
   lineLabel: string | null;
 }) {
   const display = item.name?.trim() || formatPhone(item.phone);
-  const subtitle = item.lastMessage?.preview ?? '';
+  const subtitle = coerceSubtitle(item.lastMessage?.preview);
   const time = useMemo(
     () => formatRelative(item.lastMessageAt ?? item.lastMessage?.timestamp ?? null),
     [item.lastMessageAt, item.lastMessage?.timestamp],
@@ -305,6 +330,15 @@ function ConversationRow({
               size="small"
               label="Resuelta"
               icon={<DoneIcon sx={{ fontSize: 12 }} />}
+              sx={{ height: 20, fontSize: 10 }}
+            />
+          )}
+          {item.status === 'WAITING' && (
+            <Chip
+              size="small"
+              label="En espera"
+              color="warning"
+              icon={<HourglassBottomIcon sx={{ fontSize: 12 }} />}
               sx={{ height: 20, fontSize: 10 }}
             />
           )}

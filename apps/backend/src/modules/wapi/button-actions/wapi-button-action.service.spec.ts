@@ -140,7 +140,7 @@ describe('WapiButtonActionService', () => {
   });
 
   describe('apply', () => {
-    it('INBOX → marca priority=true y emite wapi.conversation.updated', async () => {
+    it('INBOX → marca priority + escalated + botSuspended y emite wapi.conversation.updated', async () => {
       await withTenant(() =>
         svc.apply({
           conversationId: 'conv-1',
@@ -150,10 +150,12 @@ describe('WapiButtonActionService', () => {
           buttonId: 'Quiero hablar',
         }),
       );
+      // 4.O.6 — INBOX equivale a un HANDOFF disparado desde el template:
+      // escalada al inbox + bot suspendido hasta que el operador resuelva.
       expect(prismaScoped.wapiConversation.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'conv-1' },
-          data: { priority: true },
+          data: { priority: true, escalated: true, botSuspended: true },
         }),
       );
       expect(events.emitToTeam).toHaveBeenCalledWith(

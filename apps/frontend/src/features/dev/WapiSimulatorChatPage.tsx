@@ -474,6 +474,14 @@ export function WapiSimulatorChatPage() {
                     notify.error(e instanceof Error ? e.message : 'Error');
                   }
                 }}
+                onHold={async () => {
+                  try {
+                    await inboxApi.hold(api, conversation.id);
+                    await resolveConversation();
+                  } catch (e) {
+                    notify.error(e instanceof Error ? e.message : 'Error');
+                  }
+                }}
                 onToggleRead={() => undefined}
               />
               <ConversationThread

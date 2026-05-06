@@ -829,6 +829,30 @@ Permite que el flow asigne valores a variables sin pedírselos al usuario. Útil
 **Pendiente (post-4.O.5)**:
 - Smoke en sandbox: nodo SET_VAR antes de un MESSAGE con `{{varName}}` → confirmar que el mensaje renderiza el valor asignado. Confirmar que el chain no genera un mensaje extra.
 
+#### 4.O.6 — Suspensión del bot + estado WAITING ✅
+
+Cierra el ciclo handoff humano: una vez que un operador toma una conversación (vía botón INBOX, HANDOFF del bot o `take`/`assign` manual), el bot **no vuelve a responder** hasta que la conversación se resuelva. Suma estado intermedio **WAITING** ("respondí, espero al cliente") con TTL configurable que vuelve la conversación a `UNASSIGNED` si el cliente no escribe.
+
+**Backend ✅**
+- [x] Schema: `escalated`, `botSuspended`, `waitingUntil`, `lastAssignedUserId` en `WapiConversation` + `botWaitingTtlMin` en `WapiConfig` + valor `WAITING` en enum `WapiConversationStatus`. Migración `20260510120000_wapi_bot_suspension_waiting`.
+- [x] Engine guard: `handle()` consulta `botSuspended` antes de cualquier procesamiento — corta seco si está suspendido. HANDOFF marca `escalated:true, botSuspended:true` y reabre RESOLVED si aplica.
+- [x] Webhook: cliente que vuelve a escribir sobre WAITING dispara transición automática a `UNASSIGNED + waitingUntil:null`.
+- [x] Button INBOX: además de priority, marca `escalated+botSuspended`.
+- [x] Inbox service: filtro `escalated:true` uniforme (cross-rol — admin scope verificado, sin back-door); `mine` con OR `(ASSIGNED-mías + WAITING-lastMine)`; `assign/take` setean `botSuspended+escalated`, limpian `waitingUntil`, persisten `lastAssignedUserId`; `resolve` apaga botSuspended+waitingUntil (mantiene escalated); `reopen` reactiva botSuspended.
+- [x] Endpoint `POST /api/wapi/inbox/conversations/:id/hold` → `putOnHold`: pre-check ASSIGNED, calcula `waitingUntil = now + cfg.botWaitingTtlMin*60000`, status → `WAITING`, `lastAssignedUserId ← assignedUserId`, `assignedUserId ← null`. Emite socket `wapi.conversation.updated`.
+- [x] Worker `WapiBotWaitingExpirerService`: setInterval 5min, cross-tenant (no scoped), `findMany + update` individuales (necesita teamId/configId/phone para emitir socket), `unref()` para no bloquear procesos. Multi-instance safe (DB-level filter).
+- [x] Tests: 5 nuevos en `wapi-inbox.service.spec`, 4 nuevos en `wapi-bot-waiting-expirer.service.spec`, 1 ajustado en `wapi-button-action.service.spec`. **474/474 verde**.
+
+**Frontend ✅**
+- [x] Types: `WapiConversationStatus` con `WAITING` + `waitingUntil`/`lastAssignedUserId` en list/detail/event types. `inboxApi.hold()`.
+- [x] `ConversationHeader`: botón "Poner en espera" (PauseCircleOutlineIcon, warning) sólo visible si `isMine`. `StatusChip` para WAITING con `HourglassBottomIcon` + countdown vivo (`useCountdown` tick 30s). Chip "lo tenías vos" cuando `lastAssignedUserId === currentUserId`.
+- [x] `WapiInboxPage.handleHold` + reducer del evento socket actualiza `waitingUntil`/`lastAssignedUserId` en items y conv activa.
+- [x] `ConversationList`: chip "En espera" en filas con `status === WAITING`.
+- [x] `WapiSimulatorChatPage`: pasa `onHold` para paridad.
+
+**Pendiente (post-4.O.6)**:
+- Smoke E2E manual: (1) cliente escribe → bot atiende, (2) operador hace "Take" → bot deja de responder, mensajes del cliente quedan en inbox sin respuesta automática, (3) operador responde + "Poner en espera" → status WAITING con countdown visible, (4) cliente vuelve a escribir antes del TTL → conversación a UNASSIGNED automáticamente, (5) cliente no responde → worker la devuelve a UNASSIGNED tras `botWaitingTtlMin`, chip "lo tenía X" sigue visible.
+
 **Aceptación 4.L:**
 - Crear un virtual number `+5491100000001` ligado a un `WapiConfig` de prueba.
 - Desde el chat-simulator: el cliente virtual escribe "hola" → aparece en el inbox real del team. El operador responde con texto / foto / audio / documento → el simulator muestra el mensaje en la vista cliente con caption + media renderizada. Reacciones (cliente → operador) y botones (template inbound) funcionan end-to-end. Statuses delivered/read se reflejan en los checks azules del operador.

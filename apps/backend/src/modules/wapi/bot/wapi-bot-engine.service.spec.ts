@@ -57,6 +57,7 @@ describe('WapiBotEngineService', () => {
       upsert: jest.Mock;
     };
     wapiMessage: { create: jest.Mock };
+    wapiConversation: { findUnique: jest.Mock; update: jest.Mock };
   };
   let events: { emitToTeam: jest.Mock };
   let sender: { sendInteractiveButtons: jest.Mock; sendText: jest.Mock; sendMediaById: jest.Mock };
@@ -74,6 +75,17 @@ describe('WapiBotEngineService', () => {
       },
       wapiMessage: {
         create: jest.fn().mockResolvedValue({ id: 'msg-1', content: {} }),
+      },
+      wapiConversation: {
+        // 4.O.6 — guard de botSuspended (1er findUnique) y lectura de status
+        // antes del update en HANDOFF (2do findUnique). El mismo mock cubre ambas.
+        findUnique: jest.fn().mockResolvedValue({
+          botSuspended: false,
+          status: 'UNASSIGNED',
+          assignedUserId: null,
+          lastAssignedUserId: null,
+        }),
+        update: jest.fn().mockResolvedValue(undefined),
       },
     };
     events = { emitToTeam: jest.fn() };
@@ -272,6 +284,79 @@ describe('WapiBotEngineService', () => {
       expect.objectContaining({
         where: { id: 'sess-1' },
         data: expect.objectContaining({ endedReason: 'handoff' }),
+      }),
+    );
+    // 4.O.6 — además marca conversación como escalated + botSuspended.
+    expect(prismaScoped.wapiConversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'conv-1' },
+        data: expect.objectContaining({ escalated: true, botSuspended: true }),
+      }),
+    );
+  });
+
+  // -- 4.O.6: bot suspension + reset de status post-RESOLVED -----------------
+
+  it('4.O.6: conversación con botSuspended=true → handled=false (motor mudo)', async () => {
+    prismaScoped.wapiConversation.findUnique.mockResolvedValue({
+      botSuspended: true,
+      status: 'ASSIGNED',
+      assignedUserId: 'user-1',
+      lastAssignedUserId: null,
+    });
+    const out = await withTenant(() =>
+      svc.handle(cfg, {
+        configId: 'cfg-1',
+        conversationId: 'conv-1',
+        phone: '5491100',
+        inbound: { kind: 'text', body: 'hola' },
+      }),
+    );
+    expect(out.handled).toBe(false);
+    expect(sender.sendInteractiveButtons).not.toHaveBeenCalled();
+    expect(sender.sendText).not.toHaveBeenCalled();
+    // No tocó la sesión ni la conversación.
+    expect(prismaScoped.wapiBotSession.findFirst).not.toHaveBeenCalled();
+    expect(prismaScoped.wapiConversation.update).not.toHaveBeenCalled();
+  });
+
+  it('4.O.6: HANDOFF desde conversación RESOLVED resetea status + reabre al inbox', async () => {
+    // 1ra llamada: guard de suspensión (no suspendida, status=RESOLVED).
+    // 2da llamada: lectura previa al update en HANDOFF (mismo objeto).
+    prismaScoped.wapiConversation.findUnique.mockResolvedValue({
+      botSuspended: false,
+      status: 'RESOLVED',
+      assignedUserId: 'user-1',
+      lastAssignedUserId: 'user-1',
+    });
+    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+      id: 'sess-1',
+      currentNodeId: 'menu1',
+      currentTopicId: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      endedAt: null,
+      data: {},
+    });
+    const out = await withTenant(() =>
+      svc.handle(cfg, {
+        configId: 'cfg-1',
+        conversationId: 'conv-1',
+        phone: '5491100',
+        inbound: { kind: 'button', buttonId: 'bot:humano', contextMetaMessageId: null },
+      }),
+    );
+    expect(out.handled).toBe(true);
+    expect(out.ended).toBe(true);
+    expect(prismaScoped.wapiConversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'conv-1' },
+        data: expect.objectContaining({
+          escalated: true,
+          botSuspended: true,
+          status: 'UNASSIGNED',
+          resolvedAt: null,
+          assignedUserId: null,
+        }),
       }),
     );
   });

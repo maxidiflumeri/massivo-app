@@ -102,6 +102,13 @@ export class WapiBotEngineService {
     if (!cfg.botEnabled) return { handled: false };
     // 4.O.1 — feature gate (env + per-org). Sin contexto, isEnabled devuelve false.
     if (!(await this.feature.isEnabled())) return { handled: false };
+    // 4.O.6 — bot suspendido: un humano tomó la conversación. El motor se queda
+    // en silencio hasta que el operador resuelva (webhook resetea el flag).
+    const suspended = await this.prisma.scoped.wapiConversation.findUnique({
+      where: { id: input.conversationId },
+      select: { botSuspended: true },
+    });
+    if (suspended?.botSuspended) return { handled: false };
     const resolved = this.resolveTopics(cfg);
     if (!resolved) return { handled: false };
 
@@ -371,6 +378,23 @@ export class WapiBotEngineService {
 
     if (finalNode.kind === 'HANDOFF') {
       if (session) await this.endSession(session.id, 'handoff');
+      // 4.O.6 — escalar al inbox y suspender el bot. El operador toma la
+      // conversación (UNASSIGNED → ASSIGNED) y al resolver/expirar el bot
+      // vuelve a operar para nuevos inbounds. Si la conversación venía
+      // RESOLVED (cliente vuelve a escribir, bot la atiende y termina en
+      // HANDOFF), reseteamos status para que aparezca en el inbox.
+      const conv = await this.prisma.scoped.wapiConversation.findUnique({
+        where: { id: conversationId },
+        select: { status: true, assignedUserId: true, lastAssignedUserId: true },
+      });
+      const reopenStatus =
+        conv?.status === 'RESOLVED'
+          ? { status: 'UNASSIGNED' as const, resolvedAt: null, assignedUserId: null }
+          : {};
+      await this.prisma.scoped.wapiConversation.update({
+        where: { id: conversationId },
+        data: { escalated: true, botSuspended: true, ...reopenStatus } as never,
+      });
       return { handled: true, ended: true, escalate: !!finalNode.escalate };
     }
 

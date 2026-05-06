@@ -117,6 +117,12 @@ export const inboxApi = {
     return api.post<{ id: string }>(`/api/wapi/inbox/conversations/${id}/reopen`);
   },
 
+  hold(api: ApiClient, id: string) {
+    return api.post<{ id: string; waitingUntil: string }>(
+      `/api/wapi/inbox/conversations/${id}/hold`,
+    );
+  },
+
   listNotes(api: ApiClient, id: string) {
     return api.get<WapiResolutionNoteItem[]>(`/api/wapi/inbox/conversations/${id}/notes`);
   },

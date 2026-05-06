@@ -9,7 +9,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PersonAddAltIcon from '@mui/icons-material/PersonAddAlt';
 import MarkEmailReadIcon from '@mui/icons-material/MarkEmailRead';
@@ -18,6 +18,8 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ReplayIcon from '@mui/icons-material/Replay';
 import LoginIcon from '@mui/icons-material/Login';
 import LogoutIcon from '@mui/icons-material/Logout';
+import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
+import HourglassBottomIcon from '@mui/icons-material/HourglassBottom';
 import { formatPhone, initials } from './formatters';
 import type { WapiConversationDetail } from './types';
 
@@ -29,6 +31,7 @@ interface Props {
   onUnassign: () => void;
   onResolve: () => void;
   onReopen: () => void;
+  onHold: () => void;
   onToggleRead: () => void;
 }
 
@@ -40,6 +43,7 @@ export function ConversationHeader({
   onUnassign,
   onResolve,
   onReopen,
+  onHold,
   onToggleRead,
 }: Props) {
   const [menuEl, setMenuEl] = useState<HTMLElement | null>(null);
@@ -48,6 +52,9 @@ export function ConversationHeader({
     conversation.assignedUserId === currentUserId &&
     conversation.status === 'ASSIGNED';
   const isResolved = conversation.status === 'RESOLVED';
+  const isWaiting = conversation.status === 'WAITING';
+  const wasMineWaiting =
+    !!currentUserId && isWaiting && conversation.lastAssignedUserId === currentUserId;
   const display = conversation.name?.trim() || formatPhone(conversation.phone);
 
   return (
@@ -65,11 +72,19 @@ export function ConversationHeader({
           {initials(conversation.name, conversation.phone)}
         </Avatar>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Stack direction="row" alignItems="center" gap={1}>
+          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
             <Typography variant="subtitle1" fontWeight={600} noWrap>
               {display}
             </Typography>
             <StatusChip conversation={conversation} />
+            {wasMineWaiting && (
+              <Chip
+                size="small"
+                label="lo tenías vos"
+                variant="outlined"
+                sx={{ height: 22, fontSize: 11 }}
+              />
+            )}
           </Stack>
           <Typography variant="caption" color="text.secondary">
             {formatPhone(conversation.phone)}
@@ -77,10 +92,17 @@ export function ConversationHeader({
           </Typography>
         </Box>
         <Stack direction="row" gap={0.5}>
-          {!isResolved && !isMine && (
+          {!isResolved && !isMine && !isWaiting && (
             <Tooltip title="Tomar conversación">
               <IconButton size="small" onClick={onTake}>
                 <LoginIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {isMine && (
+            <Tooltip title="Poner en espera (esperar respuesta del cliente)">
+              <IconButton size="small" onClick={onHold} color="warning">
+                <PauseCircleOutlineIcon fontSize="small" />
               </IconButton>
             </Tooltip>
           )}
@@ -154,6 +176,9 @@ function StatusChip({ conversation }: { conversation: WapiConversationDetail }) 
   if (conversation.status === 'RESOLVED') {
     return <Chip size="small" label="Resuelta" color="success" sx={{ height: 22 }} />;
   }
+  if (conversation.status === 'WAITING') {
+    return <WaitingChip until={conversation.waitingUntil} />;
+  }
   if (conversation.status === 'UNASSIGNED') {
     return (
       <Chip
@@ -176,3 +201,46 @@ function StatusChip({ conversation }: { conversation: WapiConversationDetail }) 
   );
 }
 
+function WaitingChip({ until }: { until: string | null }) {
+  const remaining = useCountdown(until);
+  const label = remaining
+    ? `En espera · ${remaining}`
+    : until
+      ? 'En espera'
+      : 'En espera';
+  return (
+    <Chip
+      size="small"
+      icon={<HourglassBottomIcon sx={{ fontSize: 14 }} />}
+      label={label}
+      color="warning"
+      sx={{ height: 22, fontSize: 11 }}
+    />
+  );
+}
+
+/**
+ * Countdown vivo para el chip WAITING. Tick cada 30s para no recargar el
+ * navegador — la precisión a segundos no aporta acá. Devuelve null si no
+ * hay deadline o si ya venció (el worker debería haberlo barrido pero a
+ * veces hay lag de socket).
+ */
+function useCountdown(iso: string | null): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!iso) return;
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, [iso]);
+  if (!iso) return null;
+  const deadline = new Date(iso).getTime();
+  if (!Number.isFinite(deadline)) return null;
+  const diffMs = deadline - now;
+  if (diffMs <= 0) return null;
+  const minutes = Math.ceil(diffMs / 60_000);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (mins === 0) return `${hours} h`;
+  return `${hours}h ${mins}m`;
+}

@@ -49,6 +49,9 @@ export interface ConversationListItem {
   campaignName: string | null;
   resolvedAt: Date | null;
   priority: boolean;
+  // 4.O.6 — bot suspension + WAITING.
+  waitingUntil: Date | null;
+  lastAssignedUserId: string | null;
   lastMessage: {
     fromMe: boolean;
     type: string;
@@ -121,10 +124,23 @@ export class WapiInboxService {
     if (query.configId) where.configId = query.configId;
     if (query.priority) where.priority = true;
 
+    // 4.O.6 — el inbox sólo muestra conversaciones escaladas. Las que están
+    // siendo atendidas por el bot (escalated=false) no son visibles para
+    // operadores ni admins; aparecen recién cuando el bot llega a HANDOFF
+    // o el cliente toca el botón INBOX de un template.
+    where.escalated = true;
+
+    let mineOrWaiting: Array<Record<string, unknown>> | null = null;
     switch (tab) {
       case 'mine':
-        where.assignedUserId = ctx.userId;
-        where.status = { in: ['ASSIGNED'] };
+        // 4.O.6 — `mine` agrupa lo que el operador "tiene": asignado activo
+        // y WAITING (puesto en espera). El frontend separa con sub-tabs por
+        // status. Usamos lastAssignedUserId para WAITING porque el flag
+        // assignedUserId se libera al poner en espera.
+        mineOrWaiting = [
+          { status: 'ASSIGNED', assignedUserId: ctx.userId },
+          { status: 'WAITING', lastAssignedUserId: ctx.userId },
+        ];
         break;
       case 'unassigned':
         where.status = 'UNASSIGNED';
@@ -138,18 +154,28 @@ export class WapiInboxService {
         break;
       case 'all':
       default:
-        where.status = { in: ['UNASSIGNED', 'ASSIGNED'] };
+        where.status = { in: ['UNASSIGNED', 'ASSIGNED', 'WAITING'] };
         break;
     }
 
+    let searchOr: Array<Record<string, unknown>> | null = null;
     if (query.search) {
       const term = query.search.trim();
       if (term.length > 0) {
-        where.OR = [
+        searchOr = [
           { phone: { contains: term, mode: 'insensitive' } },
           { name: { contains: term, mode: 'insensitive' } },
         ];
       }
+    }
+
+    // Combinar dos posibles ORs (mine y search) usando AND para que ninguno se pise.
+    if (mineOrWaiting && searchOr) {
+      where.AND = [{ OR: mineOrWaiting }, { OR: searchOr }];
+    } else if (mineOrWaiting) {
+      where.OR = mineOrWaiting;
+    } else if (searchOr) {
+      where.OR = searchOr;
     }
 
     if (query.cursor) {
@@ -183,6 +209,7 @@ export class WapiInboxService {
 
     const items: ConversationListItem[] = sliced.map((row) => {
       const last = row.messages[0];
+      const r = row as unknown as { waitingUntil: Date | null; lastAssignedUserId: string | null };
       return {
         id: row.id,
         configId: row.configId,
@@ -196,6 +223,8 @@ export class WapiInboxService {
         campaignName: row.campaignName,
         resolvedAt: row.resolvedAt,
         priority: row.priority,
+        waitingUntil: r.waitingUntil,
+        lastAssignedUserId: r.lastAssignedUserId,
         lastMessage: last
           ? {
               fromMe: last.fromMe,
@@ -232,6 +261,7 @@ export class WapiInboxService {
     });
     if (!row) throw new NotFoundException(`Conversación ${id} no encontrada`);
     const last = row.messages[0];
+    const r = row as unknown as { waitingUntil: Date | null; lastAssignedUserId: string | null };
     return {
       id: row.id,
       configId: row.configId,
@@ -245,6 +275,8 @@ export class WapiInboxService {
       campaignName: row.campaignName,
       resolvedAt: row.resolvedAt,
       priority: row.priority,
+      waitingUntil: r.waitingUntil,
+      lastAssignedUserId: r.lastAssignedUserId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       lastMessage: last
@@ -620,11 +652,17 @@ export class WapiInboxService {
     if (conv.status === 'RESOLVED') {
       throw new ConflictException('No se puede asignar una conversación resuelta');
     }
+    // 4.O.6 — tomar/asignar suspende el bot, escala (si veníamos de WAITING),
+    // limpia el TTL y cachea quién es el último responsable para el badge "asignado a X".
     const updated = await this.prisma.scoped.wapiConversation.update({
       where: { id: conv.id },
       data: {
         assignedUserId: userId,
         status: 'ASSIGNED',
+        botSuspended: true,
+        escalated: true,
+        waitingUntil: null,
+        lastAssignedUserId: userId,
       } as never,
       select: { id: true, assignedUserId: true, status: true },
     });
@@ -647,9 +685,15 @@ export class WapiInboxService {
     if (conv.status === 'RESOLVED') {
       throw new ConflictException('No se puede dejar libre una conversación resuelta');
     }
+    // 4.O.6 — el bot sigue suspendido (la conversación ya está escalada y debe
+    // resolverse por humano) y limpiamos waitingUntil por si veníamos de WAITING.
     const updated = await this.prisma.scoped.wapiConversation.update({
       where: { id: conv.id },
-      data: { assignedUserId: null, status: 'UNASSIGNED' } as never,
+      data: {
+        assignedUserId: null,
+        status: 'UNASSIGNED',
+        waitingUntil: null,
+      } as never,
       select: { id: true, status: true, assignedUserId: true },
     });
     this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
@@ -675,9 +719,17 @@ export class WapiInboxService {
     }
 
     const resolvedAt = new Date();
+    // 4.O.6 — al resolver, el bot vuelve a estar disponible para el próximo
+    // inbound del cliente. Mantenemos `escalated=true` y `lastAssignedUserId`
+    // como auditoría (la pestaña "resueltas" filtra por escalated=true).
     const updated = await this.prisma.scoped.wapiConversation.update({
       where: { id: conv.id },
-      data: { status: 'RESOLVED', resolvedAt } as never,
+      data: {
+        status: 'RESOLVED',
+        resolvedAt,
+        botSuspended: false,
+        waitingUntil: null,
+      } as never,
       select: { id: true, resolvedAt: true, status: true, assignedUserId: true },
     });
 
@@ -712,9 +764,14 @@ export class WapiInboxService {
       throw new ConflictException('Sólo se reabren conversaciones resueltas');
     }
     const nextStatus = conv.assignedUserId ? 'ASSIGNED' : 'UNASSIGNED';
+    // 4.O.6 — reopen manual implica que el operador retoma; bot suspendido.
     const updated = await this.prisma.scoped.wapiConversation.update({
       where: { id: conv.id },
-      data: { status: nextStatus, resolvedAt: null } as never,
+      data: {
+        status: nextStatus,
+        resolvedAt: null,
+        botSuspended: true,
+      } as never,
       select: { id: true, status: true, assignedUserId: true },
     });
     this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
@@ -724,6 +781,51 @@ export class WapiInboxService {
       resolvedAt: null,
     });
     return { id: updated.id };
+  }
+
+  /**
+   * 4.O.6 — "Poner en espera": el operador respondió y espera al cliente.
+   * Status pasa a WAITING con un TTL configurable por cfg.botWaitingTtlMin.
+   * Liberamos `assignedUserId` (la conversación deja de estar bajo el badge
+   * "asignado a mí" como ASSIGNED y aparece en el sub-tab WAITING de "mis"
+   * gracias a `lastAssignedUserId`). El worker periódico expira las que
+   * pasen el TTL devolviéndolas a UNASSIGNED. El bot sigue suspendido —
+   * sólo el resolve manual lo libera.
+   */
+  async putOnHold(conversationId: string): Promise<{ id: string; waitingUntil: Date }> {
+    const ctx = this.requireContext();
+    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+      where: { id: conversationId },
+      select: { id: true, status: true, assignedUserId: true, configId: true },
+    });
+    if (!conv) throw new NotFoundException(`Conversación ${conversationId} no encontrada`);
+    if (conv.status !== 'ASSIGNED') {
+      throw new ConflictException('Sólo se puede poner en espera una conversación asignada');
+    }
+    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
+      where: { id: conv.configId },
+      select: { botWaitingTtlMin: true } as never,
+    });
+    const ttlMin = Math.max(1, ((cfg as unknown as { botWaitingTtlMin?: number } | null)?.botWaitingTtlMin) ?? 120);
+    const waitingUntil = new Date(Date.now() + ttlMin * 60_000);
+    const updated = await this.prisma.scoped.wapiConversation.update({
+      where: { id: conv.id },
+      data: {
+        status: 'WAITING',
+        waitingUntil,
+        lastAssignedUserId: conv.assignedUserId ?? ctx.userId,
+        assignedUserId: null,
+      } as never,
+      select: { id: true, status: true, assignedUserId: true } as never,
+    });
+    const u = updated as unknown as { id: string; status: string; assignedUserId: string | null };
+    this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+      id: u.id,
+      status: u.status,
+      assignedUserId: u.assignedUserId,
+      waitingUntil: waitingUntil.toISOString(),
+    });
+    return { id: u.id, waitingUntil };
   }
 
   async listResolutionNotes(conversationId: string): Promise<

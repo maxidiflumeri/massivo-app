@@ -128,9 +128,11 @@ export class WapiButtonActionService {
     configId: string,
     phone: string,
   ): Promise<void> {
+    // 4.O.6 — INBOX también escala (visible en inbox) y suspende el bot.
+    // Equivale a un HANDOFF disparado por el cliente desde el template.
     const updated = await this.prisma.scoped.wapiConversation.update({
       where: { id: conversationId },
-      data: { priority: true } as never,
+      data: { priority: true, escalated: true, botSuspended: true } as never,
       select: {
         id: true,
         status: true,
@@ -153,7 +155,9 @@ export class WapiButtonActionService {
         priority: updated.priority,
       });
     }
-    this.logger.log(`Conversation ${conversationId} marcada priority=true vía button INBOX`);
+    this.logger.log(
+      `Conversation ${conversationId} priority=true + escalated + botSuspended vía button INBOX`,
+    );
   }
 
   /**
