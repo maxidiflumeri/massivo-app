@@ -138,7 +138,13 @@ const NAV_GROUPS: NavGroupSpec[] = [
   },
   {
     label: 'Datos',
-    items: [{ label: 'Contactos', icon: <ContactsIcon fontSize="small" />, disabled: true }],
+    items: [
+      {
+        to: '/dashboard/contacts',
+        label: 'Contactos',
+        icon: <ContactsIcon fontSize="small" />,
+      },
+    ],
   },
   {
     label: 'Cuenta',

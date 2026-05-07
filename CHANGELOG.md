@@ -21,6 +21,73 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 5.D — Frontend Contacts (lista + ficha + timeline + merge UI + CSV import) ✅
+
+Cierra la parte UI de Fase 5. Cuatro páginas nuevas montadas sobre los endpoints de 5.A.2/5.A.3/5.A.4/5.B/5.C.
+
+#### Added — `apps/frontend/src/features/contacts/`
+
+##### `types.ts`
+Mirror frontend de los DTOs backend: `Contact`, `ContactPage`, `SearchFilters`, `EMPTY_SEARCH_FILTERS`, `MergeSuggestion`, `MergeSuggestionPage`, `TimelineChannel`, `TimelineKind` (union de 16 kinds), `TimelineItem`, `TimelinePage`, `ContactImportJob`, `CreateImportRequest`.
+
+##### `ContactsListPage.tsx` — `/dashboard/contacts`
+- Tabla con `name | email | phoneE164 | externalId | updatedAt`. Click en fila → detail.
+- Filtros: `q` (search), `channel` (Select: Todos/Email/WhatsApp), `hasOpened/Clicked/Bounced` (Switches), `sort × direction` (6 combos: Última edición ↓↑, Creación ↓↑, Nombre A→Z|Z→A).
+- Cursor pagination (`take=limit+1` trick del backend, frontend renderiza "Cargar más").
+- Header con CTAs: "Sugerencias de merge" → `/merge`, "Importar CSV" → `/import`.
+- Wire a `GET /api/contacts/search?q&channel&hasOpened&hasClicked&hasBounced&sort&direction&cursor&limit=50` (de 5.C).
+
+##### `ContactDetailPage.tsx` — `/dashboard/contacts/:id`
+- Panel izquierdo (md=4): identidad completa (externalId/dni/cuit/email/phoneE164/phone con dual-display cuando phone≠phoneE164), metadata (creado/actualizado/teamId), atributos JSON pretty-printed en `<pre>` con max-height 240 + scroll.
+- Panel derecho (md=8): timeline cross-canal contra `GET /api/contacts/:id/timeline`. `ToggleButtonGroup` con 4 valores (todo/email/wapi/audit) re-fetchea al cambiar. Cursor pagination "Cargar más" usando el `nextCursor` ISO del backend.
+- Cada item de timeline: `Avatar` color-coded por kind (`success.main` para opens/clicks/read, `error.main` para failed/bounced, `info.main` para email base, `success.dark` para wapi base) + 10 iconos distintos (OpenInBrowser/Mouse/Email/Send/Done/DoneAll/ErrorOutline/Inbox/CallMade/History) + `kindLabel()` localizado al español ("Email enviado" / "WhatsApp leído" / "Click en email" / etc) + metadata expandido por kind:
+  - `email.*`: campaignName + subject + targetUrl + error
+  - `wapi.message.*`: type + mediaCaption (entrecomillado)
+  - `wapi.{sent,delivered,read,failed}`: campaignName + error
+  - `audit`: action en monospace
+- 404 al cargar contact → redirect a `/dashboard/contacts` con notify error.
+
+##### `ContactsImportPage.tsx` — `/dashboard/contacts/import`
+- **Origen**: textarea multiline (8-16 rows, monospace 12px) para paste **o** input file `.csv,text/csv,text/plain` con FileReader; chequeo de tamaño 100MB cliente-side.
+- **Parser CSV inline custom** (`parseCsv`): maneja `\r\n` → `\n`, comillas dobles con escape `""`, comas dentro de quoted strings, multilínea dentro de quotes, filas vacías filtradas. No depende de librerías externas.
+- **Auto-mapping** por header (ES/EN heuristic): `externalId | external_id | id | idcliente | codigo | cliente` → externalId; `dni | documento` → dni; `cuit | cuil` → cuit; `email | correo | mail | e-mail` → email; `phone | telefono | teléfono | celular | movil | móvil` → phone; `firstname | first_name | nombre` → firstName; `lastname | last_name | apellido` → lastName; el resto → `__skip`.
+- **Mapping wizard**: Chip con header monospace + Select de 10 opciones (8 target fields + `__attributes` para guardar como custom attribute + `__skip`); cada target field se deshabilita en otros selects una vez asignado (excepto `__attributes` y `__skip` que pueden repetirse).
+- **Preview**: tabla de hasta 10 filas mapeadas con `stickyHeader` y max-height 360px, monospace 11px.
+- **Validación inline**: al menos 1 identificador en STRONG_KEYS asignado, max 10k filas, no vacío. Alert warning si falla, info si OK.
+- **Submit**: `POST /api/contacts/imports` con `{fileName, fileSize, mapping (sin __skip), rows}`. V1 sin polling — el backend procesa síncrono y devuelve el job DONE en la misma response.
+- **Resultado**: Chips con counters (status DONE/FAILED en color, total/processed/created/updated/suggested) + lista top-5 de errores + link a `/contacts/merge` si suggested>0.
+
+##### `MergeSuggestionsPage.tsx` — `/dashboard/contacts/merge`
+- Filtro Select (PENDING/ACCEPTED/REJECTED), refetch al cambiar.
+- Cada card: Chip con `Email: <value>` o `Teléfono: <value>` + timestamp + dos paneles lado-a-lado (responsive: column en xs, row en md+).
+- `ContactPanel`: left con border `primary.main`, right con border `divider`. Avatar+nombre+MiniRows con email/phone/external/dni/cuit. IconButton "OpenInNew" → target="_blank" a `/contacts/<id>` para review.
+- Botones **Aceptar** (`ConfirmProvider` destructive: "se va a fusionar el de la derecha en el de la izquierda — los identificadores no-null del derecho rellenarán huecos del izquierdo, y el derecho se eliminará. Esta acción no se puede deshacer") + **Rechazar** (ConfirmProvider simple).
+- **Detección client-side de strong-key conflict** (externalId/dni/cuit distintos no-null entre left y right) → deshabilita Aceptar + muestra Alert warning explicando. El backend valida igual y throws 400 si se intenta — esta UI sólo evita el roundtrip.
+- Optimistic UI: al aceptar/rechazar, el item desaparece de la lista local sin re-fetch.
+- Cursor pagination.
+
+#### Routing — `App.tsx`
+4 rutas nuevas dentro de `/dashboard`:
+- `contacts` → ContactsListPage
+- `contacts/import` → ContactsImportPage
+- `contacts/merge` → MergeSuggestionsPage
+- `contacts/:id` → ContactDetailPage
+
+Orden importante: `:id` queda al final para que `import` y `merge` matcheen primero.
+
+#### Sidebar — `layouts/Sidebar.tsx`
+Entry "Contactos" en grupo "Datos" (ContactsIcon) — antes estaba `disabled:true`. Ahora linkea a `/dashboard/contacts`.
+
+#### Deferido a V2
+- **Bulk actions (tag/untag/delete/export)**: requerirían endpoints backend `POST /contacts/bulk/{tag,untag,delete}` y `download` para export que aún no existen. Documentado en MIGRATION_PLAN para V2 (probable Fase 5.E).
+- **Tests E2E/unit**: el frontend del proyecto actualmente no tiene infra de tests; los flows críticos (search/merge/timeline/import) están cubiertos backend-side con 598 tests.
+
+#### Tests
+- **Frontend typecheck ✅**.
+- Backend sin cambios (598/598 verde, heredado de 5.C).
+
+---
+
 ### 5.C — Búsqueda y filtros avanzados de Contacts ✅
 
 #### Added
