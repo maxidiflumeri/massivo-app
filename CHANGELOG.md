@@ -21,6 +21,37 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 5.A.2 — ContactsService org-scope + cascada de identidad + validators AR ✅
+
+#### Added
+- **`apps/backend/src/modules/contacts/identity.ts`** — utilities de normalización/validación:
+  - `normalizeDni(raw)` → 7-8 dígitos limpios o `null`. Acepta separadores `12.345.678` → `12345678`.
+  - `normalizeCuit(raw)` → 11 dígitos con checksum mod-11 AR válido o `null`. Weights `[5,4,3,2,7,6,5,4,3,2]`, manejo de mod 0/1 (mod=0 → digit=0, mod=1 → digit=9).
+  - `normalizePhoneE164(raw)` → `+<digits>` con 8-15 dígitos. Rechaza phones con `0` después de `+` (formato local con prefijo de marcado).
+  - `normalizeEmail(raw)` → lowercase + trim.
+  - `normalizeExternalId(raw)` → trim, conserva case (es identificador del cliente, no debe normalizarse).
+- **`ContactsService` reescrito org-scope** (`apps/backend/src/modules/contacts/contacts.service.ts`):
+  - `list({ cursor, limit, q, externalId, dni, cuit, email, phone })` con cursor pagination (`take=limit+1` trick, default 50, max 200). `q` arma `OR` insensitive contra `firstName/lastName/email/externalId/phoneE164`. Filtros normalizados antes del where (DNI con separadores → digits, email lowercased, phone → E164).
+  - `findByIdentity({ externalId, dni, cuit, email, phone })` cascada **`externalId > dni > cuit > email > phoneE164`** con cortocircuito al primer hit. Cada paso normaliza el input — input inválido (e.g. DNI `'123'`) se descarta silenciosamente.
+  - `create(dto)` exige al menos un identifier válido (externalId/dni/cuit/email/phoneE164) — si no, `BadRequestException`. DNI/CUIT inválidos → `BadRequestException` antes de tocar DB. Strong key duplicado en org (P2002) → `ConflictException`.
+  - `update(id, dto)` aplica solo campos presentes en el DTO (no pisa con `undefined`). Misma validación + manejo de P2002.
+  - Todas las operaciones llaman `requireContext()` que exige `TenantContext` → `ForbiddenException` si falta. Scope se inyecta vía Prisma extension (`prisma.scoped.contact`).
+- **Endpoints REST** (`contacts.controller.ts`):
+  - `GET /api/contacts` con filtros y paginación (gate `read Contact`).
+  - `GET /api/contacts/by-identity` para resolución cascada por cualquier campo (gate `read Contact`).
+  - `GET /api/contacts/:id`, `POST`, `PATCH`, `DELETE`.
+  - `@Audit({ action: 'contact.created'|'updated'|'deleted', resourceType: 'Contact', resourceIdFrom: 'response:id'|'param:id' })` en mutaciones.
+- **DTOs** (`contacts.dto.ts`):
+  - `CreateContactDto`/`UpdateContactDto` con todos los identifiers + nombres + attributes. `email` validado con `@IsEmail` solo si no hay otro identifier (en Create).
+  - `ListContactsQueryDto` (cursor, limit con `@Type(() => Number) @IsInt @Min(1) @Max(200)`, q, externalId, dni, cuit, email, phone).
+  - `FindByIdentityQueryDto` (mismos campos, todos opcionales).
+
+#### Tests
+- **`identity.spec.ts`** — 19 tests cubriendo normalización + validación de cada util.
+- **`contacts.service.spec.ts`** — rewrite completo: 13 tests (access control sin contexto, list vacío/clamp/cursor/q/filtros normalizados, findByIdentity cascada/cortocircuito/input inválido, create rechazo sin identifier/normalize/CUIT inválido/extension scope/P2002, update NotFound + parcial, remove NotFound).
+- **562/562 backend tests verde** (+32 vs 530 previo).
+- **`tenant-isolation.spec.ts`** actualizado: `contactsService.findAll()` → `contactsService.list({})`.
+
 ### 5.A.1 — Contacts unificados: schema org-scope + identidad multi-clave + migración con backfill ✅
 
 #### Added

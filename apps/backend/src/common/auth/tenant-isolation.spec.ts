@@ -418,8 +418,8 @@ describe('Aislamiento tenant-a-tenant', () => {
       await expect(wapiTemplateService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('ContactsService.findAll lanza ForbiddenException sin contexto', async () => {
-      await expect(contactsService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
+    it('ContactsService.list lanza ForbiddenException sin contexto', async () => {
+      await expect(contactsService.list({})).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('TagsService.findAll lanza ForbiddenException sin contexto', async () => {

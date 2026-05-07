@@ -1,52 +1,50 @@
+import { Type } from 'class-transformer';
 import {
   IsEmail,
+  IsInt,
   IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
-  Matches,
+  Max,
   MaxLength,
+  Min,
   ValidateIf,
 } from 'class-validator';
 
-const E164 = /^\+?[1-9]\d{6,14}$/;
-
 export class CreateContactDto {
-  @ValidateIf((o: CreateContactDto) => !o.phone)
-  @IsEmail()
-  @MaxLength(320)
-  email?: string;
-
-  @ValidateIf((o: CreateContactDto) => !o.email)
-  @IsString()
-  @Matches(E164, { message: 'phone debe estar en formato E.164' })
-  phone?: string;
-
   @IsOptional()
   @IsString()
   @MaxLength(120)
-  firstName?: string;
+  externalId?: string | null;
 
   @IsOptional()
   @IsString()
-  @MaxLength(120)
-  lastName?: string;
+  @MaxLength(20)
+  dni?: string | null;
 
   @IsOptional()
-  @IsObject()
-  attributes?: Record<string, unknown>;
-}
+  @IsString()
+  @MaxLength(20)
+  cuit?: string | null;
 
-export class UpdateContactDto {
-  @IsOptional()
+  @ValidateIf(
+    (o: CreateContactDto) =>
+      !o.externalId && !o.dni && !o.cuit && !o.phone && !o.phoneE164,
+  )
   @IsEmail()
   @MaxLength(320)
   email?: string | null;
 
   @IsOptional()
   @IsString()
-  @Matches(E164, { message: 'phone debe estar en formato E.164' })
+  @MaxLength(40)
   phone?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  phoneE164?: string | null;
 
   @IsOptional()
   @IsString()
@@ -61,6 +59,123 @@ export class UpdateContactDto {
   @IsOptional()
   @IsObject()
   attributes?: Record<string, unknown> | null;
+}
+
+export class UpdateContactDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  externalId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  dni?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  cuit?: string | null;
+
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(320)
+  email?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phone?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  phoneE164?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  firstName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  lastName?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  attributes?: Record<string, unknown> | null;
+}
+
+export class ListContactsQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cursor?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  q?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  externalId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  dni?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  cuit?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phone?: string;
+}
+
+export class FindByIdentityQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  externalId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  dni?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  cuit?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phone?: string;
 }
 
 export class CreateTagDto {
