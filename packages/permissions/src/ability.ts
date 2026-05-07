@@ -33,6 +33,9 @@ export function defineAbilityFor(ctx: AbilityContext): AppAbility {
     can('manage', 'Team', { organizationId });
     can('manage', 'Member', { organizationId });
     can('read', 'AuditLog', { organizationId });
+    can('manage', 'Contact', { organizationId });
+    can('manage', 'ContactMergeSuggestion', { organizationId });
+    can('manage', 'ContactImportJob', { organizationId });
   }
 
   if (orgRole === 'OWNER' || orgRole === 'BILLING') {
@@ -44,8 +47,10 @@ export function defineAbilityFor(ctx: AbilityContext): AppAbility {
   }
 
   if (teamRole === 'MEMBER') {
-    can(['create', 'read', 'update', 'send'], ['Campaign', 'Template', 'Contact', 'ContactList', 'Tag', 'WapiTemplate'], { teamId });
-    can('delete', ['Contact', 'ContactList', 'Tag'], { teamId });
+    can(['create', 'read', 'update', 'send'], ['Campaign', 'Template', 'ContactList', 'Tag', 'WapiTemplate'], { teamId });
+    can('delete', ['ContactList', 'Tag'], { teamId });
+    can(['create', 'read', 'update', 'delete'], 'Contact', { organizationId });
+    can(['create', 'read'], 'ContactImportJob', { organizationId });
     can('read', ['WapiConfig', 'SmtpAccount', 'Analytics', 'EmailSuppression'], { teamId });
     can(['read', 'update', 'send'], 'Conversation', { teamId });
     can(['create', 'read', 'update', 'delete'], 'QuickReply', { teamId });
@@ -53,6 +58,8 @@ export function defineAbilityFor(ctx: AbilityContext): AppAbility {
 
   if (teamRole === 'VIEWER') {
     can('read', 'all', { teamId });
+    can('read', 'Contact', { organizationId });
+    can('read', 'ContactImportJob', { organizationId });
   }
 
   if (planFeatures.ai !== true) {

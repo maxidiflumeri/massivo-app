@@ -145,12 +145,14 @@ model Organization {
   wapiResolutionNotes WapiResolutionNote[]
   wapiBotSessions     WapiBotSession[]
 
-  contacts       Contact[]
-  tags           Tag[]
-  contactLists   ContactList[]
-  scheduledTasks ScheduledTask[]
-  taskExecutions TaskExecution[]
-  campaignLogs   CampaignLog[]
+  contacts                Contact[]
+  tags                    Tag[]
+  contactLists            ContactList[]
+  contactMergeSuggestions ContactMergeSuggestion[]
+  contactImportJobs       ContactImportJob[]
+  scheduledTasks          ScheduledTask[]
+  taskExecutions          TaskExecution[]
+  campaignLogs            CampaignLog[]
 
   @@index([status])
 }
@@ -391,16 +393,22 @@ model EmailContact {
   email          String
   name           String?
   data           Json?
+  // 5.1 — link opcional al Contact cross-channel. Se popula en backfill y al
+  // agregar contactos a una campaña. SetNull si el Contact se borra para no
+  // cascadear sobre snapshots de envío histórico.
+  contactId      String?
   createdAt      DateTime @default(now())
 
   organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
   campaign     EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
   reports      EmailReport[]
 
   @@index([organizationId])
   @@index([teamId])
   @@index([campaignId])
+  @@index([contactId])
 }
 
 model EmailReport {
@@ -675,16 +683,20 @@ model WapiContact {
   phone          String
   name           String?
   data           Json?
+  // 5.1 — link opcional al Contact cross-channel (ver EmailContact.contactId).
+  contactId      String?
   createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   campaign     WapiCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
   report       WapiReport?
 
   @@index([organizationId])
   @@index([teamId])
   @@index([campaignId])
+  @@index([contactId])
 }
 
 model WapiReport {
@@ -899,27 +911,52 @@ model WapiBotSession {
 // ScheduledTask, TaskExecution, CampaignLog
 // ============================================================
 
+// 5.1 — Contact pasa a org-scope. teamId queda como "soft ownership" (team que lo cargó),
+// nullable. Identity keys jerárquicas: externalId/dni/cuit son uniques fuertes por org
+// (auto-merge). email/phoneE164 son weak (sólo indexed; matching dispara sugerencia, no
+// auto-merge). phone se mantiene durante la transición — útil hasta 5.2 cuando el service
+// normaliza todo a phoneE164. EmailContact/WapiContact siguen como audience snapshots
+// per-campaign pero ahora linkean al Contact cross-channel via contactId.
 model Contact {
   id             String   @id @default(cuid())
   organizationId String
-  teamId         String
-  email          String?
-  phone          String?
-  firstName      String?
-  lastName       String?
-  attributes     Json?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  teamId         String?
 
-  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  team         Team                @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  tags         ContactTag[]
-  listMembers  ContactListMember[]
+  // Identity keys (todas opcionales; al menos una requerida a nivel app)
+  externalId String?
+  dni        String?
+  cuit       String?
+  email      String?
+  phoneE164  String?
+  phone      String? // legacy / raw, kept durante migración
 
-  // Postgres permite múltiples NULL en columnas con UNIQUE: dos contacts del mismo team
-  // sin email no chocan, pero dos con el mismo email sí. Lo mismo para phone.
-  @@unique([teamId, email])
-  @@unique([teamId, phone])
+  // Profile
+  firstName  String?
+  lastName   String?
+  attributes Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team              Team?                    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  tags              ContactTag[]
+  listMembers       ContactListMember[]
+  emailIdentities   EmailContact[]
+  wapiIdentities    WapiContact[]
+  mergesAsLeft      ContactMergeSuggestion[] @relation("LeftContact")
+  mergesAsRight     ContactMergeSuggestion[] @relation("RightContact")
+
+  // Strong identity keys: globally unique per org → auto-merge en matching service
+  @@unique([organizationId, externalId])
+  @@unique([organizationId, dni])
+  @@unique([organizationId, cuit])
+
+  // Weak identity keys: indexed para queries rápidas, pero NO unique — multiple contacts
+  // pueden compartir email (familia/oficina) o phone (mismo teléfono compartido). El
+  // matching propone merge en UI, no fuerza.
+  @@index([organizationId, email])
+  @@index([organizationId, phoneE164])
   @@index([organizationId])
   @@index([teamId])
 }
@@ -981,6 +1018,81 @@ model ContactListMember {
 
   @@id([listId, contactId])
   @@index([contactId])
+}
+
+// 5.1 — Sugerencias de merge generadas por matching weak (email/phone). Se crean
+// cuando la cascada en ContactMatchingService encuentra coincidencia débil. UI
+// presenta lado-a-lado y el usuario decide unir o descartar. Único por (left, right,
+// matchType) para no spammear con la misma sugerencia.
+model ContactMergeSuggestion {
+  id              String                          @id @default(cuid())
+  organizationId  String
+  leftContactId   String
+  rightContactId  String
+  matchType       ContactMergeSuggestionMatchType
+  matchValue      String
+  status          ContactMergeSuggestionStatus    @default(PENDING)
+  decidedByUserId String?
+  decidedAt       DateTime?
+  createdAt       DateTime                        @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leftContact  Contact      @relation("LeftContact", fields: [leftContactId], references: [id], onDelete: Cascade)
+  rightContact Contact      @relation("RightContact", fields: [rightContactId], references: [id], onDelete: Cascade)
+
+  @@unique([leftContactId, rightContactId, matchType])
+  @@index([organizationId, status])
+  @@index([organizationId])
+}
+
+enum ContactMergeSuggestionMatchType {
+  EMAIL
+  PHONE
+}
+
+enum ContactMergeSuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+// 5.1 — Trabajo de import CSV. Se crea PENDING al confirmar el wizard, un worker
+// cross-tenant lo procesa, va escribiendo progress/created/updated/suggested/errors.
+// La UI hace polling sobre /jobs/:id para mostrar la barra de progreso.
+model ContactImportJob {
+  id              String                 @id @default(cuid())
+  organizationId  String
+  teamId          String?
+  createdByUserId String
+  fileName        String
+  fileSize        Int
+  status          ContactImportJobStatus @default(PENDING)
+  // mapping: { csvColumnName: 'externalId' | 'dni' | 'cuit' | 'email' | 'phone'
+  //          | 'firstName' | 'lastName' | 'attributes:<key>' | 'ignore' }
+  mapping         Json
+  options         Json?
+  total           Int                    @default(0)
+  processed       Int                    @default(0)
+  created         Int                    @default(0)
+  updated         Int                    @default(0)
+  suggested       Int                    @default(0)
+  errors          Json?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime               @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+}
+
+enum ContactImportJobStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+  CANCELLED
 }
 
 model ScheduledTask {

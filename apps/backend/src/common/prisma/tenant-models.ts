@@ -22,7 +22,6 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'WapiResolutionNote',
   'WapiBotSession',
   // Cross-cutting (Fase 2.C)
-  'Contact',
   'Tag',
   'ContactList',
   'ScheduledTask',
@@ -30,7 +29,15 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'CampaignLog',
 ]);
 
-export const ORG_SCOPED_MODELS = new Set<string>(['Subscription', 'UsageCounter', 'AuditLog']);
+export const ORG_SCOPED_MODELS = new Set<string>([
+  'Subscription',
+  'UsageCounter',
+  'AuditLog',
+  // Unified contacts (Fase 5)
+  'Contact',
+  'ContactMergeSuggestion',
+  'ContactImportJob',
+]);
 
 export function getModelScope(model: string | undefined): ScopeKind {
   if (!model) return 'global';

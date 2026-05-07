@@ -21,6 +21,38 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 5.A.1 — Contacts unificados: schema org-scope + identidad multi-clave + migración con backfill ✅
+
+#### Added
+- **Schema Prisma — `Contact` org-scope + identity fields** (`packages/prisma/prisma/schema.prisma`):
+  - `Contact.teamId` pasa a opcional (soft-ownership). Nuevos campos: `externalId String?` (clave de negocio del cliente, viene del CSV), `dni String?`, `cuit String?` (sin cifrar — pragmático, DNI/CUIT son identificatorios pero no secretos), `phoneE164 String?` (normalizado `+<digits>`). El `phone` legacy se conserva durante la migración para no romper backfill.
+  - Uniques compuestos por org en strong keys: `@@unique([organizationId, externalId])`, `@@unique([organizationId, dni])`, `@@unique([organizationId, cuit])`. Todos nullable — Postgres trata NULLs como distintos, así que múltiples contactos sin DNI/externalId conviven sin conflicto.
+  - Índices en weak keys: `@@index([organizationId, email])`, `@@index([organizationId, phoneE164])` (no son unique porque pueden colisionar entre personas distintas).
+  - `EmailContact.contactId String?` y `WapiContact.contactId String?` con FK `ON DELETE SET NULL`. Permite linkear identidades del canal al Contact unificado sin perder históricos si se borra el Contact.
+- **Tabla `ContactMergeSuggestion`** (queue de fusiones por weak key):
+  - Campos: `leftContactId`/`rightContactId` (ambos FK a Contact con cascade), `matchType` enum `EMAIL|PHONE`, `matchValue String`, `status` enum `PENDING|ACCEPTED|REJECTED` default `PENDING`, `decidedByUserId String?`, `decidedAt DateTime?`.
+  - Unique `(leftContactId, rightContactId, matchType)` para evitar duplicados de la misma sugerencia.
+  - Índices `(organizationId, status)` para listar pendientes rápido y `(organizationId)` para scoping.
+- **Tabla `ContactImportJob`** (tracking de imports CSV):
+  - Campos: `fileName`/`fileSize`, `status` enum `PENDING|PROCESSING|DONE|FAILED|CANCELLED`, `mapping JSON` (mapeo columna→campo elegido en el wizard), `options JSON?` (flags como dryRun, mergeStrategy), counters `total/processed/created/updated/suggested Int @default(0)`, `errors JSON?`, `startedAt/finishedAt DateTime?`, `createdByUserId String`.
+  - Índices `(organizationId, status)` y `(organizationId, createdAt)` para inbox de imports.
+- **Migración `20260514100000_contacts_unification`** con SQL idempotente:
+  - 3 enums (`ContactMergeSuggestionMatchType`, `ContactMergeSuggestionStatus`, `ContactImportJobStatus`).
+  - DROP del unique `(teamId, email)` y `(teamId, phone)` + nuevas constraints/índices org-scope.
+  - **Backfill SQL en 5 pasos**: (1) `phoneE164` derivado en Contact existentes con `regexp_replace(phone, '[^0-9]', '', 'g')` y `'+'` prefix si ≥8 dígitos; (2) link `EmailContact.contactId` por `LOWER(TRIM(email))` matching Contacts existentes con tie-break "longest name wins" via `DISTINCT ON ... ORDER BY LENGTH(firstName||lastName) DESC, createdAt ASC`; (3) crear Contact por cada `(orgId, normalized_email)` no linkeado, con `gen_random_uuid()::text` como id, `firstName` desde el `name` del EmailContact con mejor longitud; (4-5) mismo patrón para WapiContact (link por `phoneE164` matching existentes + crear Contact por `(orgId, normalized phone)` no linkeado).
+  - Aplicada vía `psql` directo (drift previa) + INSERT manual en `_prisma_migrations`. Resultado en dev: 125 EmailContacts → 2 Contacts únicos, 48 WapiContacts → 1 Contact único (test data tenía sólo 2 emails + 1 phone distintos).
+- **Tenant scope** (`apps/backend/src/common/prisma/tenant-models.ts`):
+  - `Contact`, `ContactMergeSuggestion`, `ContactImportJob` movidos de `TENANT_SCOPED_MODELS` a `ORG_SCOPED_MODELS`. `Tag` y `ContactList` siguen team-scoped (decisión: las listas/tags son del equipo que las trabaja, los contactos son del cliente final que es global a la org).
+- **CASL** (`packages/permissions/src/`):
+  - `subjects.ts`: agregados `ContactMergeSuggestion` y `ContactImportJob` al `SubjectName`.
+  - `ability.ts`: OWNER/ADMIN ganan `manage` sobre los 3 subjects con condición `{ organizationId }`. MEMBER hace `create/read/update/delete Contact` y `create/read ContactImportJob` (org-scope); ContactList/Tag siguen team-scope con `{ teamId }`. VIEWER read-only sobre `Contact` y `ContactImportJob`.
+
+#### Política de unificación de identidad
+- **Cascada de matching**: `externalId > dni > cuit > email > phoneE164`.
+- **Strong keys** (`externalId`, `dni`, `cuit`): auto-merge. Uniques de DB lo garantizan — un upsert con strong key match siempre apunta al mismo Contact existente.
+- **Weak keys** (`email`, `phoneE164`): si una fila importada matchea por email/phone con un Contact existente cuya strong key es distinta, se crea una `ContactMergeSuggestion PENDING` para resolución manual.
+- **DNI/CUIT sin cifrar**: decisión explícita del dueño tras evaluar pros/contras. Razonamiento: son identificatorios pero no secretos (a diferencia de passwords); cifrarlos rompería búsquedas SQL nativas (`WHERE dni = ?` requeriría descifrar cada fila o derivar hash determinista, ambos con costo en performance e ingeniería). Si en el futuro aparecen requisitos regulatorios, se puede agregar columna `dniHash` con HMAC determinista.
+
 ### 4.S.3 — Audit Log endpoint + frontend `/dashboard/audit` (Stage 6) ✅
 
 #### Added

@@ -2,6 +2,8 @@ export type SubjectName =
   | 'Campaign'
   | 'Contact'
   | 'ContactList'
+  | 'ContactMergeSuggestion'
+  | 'ContactImportJob'
   | 'Tag'
   | 'Template'
   | 'WapiConfig'
