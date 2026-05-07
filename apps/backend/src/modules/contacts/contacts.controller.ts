@@ -24,6 +24,7 @@ import {
   CreateContactDto,
   FindByIdentityQueryDto,
   ListContactsQueryDto,
+  SearchContactsQueryDto,
   UpdateContactDto,
 } from './contacts.dto';
 import { GetTimelineQueryDto } from './contact-timeline.dto';
@@ -48,6 +49,12 @@ export class ContactsController {
   @CheckPolicies((ability: AppAbility) => ability.can('read', 'Contact'))
   findByIdentity(@Query() query: FindByIdentityQueryDto) {
     return this.service.findByIdentity(query);
+  }
+
+  @Get('search')
+  @CheckPolicies((ability: AppAbility) => ability.can('read', 'Contact'))
+  search(@Query() query: SearchContactsQueryDto) {
+    return this.service.search(query);
   }
 
   @Get(':id')

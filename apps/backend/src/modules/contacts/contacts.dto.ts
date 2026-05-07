@@ -1,6 +1,10 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
   IsEmail,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsObject,
@@ -176,6 +180,82 @@ export class FindByIdentityQueryDto {
   @IsString()
   @MaxLength(40)
   phone?: string;
+}
+
+function toBoolTransform({ value }: { value: unknown }): boolean | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const s = value.toLowerCase();
+    if (s === 'true' || s === '1') return true;
+    if (s === 'false' || s === '0') return false;
+  }
+  return undefined;
+}
+
+function toArrayTransform({ value }: { value: unknown }): string[] | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v)).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+  return undefined;
+}
+
+export class SearchContactsQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cursor?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  q?: string;
+
+  @IsOptional()
+  @Transform(toArrayTransform)
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  tags?: string[];
+
+  @IsOptional()
+  @IsIn(['email', 'wapi'])
+  channel?: 'email' | 'wapi';
+
+  @IsOptional()
+  @Transform(toBoolTransform)
+  @IsBoolean()
+  hasOpened?: boolean;
+
+  @IsOptional()
+  @Transform(toBoolTransform)
+  @IsBoolean()
+  hasClicked?: boolean;
+
+  @IsOptional()
+  @Transform(toBoolTransform)
+  @IsBoolean()
+  hasBounced?: boolean;
+
+  @IsOptional()
+  @IsIn(['createdAt', 'updatedAt', 'name'])
+  sort?: 'createdAt' | 'updatedAt' | 'name';
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  direction?: 'asc' | 'desc';
 }
 
 export class CreateTagDto {

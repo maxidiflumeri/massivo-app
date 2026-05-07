@@ -1070,9 +1070,11 @@ Cierra el ciclo handoff humano: una vez que un operador toma una conversación (
   - `AuditLog` (1 entry @ `createdAt` con `resourceType='Contact'` AND `resourceId=contactId`).
 - [x] Endpoint `GET /api/contacts/:id/timeline?cursor=ISO&limit=&channel=email|wapi|audit`. Cursor por timestamp ISO (V1: pierde precisión cuando hay items con el mismo `at`; mejorable a `(at,id)` en V2). Buffer `PER_SOURCE_BUFFER=200` por fuente, merge in-memory, sort desc por `at` (tiebreak por id), slice `limit` (default 50, max 100). `NotFoundException` si Contact no existe; `BadRequestException` si cursor inválido. Tests +7 (NotFound, cursor inválido, email reports+events, wapi reports expandido, channel=audit aislando queries, limit+nextCursor, cursor filtra futuros).
 
-#### 5.C — Búsqueda y filtros avanzados
-- [ ] Endpoint `GET /api/contacts/search` con filtros: `q` (full-text en email/phone/name/externalId/attributes), `tags[]`, `lastActivityFrom/To`, `channel`, `hasOpened/Clicked/Bounced`. Postgres `tsvector` o `ILIKE` según volumen.
-- [ ] Cursor pagination + sort configurable (lastActivity desc default).
+#### 5.C — Búsqueda y filtros avanzados ✅
+- [x] Endpoint `GET /api/contacts/search` con filtros: `q` (ILIKE OR contra `firstName/lastName/email/externalId/phoneE164`), `tags[]` (`tags.some.tagId.in`), `channel=email|wapi` (existe `emailIdentities`/`wapiIdentities`), `hasOpened/Clicked/Bounced` (Prisma nested filter sobre `emailIdentities.some.reports.some` — `firstOpenedAt not null`/`firstClickedAt not null`/`status=BOUNCED`). `tags`/`hasOpened|Clicked|Bounced` con coerción string→array y string→bool desde query (`@Transform`). DTO `SearchContactsQueryDto` con validación exhaustiva. Sin `tsvector` en V1 (ILIKE alcanza para volumen actual).
+- [x] Cursor pagination por `id` + sort configurable: `sort=createdAt|updatedAt|name` × `direction=asc|desc` (default `updatedAt desc`). `sort=name` ordena por `lastName, firstName, id` con la misma direction. Endpoint registrado **antes** de `:id` en el controller (Nest route order). Tests +12 en `contacts.service.spec.ts` (q, tags, channel email/wapi, hasOpened/Clicked/Bounced, sort+direction, sort=name, default sort, cursor+limit, combinación q+tags+channel+sort, hasOpened con channel=email se reescribe sin perder reports filter).
+- [x] **Deferido a V2**: `lastActivityFrom/To` filter + `lastActivity desc` sort. Requiere denormalización (`Contact.lastActivityAt` + backfill SQL + bumps en `EmailWorker`/`WapiWorker`/`WapiInbox.send`/`SesWebhook`/`WapiWebhook`/`TrackService`) — demasiado invasivo para V1; documentado para Fase 5.E o futuro.
+- [x] 598/598 backend tests verde.
 
 #### 5.D — Frontend Contacts
 - [ ] **5.D.1** — Lista `/dashboard/contacts`: tabla con name/email/phone/externalId/tags/lastActivity + búsqueda + filtros + bulk actions (tag, untag, delete, export).

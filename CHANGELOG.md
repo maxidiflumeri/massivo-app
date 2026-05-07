@@ -21,6 +21,56 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 5.C — Búsqueda y filtros avanzados de Contacts ✅
+
+#### Added
+- **Endpoint** `GET /api/contacts/search` con filtros avanzados, montado **antes** de `:id` en `ContactsController` (Nest matchea por orden de declaración para rutas con segmentos estáticos vs `:param`). Gate CASL `read Contact`.
+- **`SearchContactsQueryDto`** en `contacts.dto.ts`:
+  - `cursor` (string, max 64) — id del último contact de la página anterior.
+  - `limit` (int 1-200, default 50).
+  - `q` (string, max 120) — full-text simple.
+  - `tags?: string[]` con `@Transform` que acepta tanto array nativo (`tags=t1&tags=t2`) como CSV string (`tags=t1,t2`); max 50 ids, max 64 chars c/u.
+  - `channel?: 'email' | 'wapi'`.
+  - `hasOpened?: boolean`, `hasClicked?: boolean`, `hasBounced?: boolean` con `@Transform` string→bool (acepta `true|1|false|0` además de bool nativo, ideal para querystrings).
+  - `sort?: 'createdAt' | 'updatedAt' | 'name'`, `direction?: 'asc' | 'desc'`.
+- **`ContactsService.search(params)`**: cursor pagination con `take=limit+1` trick + nextCursor de id, mismo pattern que `list()`.
+
+#### Implementación
+- **`buildSearchWhere()`** arma el where con:
+  - **`q`** → `OR` ILIKE insensitive sobre `firstName | lastName | email | externalId | phoneE164` (mismo set que `list()`).
+  - **`tags`** → `tags: { some: { tagId: { in: [...] } } }`. Junction `ContactTag` con PK compuesto `(contactId, tagId)`; el filtro `some` hace que el contact matchee si tiene al menos un tag dentro de la lista.
+  - **`channel='email'`** → `emailIdentities: { some: {} }` (existe al menos una `EmailContact` linkeada).
+  - **`channel='wapi'`** → `wapiIdentities: { some: {} }`.
+  - **`hasOpened|Clicked|Bounced`** (cualquiera true) → **reescribe** `emailIdentities` a `{ some: { reports: { some: <filter> } } }` con `firstOpenedAt: { not: null }` / `firstClickedAt: { not: null }` / `status: 'BOUNCED'`. Pisa el `channel='email'` plano sin perder semántica porque ya implica que el contact tiene al menos una `EmailContact` con un `EmailReport` que cumple. Los flags son combinables (todos van al mismo `reports.some`).
+- **Sort configurable**:
+  - `sort='createdAt'` o `'updatedAt'` → `[{<field>: dir}, {id: dir}]` con tiebreak por id.
+  - `sort='name'` → `[{lastName: dir}, {firstName: dir}, {id: dir}]` para nombres compuestos estables.
+  - Default: `updatedAt desc`.
+- **Cursor**: por `id` del Contact (no por timestamp, a diferencia de la timeline). Trade-off: cursor estable y no requiere conocer el timestamp del último item, pero sí requiere persistir el id en el frontend.
+
+#### Tests
+- **+12 tests** en `contacts.service.spec.ts` (ahora 32 totales, antes 20):
+  - `q` construye OR de 5 campos.
+  - `tags[]` → `where.tags.some.tagId.in`.
+  - `channel='email'` y `channel='wapi'` por separado.
+  - `hasOpened=true`, `hasClicked=true`, `hasBounced=true` cada uno verificando el filter correcto.
+  - `sort='createdAt' direction='asc'` → orderBy correcto.
+  - `sort='name'` → 3 keys (lastName, firstName, id) con default direction desc.
+  - Default sort `updatedAt desc`.
+  - Cursor + limit con nextCursor del último item del slice.
+  - Combinación `q + tags + channel + sort` coexisten correctamente.
+  - `hasOpened` con `channel='email'` reescribe a `emailIdentities.some.reports.some` sin perder el filter.
+
+#### Deferido a V2
+- **`lastActivityFrom/To`** filter y **`lastActivity desc`** sort. Implementarlos correctamente requiere denormalizar `Contact.lastActivityAt` con backfill SQL (`MAX` de `EmailReport.sentAt | EmailEvent.occurredAt | WapiReport.sentAt | WapiMessage.timestamp`) + bumps en cada productor (EmailWorker, EmailCampaignsService, SesWebhookService, TrackService, WapiWorker, WapiInboxService, WapiWebhookService). El scope es demasiado invasivo para V1 y la UI todavía no lo necesita. Documentado como deferido en `MIGRATION_PLAN.md` (probable Fase 5.E).
+- **`tsvector` / Postgres full-text**: ILIKE OR sobre 5 campos alcanza para volumen actual; migrar a tsvector queda para cuando haya datos en producción.
+
+#### Tests totales
+- **598/598 backend tests verde** (+13 vs 585: 12 nuevos en `search` + 1 que ya estaba).
+- Backend typecheck ✅.
+
+---
+
 ### 5.B — Timeline aggregator cross-canal ✅
 
 #### Added

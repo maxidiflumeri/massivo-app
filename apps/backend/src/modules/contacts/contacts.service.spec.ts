@@ -200,6 +200,131 @@ describe('ContactsService', () => {
     });
   });
 
+  describe('search', () => {
+    it('q construye OR contra firstName/lastName/email/externalId/phoneE164', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () => service.search({ q: 'maxi' }));
+      const where = mock['findMany']!.mock.calls[0][0].where as { OR: unknown[] };
+      expect(where.OR).toHaveLength(5);
+    });
+
+    it('tags[] → where.tags.some.tagId.in', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () =>
+        service.search({ tags: ['tag-1', 'tag-2'] }),
+      );
+      const where = mock['findMany']!.mock.calls[0][0].where as Record<string, unknown>;
+      expect(where.tags).toEqual({ some: { tagId: { in: ['tag-1', 'tag-2'] } } });
+    });
+
+    it('channel=email → where.emailIdentities.some={}', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () => service.search({ channel: 'email' }));
+      const where = mock['findMany']!.mock.calls[0][0].where as Record<string, unknown>;
+      expect(where.emailIdentities).toEqual({ some: {} });
+    });
+
+    it('channel=wapi → where.wapiIdentities.some={}', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () => service.search({ channel: 'wapi' }));
+      const where = mock['findMany']!.mock.calls[0][0].where as Record<string, unknown>;
+      expect(where.wapiIdentities).toEqual({ some: {} });
+    });
+
+    it('hasOpened=true → emailIdentities.some.reports.some.firstOpenedAt not null', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () => service.search({ hasOpened: true }));
+      const where = mock['findMany']!.mock.calls[0][0].where as {
+        emailIdentities: { some: { reports: { some: Record<string, unknown> } } };
+      };
+      expect(where.emailIdentities.some.reports.some.firstOpenedAt).toEqual({ not: null });
+    });
+
+    it('hasClicked=true → reports.some.firstClickedAt not null', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () => service.search({ hasClicked: true }));
+      const where = mock['findMany']!.mock.calls[0][0].where as {
+        emailIdentities: { some: { reports: { some: Record<string, unknown> } } };
+      };
+      expect(where.emailIdentities.some.reports.some.firstClickedAt).toEqual({ not: null });
+    });
+
+    it('hasBounced=true → reports.some.status=BOUNCED', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () => service.search({ hasBounced: true }));
+      const where = mock['findMany']!.mock.calls[0][0].where as {
+        emailIdentities: { some: { reports: { some: Record<string, unknown> } } };
+      };
+      expect(where.emailIdentities.some.reports.some.status).toBe('BOUNCED');
+    });
+
+    it('sort=createdAt direction=asc → orderBy [{createdAt:asc},{id:asc}]', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () =>
+        service.search({ sort: 'createdAt', direction: 'asc' }),
+      );
+      const orderBy = mock['findMany']!.mock.calls[0][0].orderBy as Record<string, string>[];
+      expect(orderBy).toEqual([{ createdAt: 'asc' }, { id: 'asc' }]);
+    });
+
+    it('sort=name → orderBy [{lastName},{firstName},{id}] (default desc)', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () => service.search({ sort: 'name' }));
+      const orderBy = mock['findMany']!.mock.calls[0][0].orderBy as Record<string, string>[];
+      expect(orderBy).toEqual([
+        { lastName: 'desc' },
+        { firstName: 'desc' },
+        { id: 'desc' },
+      ]);
+    });
+
+    it('default sort: updatedAt desc', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () => service.search({}));
+      const orderBy = mock['findMany']!.mock.calls[0][0].orderBy as Record<string, string>[];
+      expect(orderBy).toEqual([{ updatedAt: 'desc' }, { id: 'desc' }]);
+    });
+
+    it('cursor + limit: rows.length > limit → nextCursor', async () => {
+      const rows = Array.from({ length: 6 }, (_, i) => makeContact(`c${i}`));
+      mock['findMany']!.mockResolvedValue(rows);
+      const result = await TenantContext.run(tenantA, () =>
+        service.search({ limit: 5 }),
+      );
+      expect(result.items).toHaveLength(5);
+      expect(result.nextCursor).toBe('c4');
+    });
+
+    it('combinación: q + tags + channel + sort coexisten en where/orderBy', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () =>
+        service.search({
+          q: 'maxi',
+          tags: ['t1'],
+          channel: 'email',
+          sort: 'createdAt',
+        }),
+      );
+      const args = mock['findMany']!.mock.calls[0][0];
+      const where = args.where as Record<string, unknown>;
+      expect(where.OR).toBeDefined();
+      expect(where.tags).toEqual({ some: { tagId: { in: ['t1'] } } });
+      expect(where.emailIdentities).toEqual({ some: {} });
+      expect(args.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }]);
+    });
+
+    it('hasOpened reescribe channel=email a un emailIdentities con reports filter', async () => {
+      mock['findMany']!.mockResolvedValue([]);
+      await TenantContext.run(tenantA, () =>
+        service.search({ channel: 'email', hasOpened: true }),
+      );
+      const where = mock['findMany']!.mock.calls[0][0].where as {
+        emailIdentities: { some: { reports?: unknown } };
+      };
+      expect(where.emailIdentities.some.reports).toBeDefined();
+    });
+  });
+
   describe('remove', () => {
     it('contact ajeno → NotFoundException, no llama delete', async () => {
       mock['findFirst']!.mockResolvedValue(null);

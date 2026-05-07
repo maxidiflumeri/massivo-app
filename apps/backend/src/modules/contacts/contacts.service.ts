@@ -13,6 +13,7 @@ import type {
   CreateContactDto,
   FindByIdentityQueryDto,
   ListContactsQueryDto,
+  SearchContactsQueryDto,
   UpdateContactDto,
 } from './contacts.dto';
 import {
@@ -64,6 +65,32 @@ export class ContactsService {
       ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
       where: Object.keys(where).length > 0 ? where : undefined,
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    });
+
+    if (rows.length > limit) {
+      const items = rows.slice(0, limit) as ContactDto[];
+      return { items, nextCursor: items[items.length - 1]!.id };
+    }
+    return { items: rows as ContactDto[], nextCursor: null };
+  }
+
+  async search(params: SearchContactsQueryDto): Promise<ContactPage> {
+    this.requireContext();
+    const limit = clampLimit(params.limit);
+    const where = this.buildSearchWhere(params);
+
+    const sortField = params.sort ?? 'updatedAt';
+    const direction = params.direction ?? 'desc';
+    const orderBy =
+      sortField === 'name'
+        ? [{ lastName: direction }, { firstName: direction }, { id: direction }]
+        : [{ [sortField]: direction }, { id: direction }];
+
+    const rows = await this.prisma.scoped.contact.findMany({
+      take: limit + 1,
+      ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
+      where: Object.keys(where).length > 0 ? where : undefined,
+      orderBy: orderBy as Prisma.ContactOrderByWithRelationInput[],
     });
 
     if (rows.length > limit) {
@@ -226,6 +253,43 @@ export class ContactsService {
         { phoneE164: { contains: q } },
       ];
     }
+    return where;
+  }
+
+  private buildSearchWhere(params: SearchContactsQueryDto): Record<string, unknown> {
+    const where: Record<string, unknown> = {};
+
+    if (params.q && params.q.trim()) {
+      const q = params.q.trim();
+      where.OR = [
+        { firstName: { contains: q, mode: 'insensitive' } },
+        { lastName: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { externalId: { contains: q, mode: 'insensitive' } },
+        { phoneE164: { contains: q } },
+      ];
+    }
+
+    if (params.tags && params.tags.length > 0) {
+      where.tags = { some: { tagId: { in: params.tags } } };
+    }
+
+    if (params.channel === 'email') {
+      where.emailIdentities = { some: {} };
+    } else if (params.channel === 'wapi') {
+      where.wapiIdentities = { some: {} };
+    }
+
+    const reportFilters: Record<string, unknown> = {};
+    if (params.hasOpened === true) reportFilters.firstOpenedAt = { not: null };
+    if (params.hasClicked === true) reportFilters.firstClickedAt = { not: null };
+    if (params.hasBounced === true) reportFilters.status = 'BOUNCED';
+    if (Object.keys(reportFilters).length > 0) {
+      where.emailIdentities = {
+        some: { reports: { some: reportFilters } },
+      };
+    }
+
     return where;
   }
 
