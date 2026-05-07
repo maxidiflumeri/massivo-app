@@ -88,6 +88,35 @@ describe('WapiCampaignsService', () => {
       await expect(svc.update('c1', { name: 'X' })).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it('4.R DRAFT + scheduledAt futuro → SCHEDULED', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      const future = new Date(Date.now() + 86400000);
+      await svc.update('c1', { scheduledAt: future } as never);
+      expect(prisma.scoped.wapiCampaign.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'SCHEDULED', scheduledAt: future }),
+        }),
+      );
+    });
+
+    it('4.R SCHEDULED + scheduledAt:null → DRAFT', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'SCHEDULED' });
+      await svc.update('c1', { scheduledAt: null } as never);
+      expect(prisma.scoped.wapiCampaign.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'DRAFT', scheduledAt: null }),
+        }),
+      );
+    });
+
+    it('4.R PAUSED + scheduledAt no toca status', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'PAUSED' });
+      const future = new Date(Date.now() + 86400000);
+      await svc.update('c1', { scheduledAt: future } as never);
+      const call = prisma.scoped.wapiCampaign.update.mock.calls[0][0];
+      expect(call.data.status).toBeUndefined();
+    });
+
     it('4.Q config.delay* válido se persiste', async () => {
       prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
       await svc.update('c1', { config: { delayMinMs: 5000, delayMaxMs: 10000 } } as never);

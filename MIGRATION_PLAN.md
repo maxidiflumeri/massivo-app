@@ -959,6 +959,25 @@ Cierra el ciclo handoff humano: una vez que un operador toma una conversación (
 - ¿Mover `WAPI_WORKER_CONCURRENCY` a la UI también? No por ahora — multi-worker sync requiere coordinación cross-proceso (Redis), queda para cuando se necesite escalar.
 - ¿Mostrar al guardar una preview "con estos delays, una campaña de 1000 contactos tarda ≈ X horas"? Útil pero post-MVP.
 
+#### 4.R — Scheduler de campañas (WAPI + Email) ✅
+
+> **Motivación.** Hasta ahora `scheduledAt` era decorativo: ningún worker monitoreaba campañas `SCHEDULED` para dispararlas en su hora, y `update()` no transicionaba el status cuando se editaba la fecha — el tab "Programadas" quedaba siempre vacío. Esto aplica idéntico para WAPI y Email.
+
+**Backend**
+- [x] **`WapiCampaignSchedulerService` cross-tenant** — `setInterval(60s)` lee `WapiCampaign` con `status='SCHEDULED' AND scheduledAt <= NOW()` (batch 50) y dispara `WapiCampaignsService.send()` per-row bajo un `TenantContext` sintético construido con la `organizationId/teamId` de la campaña. Multi-instance safe via la transición a `PROCESSING` en transacción dentro de `send()`.
+- [x] **`EmailCampaignSchedulerService`** — equivalente para email-campaigns.
+- [x] **Fix transición `update()`** — DRAFT + scheduledAt → SCHEDULED, SCHEDULED + scheduledAt:null → DRAFT, PAUSED no se toca. Aplicado en ambos services.
+- [x] **Tests** — +7 tests de scheduler (tick happy/empty/resiliente, filtro por status+scheduledAt) +6 tests de transición en update services.
+
+**Aceptación**
+- Crear o editar una campaña WAPI/Email con fecha futura → aparece en el tab "Programadas".
+- Llegada la hora, el scheduler la mueve a `PROCESSING` y enquola los reports automáticamente sin que nadie apriete "Enviar".
+- Borrar la fecha de una campaña SCHEDULED → vuelve a DRAFT y deja de estar en "Programadas".
+
+**Notas / decisiones abiertas**
+- TICK_MS=60s elegido como balance entre granularidad (puntualidad ±60s) y carga de DB. Si alguna vez se necesita programación al segundo, bajar.
+- El scheduler usa `setInterval` simple en lugar de `@nestjs/schedule` para mantener la dep mínima — mismo patrón que `WapiBotWaitingExpirerService`.
+
 **Aceptación 4.L:**
 - Crear un virtual number `+5491100000001` ligado a un `WapiConfig` de prueba.
 - Desde el chat-simulator: el cliente virtual escribe "hola" → aparece en el inbox real del team. El operador responde con texto / foto / audio / documento → el simulator muestra el mensaje en la vista cliente con caption + media renderizada. Reacciones (cliente → operador) y botones (template inbound) funcionan end-to-end. Statuses delivered/read se reflejan en los checks azules del operador.

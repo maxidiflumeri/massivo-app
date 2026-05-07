@@ -6,6 +6,7 @@ import { WapiTemplatesController } from './wapi-templates.controller';
 import { WapiTemplatesService } from './wapi-templates.service';
 import { WapiCampaignsController } from './campaigns/wapi-campaigns.controller';
 import { WapiCampaignsService } from './campaigns/wapi-campaigns.service';
+import { WapiCampaignSchedulerService } from './campaigns/wapi-campaign-scheduler.service';
 import { WapiSenderService } from './sender/wapi-sender.service';
 import { WapiQueueService } from './queue/wapi-queue.service';
 import { WapiWorkerService } from './queue/wapi-worker.service';
@@ -49,6 +50,7 @@ import { WapiLiveService } from './live/wapi-live.service';
     WapiConfigsService,
     WapiTemplatesService,
     WapiCampaignsService,
+    WapiCampaignSchedulerService,
     WapiSenderService,
     WapiQueueService,
     WapiWorkerService,

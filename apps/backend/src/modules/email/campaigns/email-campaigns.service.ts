@@ -81,9 +81,17 @@ export class EmailCampaignsService {
     if (dto.scheduledAt && dto.scheduledAt.getTime() < Date.now()) {
       throw new BadRequestException('scheduledAt debe ser futuro');
     }
+    const data: Record<string, unknown> = { ...dto };
+    if (dto.scheduledAt !== undefined) {
+      if (current.status === 'DRAFT' && dto.scheduledAt) {
+        data.status = 'SCHEDULED';
+      } else if (current.status === 'SCHEDULED' && dto.scheduledAt === null) {
+        data.status = 'DRAFT';
+      }
+    }
     return this.prisma.scoped.emailCampaign.update({
       where: { id },
-      data: dto as never,
+      data: data as never,
     });
   }
 

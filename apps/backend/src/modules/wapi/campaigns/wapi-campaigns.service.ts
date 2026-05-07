@@ -110,9 +110,17 @@ export class WapiCampaignsService {
     if (dto.config !== undefined) {
       assertCampaignConfig(dto.config);
     }
+    const data: Record<string, unknown> = { ...dto };
+    if (dto.scheduledAt !== undefined) {
+      if (current.status === 'DRAFT' && dto.scheduledAt) {
+        data.status = 'SCHEDULED';
+      } else if (current.status === 'SCHEDULED' && dto.scheduledAt === null) {
+        data.status = 'DRAFT';
+      }
+    }
     return this.prisma.scoped.wapiCampaign.update({
       where: { id },
-      data: dto as never,
+      data: data as never,
     });
   }
 

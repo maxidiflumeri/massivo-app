@@ -21,6 +21,23 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.R — Scheduler de campañas (WAPI + Email)
+
+#### Added
+- **Backend — `WapiCampaignSchedulerService`** (`apps/backend/src/modules/wapi/campaigns/wapi-campaign-scheduler.service.ts`): worker cross-tenant con `setInterval(60s)` que lee campañas `status='SCHEDULED' AND scheduledAt <= NOW()` (batch 50) y dispara `WapiCampaignsService.send()` para cada una bajo un `TenantContext` sintético construido con la `organizationId/teamId` de la fila. Errores per-row son catcheados y loggeados sin tumbar el tick. Multi-instance safe: `send()` marca `PROCESSING` en transacción, así que el segundo worker que intente la misma fila recibe `ConflictException` y se ignora.
+- **Backend — `EmailCampaignSchedulerService`** (`email-campaign-scheduler.service.ts`): mismo patrón, equivalente para email-campaigns.
+- **Tests** — `wapi-campaign-scheduler.service.spec.ts` y `email-campaign-scheduler.service.spec.ts` (+7 tests netos): tick sin filas, despacho per-row, resiliencia ante fallos, filtro por `SCHEDULED` + `scheduledAt vencido`. **+6 tests** adicionales en los specs de service para cubrir transición DRAFT↔SCHEDULED en `update()`.
+
+#### Fixed
+- **`WapiCampaignsService.update()` / `EmailCampaignsService.update()`**: cuando se setea/limpia `scheduledAt` en una campaña, ahora se transiciona el `status` apropiadamente:
+  - `DRAFT` + `scheduledAt` futuro → `SCHEDULED` (antes se quedaba en `DRAFT`, por eso una campaña editada con fecha no aparecía en el tab "Programadas").
+  - `SCHEDULED` + `scheduledAt: null` → `DRAFT`.
+  - `PAUSED` no se toca (sigue siendo `PAUSED` al editar fecha — la pausa la maneja el operador).
+
+#### Why
+- Antes: `scheduledAt` se persistía como dato decorativo. No había ningún cron/worker que monitoreara campañas `SCHEDULED` y las disparara en su hora. El botón "Enviar" mandaba al instante sin importar la fecha. Y `update()` no transicionaba a `SCHEDULED` aunque le pusieras fecha, por lo que el tab "Programadas" no se llenaba.
+- Ahora: programar una campaña realmente dispara automáticamente. La fila se enquola en el background sin intervención manual y el inventario en "Programadas" refleja el estado real.
+
 ### 4.Q — Throttle de envío configurable por línea y por campaña
 
 #### Added

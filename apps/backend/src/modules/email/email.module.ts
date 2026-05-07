@@ -18,6 +18,7 @@ import { SesWebhookService } from './webhook/ses-webhook.service';
 import { SnsValidatorAdapter } from './webhook/sns-validator.adapter';
 import { EmailCampaignsController } from './campaigns/email-campaigns.controller';
 import { EmailCampaignsService } from './campaigns/email-campaigns.service';
+import { EmailCampaignSchedulerService } from './campaigns/email-campaign-scheduler.service';
 import { EmailMetricsController } from './metrics/email-metrics.controller';
 import { EmailMetricsService } from './metrics/email-metrics.service';
 import { ReportsController } from './reports/reports.controller';
@@ -48,6 +49,7 @@ import { ReportGeneratorService } from './reports/report-generator.service';
     SesWebhookService,
     SnsValidatorAdapter,
     EmailCampaignsService,
+    EmailCampaignSchedulerService,
     EmailMetricsService,
     ReportGeneratorService,
   ],
