@@ -51,6 +51,7 @@ export function defineAbilityFor(ctx: AbilityContext): AppAbility {
     can('delete', ['ContactList', 'Tag'], { teamId });
     can(['create', 'read', 'update', 'delete'], 'Contact', { organizationId });
     can(['create', 'read'], 'ContactImportJob', { organizationId });
+    can(['read', 'update'], 'ContactMergeSuggestion', { organizationId });
     can('read', ['WapiConfig', 'SmtpAccount', 'Analytics', 'EmailSuppression'], { teamId });
     can(['read', 'update', 'send'], 'Conversation', { teamId });
     can(['create', 'read', 'update', 'delete'], 'QuickReply', { teamId });
@@ -60,6 +61,7 @@ export function defineAbilityFor(ctx: AbilityContext): AppAbility {
     can('read', 'all', { teamId });
     can('read', 'Contact', { organizationId });
     can('read', 'ContactImportJob', { organizationId });
+    can('read', 'ContactMergeSuggestion', { organizationId });
   }
 
   if (planFeatures.ai !== true) {

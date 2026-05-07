@@ -21,6 +21,55 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 5.A.4 — Merge backend (accept/reject + relink) ✅
+
+#### Added
+- **`apps/backend/src/modules/contacts/contact-merge.service.ts`** — service con `list/accept/reject` para `ContactMergeSuggestion`.
+  - `list({ status='PENDING', cursor, limit })` cursor-paginado (default 25, max 100), `include` de left/rightContact con snapshot completo (id + identity keys + profile + createdAt) para que el frontend pueda renderizar el side-by-side sin queries adicionales.
+  - `accept(id)`:
+    - Throw `NotFoundException` si no existe; `BadRequestException` si la suggestion no está en `PENDING`.
+    - `detectStrongKeyConflicts(left, right)` rechaza con 400 si externalId/dni/cuit difieren no-null entre los dos contacts (señal de que NO son la misma persona, no se debería haber sugerido).
+    - `buildProfilePatch(left, right)` construye un objeto con sólo los campos de right que están null en left — left wins, right fills gaps. Aplicado a externalId/dni/cuit/email/phoneE164/phone/firstName/lastName/attributes.
+    - Todo el merge corre dentro de `prisma.scoped.$transaction(async (tx) => …)`:
+      1. `tx.contact.update(left, profilePatch)` si hay cambios.
+      2. `tx.emailContact.updateMany` + `tx.wapiContact.updateMany` paralelizados (Promise.all) — relinkean `contactId` de right a left.
+      3. `ContactTag` (PK `(contactId, tagId)`): `findMany` de leftTagIds, `deleteMany` de los duplicados en right, después `updateMany` de los que quedan.
+      4. Mismo patrón para `ContactListMember` (PK `(listId, contactId)`).
+      5. `tx.contactMergeSuggestion.update` a `status=ACCEPTED + decidedByUserId + decidedAt`.
+      6. `tx.contact.delete(right)` — cascade limpia `ContactMergeSuggestion` que involucren a right.
+    - Retorna `{ mergedContactId, removedContactId, relinked: { emailContacts, wapiContacts, contactTags, contactListMembers } }`.
+  - `reject(id)`: marca status `REJECTED + decidedByUserId + decidedAt`. No toca contacts. Mismas validaciones de existencia y estado.
+- **`contact-merge.controller.ts`** — endpoints REST:
+  - `GET /api/contacts/merge-suggestions` (gate `read ContactMergeSuggestion`).
+  - `POST /api/contacts/merge-suggestions/:id/accept` (gate `update`) con `@Audit({ action:'contact.merge.accepted', resourceType:'ContactMergeSuggestion', resourceIdFrom:'param:id', includeBody:false })`.
+  - `POST /api/contacts/merge-suggestions/:id/reject` (gate `update`) con `@Audit({ action:'contact.merge.rejected', ... })`.
+- **`contact-merge.dto.ts`** — `ListMergeSuggestionsQueryDto` (cursor, limit `[1,100]`, status enum opcional).
+
+#### Changed
+- **`packages/permissions/src/ability.ts`**:
+  - `MEMBER` gana `can(['read','update'], 'ContactMergeSuggestion', { organizationId })`.
+  - `VIEWER` gana `can('read', 'ContactMergeSuggestion', { organizationId })`.
+  - OWNER/ADMIN ya tenían `manage` desde 5.A.1.
+- **`apps/backend/src/modules/contacts/contacts.module.ts`** — `ContactMergeController` + `ContactMergeService` registrados.
+
+#### Tests
+- **`contact-merge.service.spec.ts`** — 8 specs (mocks de `prisma.scoped` + tx con `contact/emailContact/wapiContact/contactTag/contactListMember/contactMergeSuggestion`):
+  - "list filtra por status PENDING por default + cursor pagination"
+  - "accept happy path: relink + delete right + update suggestion ACCEPTED"
+  - "accept: cuando left ya tiene tagId del right → deleteMany duplicates antes de updateMany"
+  - "accept rechaza si strong key conflict (dni distinto)"
+  - "accept inexistente → NotFound"
+  - "accept rechaza si suggestion no está PENDING"
+  - "reject marca REJECTED + decidedByUserId"
+  - "reject inexistente → NotFound"
+- **578/578 backend tests verde** (+8 vs 570). 14/14 permissions verde. Backend typecheck ✅.
+
+#### Notas
+- **Frontend pendiente** en 5.D — esta entrega es solo backend.
+- El cascade `onDelete: Cascade` sobre `ContactMergeSuggestion → Contact` borra la suggestion cuando se elimina el right. El registro de auditoría queda en `AuditLog` ('contact.merge.accepted') con `resourceId` = suggestion.id.
+
+---
+
 ### 5.A.3 — CSV import wizard inline + merge suggestions ✅
 
 #### Added
