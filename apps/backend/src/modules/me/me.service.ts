@@ -62,6 +62,7 @@ export class MeService {
         clerkOrgId: org.clerkOrgId,
         name: org.name,
         slug: org.slug,
+        webhookSlug: org.webhookSlug,
         role: membership.role,
         plan: {
           code: org.plan.code,

@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Logger,
   NotFoundException,
+  Param,
   Post,
   Query,
   Req,
@@ -25,21 +26,24 @@ import type { WapiWebhookPayload } from './wapi-webhook.types';
  * Webhook Meta WhatsApp Cloud API. Endpoint público — Meta no manda
  * Authorization Bearer.
  *
- * **URL única para todo el SaaS**: Meta solo permite registrar UN webhook URL
- * por App. Como dos `WapiConfig` distintas pueden compartir App (mismo
- * `appSecret` y `webhookVerifyToken`), no podemos identificar el config en la
- * URL. La resolución es:
- *  - **GET verify**: el `hub.verify_token` que manda Meta es el secreto —
- *    matcheamos contra el `webhookVerifyTokenEnc` decriptado de cualquier
- *    `WapiConfig` activa. Si matchea alguna, devolvemos el challenge.
- *  - **POST events**: el payload trae `entry[].changes[].value.metadata.phone_number_id`
- *    para cada evento. Ese `phoneNumberId` es único globalmente en Meta — lo
- *    usamos para resolver el `WapiConfig` (y por ende organizationId/teamId).
- *    HMAC se valida con el `appSecret` del primer config encontrado: todos los
- *    configs de la misma App lo comparten, así que cualquiera sirve.
+ * **4.P — URL org-scoped**: cada organización tiene su propio `webhookSlug`
+ * opaco (`wbh_<24chars>`) configurado por env en la consola de Meta como
+ * `https://api.tuapp.com/api/webhooks/wapi/wbh_xxxx`. El slug filtra el
+ * universo de WapiConfig al que se aplica verify/HMAC, evitando que el
+ * verifyToken o el phoneNumberId de una org colisionen con otras (escenario
+ * típico cuando un mismo number se mueve entre apps de Meta o cuando dos
+ * orgs comparten App Secret por error).
+ *
+ * Resolución:
+ *  - **GET verify**: el `hub.verify_token` se compara timing-safe contra el
+ *    `webhookVerifyTokenEnc` decriptado de los WapiConfig **activos de la org
+ *    dueña del slug**. Si matchea alguno, devolvemos el challenge.
+ *  - **POST events**: extraemos `phone_number_id` por entry; resolvemos contra
+ *    WapiConfig **de la misma org**. HMAC se valida con el `appSecret` del
+ *    primer config encontrado.
  *
  * Sin Clerk, sin tenant guard. `@SkipTenantScope` para que el cliente raíz lea
- * los configs antes de reconstruir el TenantContext en el service (per-entry,
+ * org/configs antes de reconstruir el TenantContext en el service (per-entry,
  * porque un mismo POST puede traer eventos de varios números).
  *
  * Siempre 200 si la firma es válida — devolver 4xx/5xx hace que Meta reintente
@@ -50,23 +54,20 @@ import type { WapiWebhookPayload } from './wapi-webhook.types';
 export class WapiWebhookController {
   private readonly logger = new Logger(WapiWebhookController.name);
 
+  /** 4.P — cache slug → organizationId. TTL 60s. Evita lookup en cada POST de Meta. */
+  private readonly slugCache = new Map<string, { orgId: string; expiresAt: number }>();
+  private static readonly SLUG_CACHE_TTL_MS = 60_000;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly encryption: EncryptionService,
     private readonly webhook: WapiWebhookService,
   ) {}
 
-  /**
-   * Endpoint de verificación. Meta llama esto cuando se registra el webhook
-   * en el dashboard de la App. Ver:
-   * https://developers.facebook.com/docs/graph-api/webhooks/getting-started
-   *
-   * Como puede haber N `WapiConfig`, escaneamos todas las activas y comparamos
-   * timing-safe contra el verifyToken de cada una. La primera que matchee gana.
-   */
-  @Get()
+  @Get(':slug')
   @HttpCode(HttpStatus.OK)
   async verify(
+    @Param('slug') slug: string,
     @Query('hub.mode') mode: string,
     @Query('hub.verify_token') token: string,
     @Query('hub.challenge') challenge: string,
@@ -74,34 +75,26 @@ export class WapiWebhookController {
     if (mode !== 'subscribe') {
       throw new BadRequestException(`hub.mode=${mode} no soportado`);
     }
+    const orgId = await this.resolveOrgIdBySlug(slug);
     const configs = await this.prisma.wapiConfig.findMany({
-      where: { isActive: true },
+      where: { isActive: true, organizationId: orgId },
       select: { id: true, webhookVerifyTokenEnc: true },
     });
     for (const cfg of configs) {
       const expected = this.encryption.decrypt(cfg.webhookVerifyTokenEnc);
       if (safeStringEqual(token, expected)) {
-        this.logger.log(`Webhook Meta verificado (matched config ${cfg.id})`);
+        this.logger.log(`Webhook Meta verificado (slug=${slug}, config=${cfg.id})`);
         return challenge;
       }
     }
-    this.logger.warn(`verify_token no matchea ninguna WapiConfig activa`);
+    this.logger.warn(`verify_token no matchea WapiConfig activa para slug=${slug}`);
     throw new ForbiddenException('verify_token inválido');
   }
 
-  /**
-   * Recepción de eventos. Meta valida el endpoint con SHA256 HMAC del cuerpo
-   * RAW (no del JSON parseado — el orden de keys importa). Por eso `main.ts`
-   * tiene `rawBody:true` y acá leemos `req.rawBody`.
-   *
-   * Resolución de tenant: extraemos los `phone_number_id` de cada entry y
-   * buscamos los `WapiConfig` correspondientes. HMAC se valida con el
-   * `appSecret` del primer config; todos los demás configs de la misma App
-   * comparten ese secreto.
-   */
-  @Post()
+  @Post(':slug')
   @HttpCode(HttpStatus.OK)
   async receive(
+    @Param('slug') slug: string,
     @Headers('x-hub-signature-256') signature: string | undefined,
     @Req() req: RawBodyRequest<Request>,
   ): Promise<{ ok: true }> {
@@ -117,8 +110,6 @@ export class WapiWebhookController {
       throw new BadRequestException('payload no es JSON válido');
     }
     if (payload?.object !== 'whatsapp_business_account') {
-      // Meta también puede mandar eventos de otros productos si la app suscribe
-      // varios — los ignoramos sin error.
       this.logger.debug(`payload object=${payload?.object} ignorado`);
       return { ok: true };
     }
@@ -129,8 +120,12 @@ export class WapiWebhookController {
       return { ok: true };
     }
 
+    const orgId = await this.resolveOrgIdBySlug(slug);
     const configs = await this.prisma.wapiConfig.findMany({
-      where: { phoneNumberId: { in: [...phoneNumberIds] } },
+      where: {
+        organizationId: orgId,
+        phoneNumberId: { in: [...phoneNumberIds] },
+      },
       select: {
         id: true,
         organizationId: true,
@@ -141,7 +136,7 @@ export class WapiWebhookController {
     });
     if (configs.length === 0) {
       this.logger.warn(
-        `webhook sin WapiConfig matching phone_number_ids=${[...phoneNumberIds].join(',')}`,
+        `webhook slug=${slug} sin WapiConfig matching phone_number_ids=${[...phoneNumberIds].join(',')}`,
       );
       throw new NotFoundException('config no encontrada');
     }
@@ -150,12 +145,10 @@ export class WapiWebhookController {
     if (firstCfg.appSecretEnc) {
       const appSecret = this.encryption.decrypt(firstCfg.appSecretEnc);
       if (!signature || !verifySignature(signature, raw, appSecret)) {
-        this.logger.warn(`firma inválida (probada contra config ${firstCfg.id})`);
+        this.logger.warn(`firma inválida (slug=${slug}, config=${firstCfg.id})`);
         throw new ForbiddenException('signature mismatch');
       }
     } else {
-      // Sin appSecret configurado, no hay forma de validar — log y aceptar
-      // sólo en dev. Producción debería tener appSecret obligatorio.
       this.logger.warn(
         `WapiConfig ${firstCfg.id} sin appSecret — webhook acepta sin verificar firma (NO usar en prod)`,
       );
@@ -173,6 +166,33 @@ export class WapiWebhookController {
     );
     await this.webhook.process(payload, map);
     return { ok: true };
+  }
+
+  /**
+   * Resuelve `webhookSlug → organizationId` con cache in-memory TTL 60s.
+   * 404 si no existe — el slug es opaco así que no leakeamos info.
+   * En multi-instancia el cache es per-proceso; aceptable: 60s de stale window
+   * tras regenerate antes de que toda la flota converja. Si alguien necesita
+   * invalidación cross-proceso, mover a Redis.
+   */
+  private async resolveOrgIdBySlug(slug: string): Promise<string> {
+    const now = Date.now();
+    const cached = this.slugCache.get(slug);
+    if (cached && cached.expiresAt > now) {
+      return cached.orgId;
+    }
+    const org = await this.prisma.organization.findUnique({
+      where: { webhookSlug: slug },
+      select: { id: true },
+    });
+    if (!org) {
+      throw new NotFoundException('webhook no encontrado');
+    }
+    this.slugCache.set(slug, {
+      orgId: org.id,
+      expiresAt: now + WapiWebhookController.SLUG_CACHE_TTL_MS,
+    });
+    return org.id;
   }
 }
 
@@ -195,7 +215,6 @@ function safeStringEqual(a: string, b: string): boolean {
 }
 
 function verifySignature(header: string, raw: Buffer, appSecret: string): boolean {
-  // Meta envía `sha256=<hex>`. Calculamos HMAC del rawBody con el appSecret.
   if (!header.startsWith('sha256=')) return false;
   const provided = Buffer.from(header.slice('sha256='.length), 'hex');
   const expected = createHmac('sha256', appSecret).update(raw).digest();

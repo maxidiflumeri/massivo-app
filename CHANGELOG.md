@@ -21,6 +21,22 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.P — Webhook URL por organización (org-scoped)
+
+#### Added
+- **Schema — `Organization.webhookSlug`**: nuevo campo `String @unique`. Slug opaco URL-safe formato `wbh_<22-24 chars base64url>`. Generado en backend con `crypto.randomBytes(18).toString('base64url')`. Migration `20260511100000_organization_webhook_slug` (backfill `wbh_<md5...>` para orgs existentes).
+- **Backend — `OrganizationsModule`** (`apps/backend/src/modules/organizations/`): nuevo módulo con `OrganizationsController` (`POST /api/orgs/me/webhook-slug/regenerate`, guard `manage Organization` → OWNER/ADMIN) y `OrganizationsService.regenerateWebhookSlug()`. Cada org puede rotar su slug independientemente; el log queda con `org=<id>` para auditoría.
+- **Backend — `WapiWebhookController` org-scoped**: rutas migran de `GET/POST /api/webhooks/wapi` (URL única global) a `GET/POST /api/webhooks/wapi/:slug` (URL por org). Resolución `slug → organizationId` cacheada in-memory TTL 60 s; `verify` y `receive` filtran `WapiConfig.organizationId = orgId` antes de matchear `verify_token` o `phone_number_id`. Slug inexistente → 404 sin leak de info (slug es opaco). Cache es per-proceso; rotación tarda 60 s en converger en flota multi-instancia.
+- **Backend — `GET /api/wapi/configs/:id/reveal-secrets`**: endpoint protegido por `manage Organization` que devuelve `{ webhookVerifyToken }` en claro para que el usuario lo pegue en la consola de Meta. Logueado con `WARN` (org/user/config) para auditoría.
+- **Backend — Slug en bootstrap**: `ClerkWebhookService.handleOrganizationCreated` genera el slug en `create` (no en `update` para idempotencia bajo retries de Clerk).
+- **shared-types — `MeOrganization.webhookSlug`**: surface del slug en `/api/me/context` para que el frontend construya la URL pública sin ida-vuelta extra.
+- **Frontend — `WapiConfigsPage` card webhook** (`apps/frontend/src/features/wapi/configs/WapiConfigsPage.tsx`): card top-level con la URL completa (`{API_BASE_URL}/api/webhooks/wapi/{slug}`), botón copiar, y botón **Regenerar URL** (sólo OWNER/ADMIN, con confirm destructive — el usuario tiene que actualizarla en Meta tras rotar). Por fila: botón llave para revelar/ocultar el verify token + botón copiar.
+- **Tests** — `wapi-webhook.controller.spec.ts` reescrito (16 tests): scoping por slug en verify y receive, slug inexistente → 404, cache TTL (segunda llamada no re-consulta organization), multi-config misma org, firma inválida → 403, modos dev sin appSecret, payloads ignorados (object distinto, sin phone_number_id), JSON inválido → 400.
+
+#### Why
+- Antes: una URL global `/api/webhooks/wapi` para todo el SaaS — válida porque resolvíamos por `phone_number_id`, pero dejaba la puerta abierta a colisiones cuando dos orgs comparten App de Meta o cuando un número se mueve entre apps. También impedía rotación de la URL ante leaks.
+- Ahora: cada org tiene su URL, su slug se puede rotar sin afectar a otras orgs, y el reveal del verify token está controlado por policy explícita.
+
 ### 4.J — Live Dashboard WAPI
 
 #### Added

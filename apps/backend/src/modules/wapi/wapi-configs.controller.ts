@@ -38,6 +38,16 @@ export class WapiConfigsController {
     return this.service.findOne(id);
   }
 
+  /**
+   * 4.P — revela secretos en claro (verifyToken). Sólo OWNER/ADMIN de org.
+   * El usuario lo necesita al pegar el webhook en la consola de Meta.
+   */
+  @Get(':id/reveal-secrets')
+  @CheckPolicies((ability: AppAbility) => ability.can('manage', 'Organization'))
+  revealSecrets(@Param('id') id: string) {
+    return this.service.revealSecrets(id);
+  }
+
   @Post()
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'WapiConfig'))
   create(@Body() dto: CreateWapiConfigDto) {

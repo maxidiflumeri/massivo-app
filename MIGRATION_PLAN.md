@@ -866,6 +866,108 @@ Cierra el ciclo handoff humano: una vez que un operador toma una conversación (
 **Pendiente (post-4.O.6)**:
 - Smoke E2E manual: (1) cliente escribe → bot atiende, (2) operador hace "Take" → bot deja de responder, mensajes del cliente quedan en inbox sin respuesta automática, (3) operador responde + "Poner en espera" → status WAITING con countdown visible, (4) cliente vuelve a escribir antes del TTL → conversación a UNASSIGNED automáticamente, (5) cliente no responde → worker la devuelve a UNASSIGNED tras `botWaitingTtlMin`, chip "lo tenía X" sigue visible.
 
+#### 4.P — Webhook URL por organización (org-scoped) ✅
+
+**Status**: COMPLETADO en sesión 40 (2026-05-07).
+
+**Implementado**:
+- Schema `Organization.webhookSlug String @unique` + migration `20260511100000_organization_webhook_slug` (backfill `wbh_<md5>` para orgs existentes; nuevas orgs reciben `wbh_<base64url>` desde `crypto.randomBytes(18)`).
+- `OrganizationsModule` con `OrganizationsController.regenerateWebhookSlug()` (`POST /api/orgs/me/webhook-slug/regenerate`, gate `manage Organization`).
+- `WapiWebhookController` migrado a rutas `:slug` con cache slug→orgId TTL 60 s. Verify y receive filtran `WapiConfig.organizationId = orgId`. Slug inexistente → 404 sin info-leak.
+- Endpoint `GET /api/wapi/configs/:id/reveal-secrets` (gate `manage Organization`) que devuelve `{ webhookVerifyToken }` en claro con log WARN para auditoría.
+- `ClerkWebhookService.handleOrganizationCreated` setea slug en create (idempotente bajo retries).
+- `MeOrganization.webhookSlug` surface en `/api/me/context`.
+- Frontend `WapiConfigsPage`: card top-level con URL completa + copiar + regenerar (gated OWNER/ADMIN, confirm destructive); por fila botón llave para revelar/ocultar verify token + copiar.
+- Tests `wapi-webhook.controller.spec.ts` 16/16 verde — scoping por slug, cache, multi-config, errores.
+
+**Decisiones tomadas (vs plan original)**:
+- **No mantenemos URL legacy** `/api/webhooks/wapi` sin slug. La ruta antigua se reemplaza directo — no hay tráfico productivo (estamos pre-launch). Si en el futuro hay clientes que requieren transición, se reintroduce con `@Deprecated()` log.
+- Cache slug→orgId in-memory per-proceso (TTL 60 s). Multi-instancia tarda 60 s en converger tras regenerate — aceptable. Migrar a Redis sólo si crece tráfico.
+
+**Sigue del plan original (textual)**:
+
+> **Motivación.** Hoy hay **una sola URL de webhook** (`/api/webhooks/wapi`) compartida por todo el SaaS. Cuando Meta llama el GET de verificación, el controller **escanea todas las `WapiConfig` activas** y matchea por `webhookVerifyToken` (timing-safe). Para el POST, el routing al tenant se resuelve por `phoneNumberId` del payload.
+>
+> Esto funciona porque cada org trae su propia Meta App (cada `WapiConfig` tiene su `accessTokenEnc`/`appSecretEnc`/`webhookVerifyTokenEnc` distintos), pero tiene tres problemas: (1) la verificación es O(N) sobre todas las configs del SaaS, (2) si por bug el `phoneNumberId` resolviera mal, podría haber cross-leakage entre tenants, (3) los logs no dicen a qué tenant pertenece el evento hasta que se resuelve.
+>
+> **Solución.** URL por organización con un slug opaco: `/api/webhooks/wapi/:slug`. El `slug` no es el `orgId` directo (no exponemos IDs internos) sino un campo random per-org. El verify y el resolve quedan scopeados a esa org.
+
+**Backend**
+- [ ] **Schema** — `Organization.webhookSlug: String @unique` (24 chars random, formato `wbh_` + base62). Migración aditiva con backfill por SQL function (gen_random_uuid + base64) o trigger temporal. **No nullable** — todas las orgs existentes obtienen slug en la migración.
+- [ ] **Generación al crear org** — hook en `OrganizationsService.create` (o donde se crea el `Organization`) que genera el slug. `crypto.randomBytes(18).toString('base64url')` da 24 chars URL-safe.
+- [ ] **Endpoint `POST /api/orgs/me/webhook-slug/regenerate`** — guard `update Organization` (admin de la org). Genera nuevo slug, invalida el viejo. Devuelve `{ slug, fullUrl }`. Útil ante leak sospechoso. Audit log de la rotación.
+- [ ] **Webhook controller** — nueva ruta `@Get(':slug')` y `@Post(':slug')`:
+  - Resuelve `Organization.webhookSlug → organizationId` (cache in-memory con TTL 60s — el slug cambia muy rara vez).
+  - 404 si no matchea (sin filtrar info — mensaje genérico "webhook not found").
+  - GET verify: scan limitado a `WapiConfig.where({ organizationId, isActive })` (en lugar de scan global). Sigue timing-safe.
+  - POST events: resolve `WapiConfig` por `phoneNumberId` **scopeado a la org** (`where: { organizationId, phoneNumberId }`). Si el `phoneNumberId` no pertenece a esta org → 404 con log warning (intento cross-org indica mal-config en Meta o ataque).
+- [ ] **Ruta legacy** `/api/webhooks/wapi` (sin slug) — mantenerla durante transición con `@Deprecated()` log + header `X-Massivo-Webhook-Deprecated: true`. Sigue funcionando con scan global como hoy. **Decisión a tomar**: ¿plazo de remoción? Sugerencia: 90 días desde release.
+- [ ] **Tests**:
+  - Verify con slug correcto + token de config de la org → matchea.
+  - Verify con slug correcto + token de config de **otra** org → 403 (no debe matchear cross-org).
+  - Slug inválido → 404 sin info.
+  - POST con slug + phoneNumberId de otra org → 404 + log.
+  - Legacy URL sigue funcionando + emite warning.
+  - Endpoint `regenerate` rota slug y un GET con slug viejo da 404.
+
+**Frontend**
+- [ ] **`WapiConfigsPage`** — card al tope de la página "Webhook de Meta" con:
+  - URL completa: `{API_BASE_URL}/api/webhooks/wapi/{org.webhookSlug}` con botón copiar (single-click).
+  - Texto explicativo breve: "Configurá esta URL en tu Meta App → WhatsApp → Configuración → Webhooks. Es única para tu organización."
+  - Link a docs Meta (https://developers.facebook.com/docs/whatsapp/cloud-api/guides/set-up-webhooks).
+  - Botón "Regenerar" (gated `update Organization`) con `ConfirmDialog` que advierte: "Esto invalida la URL actual. Tendrás que actualizarla en Meta o el webhook dejará de funcionar."
+- [ ] **Endpoint para revelar verify token** — `GET /api/wapi/configs/:id/reveal-secrets` (gated `update Config`) devuelve `{ webhookVerifyToken }` desencriptado. UI: botón ojo en la columna Token de la tabla (paridad con el patrón ya usado para accessToken). Audit log de la revelación.
+- [ ] **Hook `useActiveOrganization`** o similar que exponga `webhookSlug` (ya viene por Clerk metadata o lo agregamos a `/api/me`). Decisión: probablemente extender el endpoint `/api/me` con `organization.webhookSlug` para no consultar Clerk en cada render.
+
+**Aceptación**
+- Org A crea config con `phoneNumberId=123`. Org B crea config con `phoneNumberId=456`. Meta llama `GET /api/webhooks/wapi/{slugA}?hub.verify_token={tokenA}&hub.challenge=xyz` → devuelve `xyz`. Misma llamada con `{tokenB}` → 403. Llamada con slug inexistente → 404.
+- POST con slug A y payload con `phoneNumberId=456` → 404 + log warning (no procesa).
+- Operador admin regenera el slug; el GET con el slug viejo da 404; el dashboard muestra la URL nueva.
+- Verify token visible en la UI con botón ojo (con audit log de la revelación).
+
+**Notas / decisiones abiertas**
+- ¿Dejamos la URL legacy `/api/webhooks/wapi` indefinidamente o le ponemos sunset date? Recomendación: sunset 90 días + banner en `WapiConfigsPage` cuando el último `WapiConfig` activo de la org tenga >30 días desde creación (proxy de "ya pueden migrar").
+- Cache del slug→orgId: empezar con 60s TTL en proceso. Si crece tráfico, mover a Redis.
+- Formato del slug: `wbh_` + 22 chars base62. Prefijo facilita identificarlo en logs y diferenciarlo de otros tokens.
+
+#### 4.Q — Throttle configurable por línea / campaña
+
+> **Motivación.** Hoy el delay entre envíos sucesivos vive sólo como env (`WAPI_DELAY_MIN_MS` / `WAPI_DELAY_MAX_MS`, defaults 30s/60s) — no se puede ajustar por UI ni por línea/campaña. Con `WAPI_WORKER_CONCURRENCY=1` (default) el throughput resultante es ≈ 1.3 mensajes/min ≈ 80/hora. Para campañas urgentes o líneas con quality rating alto necesitamos poder bajar el delay; para líneas nuevas (rating en construcción) necesitamos poder subirlo.
+>
+> El daily limit per `WapiConfig` ya existe (`dailyLimit`, default 200) — esto es complementario: **cota diaria** (cap), no **rate** (velocidad).
+
+**Backend**
+- [ ] **Schema** — `WapiConfig.sendDelayMinMs Int @default(30000)` + `WapiConfig.sendDelayMaxMs Int @default(60000)`. Migración aditiva con backfill al default.
+- [ ] **Override per-campaña** — `WapiCampaign.config` (JSON) acepta opcional `{ delayMinMs?: number, delayMaxMs?: number }`. Si están seteados, pisan los del config; sino, fallback al config; sino, fallback a env; sino, hardcoded defaults.
+- [ ] **Worker** — `WapiWorkerService.jitterMs(report)` cambia firma para recibir el report (ya lo tiene cargado en `process()`). Lee:
+  ```
+  const cmpCfg = (campaign.config as { delayMinMs?, delayMaxMs? }) ?? {};
+  const min = cmpCfg.delayMinMs ?? configRel.sendDelayMinMs ?? env ?? DEFAULT;
+  const max = cmpCfg.delayMaxMs ?? configRel.sendDelayMaxMs ?? env ?? DEFAULT;
+  ```
+- [ ] **DTOs + validación** — `Create/UpdateWapiConfigDto`: `sendDelayMinMs` y `sendDelayMaxMs` opcionales, `IsInt + Min(1000)`. Service valida `min ≤ max` (BadRequestException). Wizard de campaña: mismos campos, opcionales (default null = hereda del config).
+- [ ] **Tests**:
+  - Worker spec: con `WapiCampaign.config.delayMinMs/Max` setados → usa esos valores.
+  - Worker spec: sin override de campaña, con `WapiConfig.sendDelay*` setados → usa los del config.
+  - Worker spec: sin nada seteado → cae en env / defaults.
+  - DTO spec: `min > max` da 400. `min < 1000` da 400.
+
+**Frontend**
+- [ ] **`WapiConfigsPage`** — en el dialog Crear/Editar, sección "Velocidad de envío" con dos TextField numéricos (segundos, no ms — convertir a ms en el submit): "Delay mínimo (s)" y "Delay máximo (s)". Helper text con el throughput estimado: "≈ N mensajes/min (con concurrency=1)".
+- [ ] **Wizard de campaña** — collapsible "Velocidad (avanzado)" con dos TextField opcionales. Placeholder muestra el valor del config seleccionado para dar pista. Si vacíos, no se manda override.
+- [ ] **Live dashboard** (`WapiLivePage`) — mostrar el delay efectivo por config en la tabla de uso de líneas (puede ser un Tooltip sobre el nombre).
+
+**Aceptación**
+- Editar `WapiConfig` y bajar `sendDelayMinMs` a 5000 / `sendDelayMaxMs` a 10000 → próximas campañas que no overrideen corren a ≈ 8 mensajes/min en vez de 1.3.
+- Crear campaña con override `{ delayMinMs: 60000, delayMaxMs: 120000 }` → el worker espera entre 60-120s aunque el config diga 5-10s.
+- Validación `min > max` en UI muestra error inmediato; backend devuelve 400 si llega un body inválido.
+- En live dashboard, hover sobre nombre de la línea muestra "Delay: 5-10s (≈8 msg/min)".
+
+**Notas / decisiones abiertas**
+- ¿`sendDelayMinMs` debería tener cap superior? Ej. 10 minutos = 600000ms. Sin cap, alguien podría poner 1h y pensar que el worker está roto.
+- ¿Mover `WAPI_WORKER_CONCURRENCY` a la UI también? No por ahora — multi-worker sync requiere coordinación cross-proceso (Redis), queda para cuando se necesite escalar.
+- ¿Mostrar al guardar una preview "con estos delays, una campaña de 1000 contactos tarda ≈ X horas"? Útil pero post-MVP.
+
 **Aceptación 4.L:**
 - Crear un virtual number `+5491100000001` ligado a un `WapiConfig` de prueba.
 - Desde el chat-simulator: el cliente virtual escribe "hola" → aparece en el inbox real del team. El operador responde con texto / foto / audio / documento → el simulator muestra el mensaje en la vista cliente con caption + media renderizada. Reacciones (cliente → operador) y botones (template inbound) funcionan end-to-end. Statuses delivered/read se reflejan en los checks azules del operador.

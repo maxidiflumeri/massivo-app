@@ -160,6 +160,28 @@ export class WapiConfigsService {
     return toListItem(row);
   }
 
+  /**
+   * 4.P — devuelve los secretos en claro para que el usuario los pegue en Meta
+   * (verifyToken al setear el webhook). Restringido por policy a OWNER/ADMIN
+   * de la org. Logueamos cada acceso para auditoría.
+   */
+  async revealSecrets(id: string): Promise<{ webhookVerifyToken: string }> {
+    const ctx = this.requireContext();
+    const row = await this.prisma.scoped.wapiConfig.findFirst({
+      where: { id },
+      select: { id: true, webhookVerifyTokenEnc: true },
+    });
+    if (!row) {
+      throw new NotFoundException(`WapiConfig ${id} no encontrado en este scope`);
+    }
+    this.logger.warn(
+      `WapiConfig.revealSecrets: org=${ctx.organizationId} user=${ctx.userId} config=${id}`,
+    );
+    return {
+      webhookVerifyToken: this.encryption.decrypt(row.webhookVerifyTokenEnc),
+    };
+  }
+
   async remove(id: string): Promise<void> {
     this.requireContext();
     const current = await this.prisma.scoped.wapiConfig.findFirst({

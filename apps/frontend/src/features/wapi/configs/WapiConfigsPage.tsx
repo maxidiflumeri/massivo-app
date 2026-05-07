@@ -31,6 +31,10 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import DnsIcon from '@mui/icons-material/Dns';
+import LinkIcon from '@mui/icons-material/Link';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import KeyIcon from '@mui/icons-material/Key';
 import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useConfirm } from '../../../feedback/ConfirmProvider';
@@ -81,6 +85,11 @@ function parseKeywords(input: string): string[] {
   return out;
 }
 
+/** 4.P — slice mínimo de /api/me/context que necesitamos para construir el URL del webhook. */
+interface MeContextSlice {
+  organizations: Array<{ id: string; clerkOrgId: string; webhookSlug: string; role: string }>;
+}
+
 export function WapiConfigsPage() {
   const api = useApi();
   const notify = useNotify();
@@ -93,7 +102,16 @@ export function WapiConfigsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 4.P — webhook URL org-scoped. Tomamos el primer org del context (en el front
+  // sólo manejamos una org activa por sesión gracias a Clerk org switcher).
+  const [webhookSlug, setWebhookSlug] = useState<string | null>(null);
+  const [orgRole, setOrgRole] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [revealedTokens, setRevealedTokens] = useState<Record<string, string>>({});
+
   const isEdit = editing !== null;
+  const canManageOrg = orgRole === 'OWNER' || orgRole === 'ADMIN';
+  const webhookUrl = webhookSlug ? `${api.baseUrl}/api/webhooks/wapi/${webhookSlug}` : null;
 
   async function load() {
     try {
@@ -104,10 +122,76 @@ export function WapiConfigsPage() {
     }
   }
 
+  async function loadMe() {
+    try {
+      const me = await api.get<MeContextSlice>('/api/me/context');
+      const org = me.organizations[0];
+      if (org) {
+        setWebhookSlug(org.webhookSlug);
+        setOrgRole(org.role);
+      }
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error cargando contexto');
+    }
+  }
+
   useEffect(() => {
     void load();
+    void loadMe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleCopy(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      notify.success(`${label} copiado`);
+    } catch {
+      notify.error('No se pudo copiar al portapapeles');
+    }
+  }
+
+  async function handleRegenerateSlug() {
+    const ok = await confirm({
+      title: 'Regenerar URL de webhook',
+      message:
+        'Vas a invalidar la URL actual del webhook. Tenés que actualizarla en la consola de Meta (cada App de Meta donde la pegaste) o vas a dejar de recibir mensajes y status updates. ¿Seguís?',
+      confirmText: 'Regenerar',
+      destructive: true,
+    });
+    if (!ok) return;
+    setRegenerating(true);
+    try {
+      const res = await api.post<{ webhookSlug: string }>(
+        '/api/orgs/me/webhook-slug/regenerate',
+        {},
+      );
+      setWebhookSlug(res.webhookSlug);
+      notify.success('URL de webhook regenerada — actualizala en Meta');
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error regenerando');
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  async function handleRevealVerifyToken(c: WapiConfigListItem) {
+    if (revealedTokens[c.id]) {
+      // toggle: ocultar
+      setRevealedTokens((prev) => {
+        const { [c.id]: _, ...rest } = prev;
+        return rest;
+      });
+      return;
+    }
+    try {
+      const res = await api.get<{ webhookVerifyToken: string }>(
+        `/api/wapi/configs/${c.id}/reveal-secrets`,
+      );
+      setRevealedTokens((prev) => ({ ...prev, [c.id]: res.webhookVerifyToken }));
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error obteniendo token');
+    }
+  }
 
   function handleOpenCreate() {
     setEditing(null);
@@ -257,6 +341,59 @@ export function WapiConfigsPage() {
         appSecret) se guardan encriptados.
       </Typography>
 
+      {/* 4.P — Card de webhook URL org-scoped */}
+      {webhookUrl && (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <LinkIcon color="primary" fontSize="small" />
+              <Typography variant="subtitle2">Webhook de Meta para esta organización</Typography>
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              Pegá esta URL en la consola de Meta (App → WhatsApp → Configuration → Webhook).
+              Es exclusiva de tu organización: cualquier evento que llegue acá se mapea a tus
+              WapiConfigs por <code>phone_number_id</code>. Si la regenerás, vas a tener que
+              actualizarla en Meta.
+            </Typography>
+            <TextField
+              value={webhookUrl}
+              fullWidth
+              size="small"
+              InputProps={{
+                readOnly: true,
+                sx: { fontFamily: 'monospace', fontSize: 13 },
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Tooltip title="Copiar URL">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleCopy(webhookUrl, 'URL del webhook')}
+                      >
+                        <ContentCopyIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </InputAdornment>
+                ),
+              }}
+            />
+            {canManageOrg && (
+              <Box>
+                <Button
+                  size="small"
+                  startIcon={<RefreshIcon />}
+                  onClick={handleRegenerateSlug}
+                  disabled={regenerating}
+                  color="warning"
+                  variant="outlined"
+                >
+                  {regenerating ? 'Regenerando...' : 'Regenerar URL'}
+                </Button>
+              </Box>
+            )}
+          </Stack>
+        </Paper>
+      )}
+
       {items === null && (
         <Paper sx={{ p: 2 }}>
           <Stack spacing={1}>
@@ -326,6 +463,34 @@ export function WapiConfigsPage() {
                     {new Date(c.createdAt).toLocaleString()}
                   </TableCell>
                   <TableCell align="right">
+                    {canManageOrg && (
+                      <Tooltip
+                        title={
+                          revealedTokens[c.id]
+                            ? `Verify token: ${revealedTokens[c.id]} (click para ocultar)`
+                            : 'Ver verify token'
+                        }
+                      >
+                        <IconButton size="small" onClick={() => handleRevealVerifyToken(c)}>
+                          <KeyIcon
+                            fontSize="small"
+                            color={revealedTokens[c.id] ? 'primary' : 'inherit'}
+                          />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    {revealedTokens[c.id] && (
+                      <Tooltip title="Copiar verify token">
+                        <IconButton
+                          size="small"
+                          onClick={() =>
+                            handleCopy(revealedTokens[c.id]!, 'Verify token')
+                          }
+                        >
+                          <ContentCopyIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                     <Tooltip title="Editar">
                       <IconButton size="small" onClick={() => handleOpenEdit(c)}>
                         <EditIcon fontSize="small" />

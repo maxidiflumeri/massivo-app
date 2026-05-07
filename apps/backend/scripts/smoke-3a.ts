@@ -44,6 +44,7 @@ async function main() {
       clerkOrgId: `clerk-${orgId}`,
       name: 'Smoke Org',
       slug: 'smoke-org-3a',
+      webhookSlug: 'wbh_smoke3a000000000000000',
       planId,
     },
     update: {},

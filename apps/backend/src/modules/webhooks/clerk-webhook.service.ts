@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import type { OrgRole, TeamRole } from '@massivo/prisma';
+
+/** 4.P: slug opaco URL-safe para webhooks. 18 bytes → 24 chars base64url. */
+function generateWebhookSlug(): string {
+  return `wbh_${randomBytes(18).toString('base64url')}`;
+}
 
 /** Payload genérico de Clerk webhook — tipado mínimo para evitar `any`. */
 interface ClerkWebhookEvent {
@@ -70,6 +76,7 @@ export class ClerkWebhookService {
         clerkOrgId: id as string,
         name: name as string,
         slug: (slug as string) || (id as string),
+        webhookSlug: generateWebhookSlug(),
         planId: freePlan.id,
       },
     });

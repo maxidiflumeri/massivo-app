@@ -52,6 +52,8 @@ export interface MeOrganization {
   clerkOrgId: string;
   name: string;
   slug: string;
+  /** 4.P — slug opaco URL-safe para webhooks org-scoped (formato: wbh_<22-24 chars>). */
+  webhookSlug: string;
   role: OrgRole;
   plan: MePlan;
   permissions: PlanFlags;

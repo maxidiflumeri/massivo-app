@@ -104,6 +104,10 @@ model Organization {
   clerkOrgId       String    @unique
   name             String
   slug             String    @unique
+  // Slug opaco para URL pública de webhooks (4.P). Formato: wbh_<24 chars base64url>.
+  // Permite que cada organización tenga URL propia: /api/webhooks/wapi/:slug
+  // Regenerable vía endpoint dedicado para rotación de credenciales.
+  webhookSlug      String    @unique
   planId           String
   plan             Plan      @relation(fields: [planId], references: [id])
   stripeCustomerId String?   @unique

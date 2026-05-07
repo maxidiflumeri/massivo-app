@@ -9,6 +9,7 @@ import { AuthModule } from './common/auth/auth.module';
 import { SecurityModule } from './common/security/security.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { MeModule } from './modules/me/me.module';
+import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { EmailModule } from './modules/email/email.module';
 import { WapiModule } from './modules/wapi/wapi.module';
@@ -29,6 +30,7 @@ import { DevModule } from './modules/dev/dev.module';
     SecurityModule,
     WebhooksModule,
     MeModule,
+    OrganizationsModule,
     TeamsModule,
     EmailModule,
     WapiModule,
