@@ -30,6 +30,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ScienceIcon from '@mui/icons-material/Science';
 import ForumIcon from '@mui/icons-material/Forum';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import { OrganizationSwitcher } from '@clerk/clerk-react';
 
 const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
@@ -93,6 +94,11 @@ const NAV_GROUPS: NavGroupSpec[] = [
   {
     label: 'WhatsApp',
     items: [
+      {
+        to: '/dashboard/wapi/live',
+        label: 'Dashboard live',
+        icon: <MonitorHeartIcon fontSize="small" />,
+      },
       {
         to: '/dashboard/wapi/inbox',
         label: 'Inbox',

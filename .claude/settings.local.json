@@ -61,7 +61,8 @@
       "Bash(taskkill *)",
       "Bash(PGPASSWORD=massivo wsl psql *)",
       "Bash(echo \"BACKEND_EXIT=$?\")",
-      "Bash(echo \"FRONTEND_EXIT=$?\")"
+      "Bash(echo \"FRONTEND_EXIT=$?\")",
+      "Bash(psql \"postgresql://massivo:massivo@127.0.0.1:5432/massivo\" -c \"\\\\d \\\\\"WapiConversation\\\\\"\")"
     ]
   }
 }

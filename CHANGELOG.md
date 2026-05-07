@@ -21,6 +21,27 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.J — Live Dashboard WAPI
+
+#### Added
+- **Backend — `WapiLiveService`** (`apps/backend/src/modules/wapi/live/wapi-live.service.ts`): aggregator del snapshot vivo. Método único `snapshot()` que paraleliza tres `Promise`:
+  - `collectCampaigns(since5min)` — `findMany` campañas con `status IN [PROCESSING, PAUSED]` (top 25 ordenado por status/sentAt/createdAt), luego dos `groupBy` paralelos sobre `WapiReport`: totales por (campaignId, status) y throughput de los últimos 5 min. Devuelve por campaña: totals (PENDING/SENT/DELIVERED/READ/FAILED/CANCELED), total agregado, throughput, configName, templateName, startedAt.
+  - `collectConfigs(since24h)` — `findMany` configs activas, `groupBy` SENT en 24 h con filtro relacional `campaign.configId IN […]`. Como `groupBy` no agrupa por relaciones, hace un segundo `findMany` para mapear `campaignId → configId`. Devuelve por config: sentLast24h, percent (cap a 100, mismo cómputo que el worker — sin drift), isTestMode.
+  - `collectInbox()` — 3 `count` paralelos (UNASSIGNED+escalated, WAITING, escalated total) + `findFirst` de la más antigua sin asignar.
+- **Backend — `WapiLiveController`** (`apps/backend/src/modules/wapi/live/wapi-live.controller.ts`): expone `GET /api/wapi/live/snapshot`. Guards `ClerkAuth + TenantContext + Policies(read Campaign)`. Devuelve `LiveSnapshot { campaigns, configs, inbox, generatedAt }`.
+- **Backend — Spec `wapi-live.service.spec.ts`** (4 tests): snapshot vacío (3 counts + findFirst en cero), totales por campaña con throughput, percent de configs cap a 100, inbox con 3 counts + más antigua. **478/478 backend tests verde**.
+- **Frontend — Página `/dashboard/wapi/live`** (`apps/frontend/src/features/wapi/live/WapiLivePage.tsx`): tres widgets en stack vertical:
+  - **Campañas en curso** — tabla con nombre, línea, template, estado, total, funnel (LinearProgress + chips P/S/D/R/F), throughput 5 min, link a detalle.
+  - **Uso de líneas (24 h)** — barra de progreso por config con color por umbral (`<80%` success / `80-99%` warning / `100%` error), badge TEST, contador `sent/dailyLimit`.
+  - **Inbox snapshot** — 3 KPI cards (sin asignar + edad de la más antigua, en espera, escaladas totales) + link al inbox.
+  - **Tiempo real**: chip "● En vivo" cuando socket conectado. Re-fetch debounced (500 ms) ante eventos `wapi.report.updated`, `wapi.report.log`, `wapi.conversation.updated` — coalesce vía `inFlightRef + pendingRef` para no apilar requests.
+- **Frontend — `liveApi`** (`features/wapi/live/api.ts`) + types mirror del backend (Date como string ISO).
+- **Frontend — Sidebar/Routing**: entry "Dashboard live" (`MonitorHeartIcon`) primero del grupo WhatsApp; ruta `wapi/live` registrada en `App.tsx`.
+
+#### Notes
+- No se agregaron eventos socket nuevos: la página usa los emitters existentes del worker, campañas e inbox (`wapi.report.updated`, `wapi.report.log`, `wapi.conversation.updated`). El re-fetch del snapshot agregado mantiene la complejidad acotada — para datos por campaña fina se sigue usando `WapiCampaignDetailPage`.
+- `groupBy` con `Promise.all` + cast `as Promise<…>` rompía la inferencia de Prisma (intentaba el overload de array). Patrón adoptado: separar awaits y castear el resultado, no la promise.
+
 ### 4.O.6 — Suspensión del bot + estado WAITING (handoff humano completo)
 
 #### Added

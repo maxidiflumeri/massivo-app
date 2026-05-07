@@ -30,6 +30,8 @@ import {
 import { WapiBotRouterService } from './bot/wapi-bot-router.service';
 import { WapiBotSandboxService } from './bot/wapi-bot-sandbox.service';
 import { WapiBotWaitingExpirerService } from './bot/wapi-bot-waiting-expirer.service';
+import { WapiLiveController } from './live/wapi-live.controller';
+import { WapiLiveService } from './live/wapi-live.service';
 
 @Module({
   imports: [EventsModule],
@@ -41,6 +43,7 @@ import { WapiBotWaitingExpirerService } from './bot/wapi-bot-waiting-expirer.ser
     WapiInboxController,
     WapiQuickRepliesController,
     WapiBotController,
+    WapiLiveController,
   ],
   providers: [
     WapiConfigsService,
@@ -64,6 +67,7 @@ import { WapiBotWaitingExpirerService } from './bot/wapi-bot-waiting-expirer.ser
     WapiBotRouterService,
     WapiBotSandboxService,
     WapiBotWaitingExpirerService,
+    WapiLiveService,
   ],
   exports: [
     WapiQueueService,

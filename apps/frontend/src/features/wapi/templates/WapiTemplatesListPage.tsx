@@ -46,7 +46,7 @@ import type {
 } from './types';
 import { renderWhatsAppMarkdown } from './whatsappMarkdown';
 
-const BUTTON_ACTIONS = ['INBOX', 'BAJA', 'IGNORAR'] as const;
+const BUTTON_ACTIONS = ['INBOX', 'BAJA', 'IGNORAR', 'BOT'] as const;
 type ButtonAction = (typeof BUTTON_ACTIONS)[number];
 
 interface ButtonActionRow {

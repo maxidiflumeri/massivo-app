@@ -629,8 +629,21 @@ Monorepo con **pnpm workspaces** + **Turborepo**.
 #### 4.I — Mensaje de bienvenida automático ✅
 - [x] **Welcome implementado** vía `WapiConfig.welcomeMessage` (sin delaySec — envío inmediato al detectar primera conversación). El webhook reemplaza `wapiConversation.upsert` por `findFirst + create/update` para distinguir conversaciones nuevas; cuando `isNewConversation=true` y hay welcome configurado, envía el texto vía `sendAutoReply` (respeta `cfg.isTestMode` para chat simulado) y persiste `WapiMessage(fromMe=true, content.system={kind:'welcome'})`. Race P2002 mitigado con catch + refetch. Si la primera conversación arranca con keyword opt-out, dispara welcome **y** opt-out confirm en orden (decisión deliberada — saluda + acusa baja).
 
-#### 4.J — Live dashboard WAPI
-- [ ] `/dashboard/wapi/live`: campañas en curso con progreso live, throughput por config, alertas de daily-limit cerca del 80%/100%, conversaciones nuevas/sin asignar.
+#### 4.J — Live dashboard WAPI ✅
+- [x] **Backend** — `WapiLiveService.snapshot()` (`apps/backend/src/modules/wapi/live/wapi-live.service.ts`) agrega tres recolectores en paralelo:
+  - `collectCampaigns(since5min)`: top 25 campañas con `status IN [PROCESSING, PAUSED]` ordenadas por status/sentAt/createdAt; dos `groupBy` paralelos (totales por status y throughput de los últimos 5 min) sobre `WapiReport`.
+  - `collectConfigs(since24h)`: configs activas + `groupBy` SENT en 24 h; como `groupBy` no agrupa por relación, hace un segundo `findMany` para mapear `campaignId → configId`. Percent con cap a 100, mismo cómputo que el worker.
+  - `collectInbox()`: 3 `count` (UNASSIGNED+escalated, WAITING, escalated total) + `findFirst` de la más antigua sin asignar.
+  - Endpoint `GET /api/wapi/live/snapshot` con guards Clerk + Tenant + Policies(`read Campaign`).
+  - Spec con 4 tests (snapshot vacío, totales+throughput, percent cap a 100, inbox counts). 478/478 verde.
+- [x] **Frontend** — `/dashboard/wapi/live` (`apps/frontend/src/features/wapi/live/WapiLivePage.tsx`) con 3 widgets:
+  - **Campañas en curso**: tabla con nombre/línea/template/estado/total/funnel (LinearProgress + chips P/S/D/R/F)/throughput 5 min/link al detalle.
+  - **Uso de líneas (24 h)**: barra de progreso por config con color por umbral (`<80%` success / `80-99%` warning / `100%` error), badge TEST, contador `sent/dailyLimit`.
+  - **Inbox snapshot**: 3 KPI cards (sin asignar + edad de la más antigua, en espera, escaladas totales) + link al inbox.
+  - Chip "● En vivo" con `socket.connected` + re-fetch debounced 500 ms ante eventos `wapi.report.updated` / `wapi.report.log` / `wapi.conversation.updated`. Coalesce `inFlightRef + pendingRef` para no apilar requests.
+  - `liveApi.snapshot(api)` + types mirror del backend (Date como string ISO).
+  - Sidebar entry "Dashboard live" (`MonitorHeartIcon`) primero del grupo WhatsApp; ruta `wapi/live` en `App.tsx`.
+- **Notas**: no se agregaron eventos socket nuevos — la página reutiliza los emitters existentes del worker, campañas e inbox. Pitfall encontrado: `groupBy` con `Promise.all` + cast `as Promise<…>` rompía la inferencia de Prisma (intentaba el overload de array). Patrón adoptado: separar awaits y castear el resultado, no la promise.
 
 #### 4.K — Botones de templates (INBOX/BAJA/IGNORAR) ✅
 - [x] **Schema**: `WapiConversation.priority Boolean @default(false)` + índice `(teamId, priority, lastMessageAt)` (migration `20260506100000_wapi_conversation_priority`).
