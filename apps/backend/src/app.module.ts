@@ -12,6 +12,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { MeModule } from './modules/me/me.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { TeamsModule } from './modules/teams/teams.module';
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { EmailModule } from './modules/email/email.module';
 import { WapiModule } from './modules/wapi/wapi.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
@@ -34,6 +35,7 @@ import { DevModule } from './modules/dev/dev.module';
     MeModule,
     OrganizationsModule,
     TeamsModule,
+    AuditLogsModule,
     EmailModule,
     WapiModule,
     ContactsModule,

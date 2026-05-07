@@ -21,6 +21,30 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.S.3 — Audit Log endpoint + frontend `/dashboard/audit` (Stage 6) ✅
+
+#### Added
+- **Backend — `GET /api/audit-logs`** (`apps/backend/src/modules/audit-logs/`):
+  - Service + controller + DTO + spec. Cursor pagination (`take=limit+1` trick, default 50, max 200) y filtros opcionales `actorUserId`/`resourceType`/`resourceId`/`action`/`from`/`to`.
+  - Tenant-scoped via `prisma.scoped.auditLog` (org-scope, sin teamId).
+  - Enriquecimiento del actor en una sola query batch: `User.findMany({ where: { id: { in: actorIds } } })` + map en memoria. Devuelve `{ id, name, email, avatarUrl }` o `null` si fue una acción del scheduler/sistema o si el user fue borrado.
+  - Permission gate CASL: `read AuditLog` (OWNER/ADMIN gain). Cualquier rol inferior recibe 403.
+- **CASL** — `'AuditLog'` agregado a `SubjectName` en `@massivo/permissions`. `OWNER`/`ADMIN` ganan `can('read', 'AuditLog', { organizationId })`.
+- **Frontend — `/dashboard/audit`** (`apps/frontend/src/features/audit/AuditLogPage.tsx`):
+  - Header + Paper de filtros (Grid 6 columnas: actor user ID, acción, resourceType, resourceId, datetime-local from/to + botones Aplicar/Limpiar/Refresh).
+  - Tabla con fecha, actor (avatar + nombre + email, o chip "sistema"), acción (chip monoespaciado), recurso (type + id), IP.
+  - Click en fila → `Drawer` derecho con detalle de campos + bloque `<pre>` con metadata pretty-printed JSON, scrollable, monospace, theme-aware.
+  - Botón "Cargar más" con cursor.
+- **Sidebar** — entry "Audit log" (HistoryIcon) en grupo "Cuenta".
+
+#### Tests
+- +9 service tests: lista vacía, paginación con nextCursor, clamp limit `[1,200]`, cursor con skip:1, filtros combinados, fechas from/to, enrich actor, sin actor, actor borrado.
+- 539/539 backend tests verde. Frontend typecheck ✅.
+
+#### Why
+- Cierra el bloque 4.S completo. Compliance + debugging cross-team + forensics: ahora cualquier OWNER/ADMIN puede inspeccionar quién hizo qué desde una UI navegable, con metadata JSON sanitizada visible en detalle.
+- Diseño "actor enrichment" en batch (no per-row JOIN) mantiene la query simple y aprovecha que la cantidad de actores únicos por página suele ser chica.
+
 ### 4.S.2 — Audit Log: cobertura ampliada (Stages 3-5)
 
 #### Added

@@ -15,7 +15,8 @@ export type SubjectName =
   | 'Member'
   | 'Billing'
   | 'Analytics'
-  | 'AiFeature';
+  | 'AiFeature'
+  | 'AuditLog';
 
 export type Subject = SubjectName | 'all';
 

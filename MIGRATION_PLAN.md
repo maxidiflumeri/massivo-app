@@ -978,7 +978,7 @@ Cierra el ciclo handoff humano: una vez que un operador toma una conversación (
 - TICK_MS=60s elegido como balance entre granularidad (puntualidad ±60s) y carga de DB. Si alguna vez se necesita programación al segundo, bajar.
 - El scheduler usa `setInterval` simple en lugar de `@nestjs/schedule` para mantener la dep mínima — mismo patrón que `WapiBotWaitingExpirerService`.
 
-#### 4.S — Audit Log de transacciones de usuario (en curso)
+#### 4.S — Audit Log de transacciones de usuario ✅
 
 > **Motivación.** Necesitamos saber quién hizo qué en el sistema: quién creó una campaña, quién dio de alta SMTP, quién la pausó, quién agregó contactos, quién reveló secrets, etc. — con timestamp, organización y team. Base para compliance, debugging cross-team y forensics. El modelo `AuditLog` ya existe en Prisma desde Fase 1; lo cableamos ahora.
 >
@@ -1021,10 +1021,12 @@ Cierra el ciclo handoff humano: una vez que un operador toma una conversación (
 - [x] `TeamsController` — team.created/updated/deleted.
 - [x] `TeamMembersController` — team.memberAdded/memberRoleChanged/memberRemoved.
 
-##### 4.S.6 — Stage 6: frontend `/dashboard/audit` (pendiente)
-- [ ] Página con tabla paginada (cursor) + filtros: usuario, recurso (type+id), acción, rango de fechas.
-- [ ] Drawer detalle con metadata pretty-printed (usando los datos sanitizados del backend).
-- [ ] Permisos: gate `manage Organization` para ver todo el log; un usuario regular ve sólo sus propias acciones (modo "actividad").
+##### 4.S.6 — Stage 6: frontend `/dashboard/audit` ✅
+- [x] **Backend `GET /api/audit-logs`** (`apps/backend/src/modules/audit-logs/`): cursor pagination (`take=limit+1` trick, default 50, max 200), filtros opcionales `actorUserId` / `resourceType` / `resourceId` / `action` / `from` / `to`. Tenant-scoped por `prisma.scoped.auditLog` (org-scope). Enriquece cada fila con datos del actor (`User.findMany` + map) — `name`, `email`, `avatarUrl`. Permission gate: `read AuditLog` (CASL).
+- [x] **CASL** — agregado `'AuditLog'` a `SubjectName`. `OWNER` y `ADMIN` ganan `can('read', 'AuditLog', { organizationId })`. Otros roles no ven el panel.
+- [x] **Frontend `/dashboard/audit`** (`apps/frontend/src/features/audit/AuditLogPage.tsx`): tabla con fecha + actor (avatar+nombre+email) + acción (chip mono) + recurso (type+id) + IP. Filtros con campos para actor user ID, acción, resourceType/Id, rango de fechas (datetime-local). Botón "Cargar más" con cursor. Click en fila → drawer derecho con detalle completo + metadata JSON pretty-printed (preformateado, scrollable, monospace).
+- [x] **Sidebar** — entry "Audit log" en grupo "Cuenta" con icono History.
+- [x] **Tests** — +9 service tests (vacío, paginación, clamp limit, cursor, filtros combinados, fechas, enrich actor, sin actor, actor borrado).
 
 **Aceptación final 4.S**
 - Crear/pausar/borrar/asignar cualquier recurso aparece como fila en `AuditLog` con `actorUserId` correcto (Clerk userId), `organizationId` y `teamId` de la sesión, `action` con namespace canónico, `metadata` sin secrets en claro.

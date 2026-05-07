@@ -23,6 +23,7 @@ import { WapiBotsPage } from './features/wapi/bots/WapiBotsPage';
 import { WapiLivePage } from './features/wapi/live/WapiLivePage';
 import { WapiSimulatorPage } from './features/dev/WapiSimulatorPage';
 import { WapiSimulatorChatPage } from './features/dev/WapiSimulatorChatPage';
+import { AuditLogPage } from './features/audit/AuditLogPage';
 
 const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
 
@@ -66,6 +67,7 @@ export function App() {
         <Route path="wapi/live" element={<WapiLivePage />} />
         <Route path="wapi/templates" element={<WapiTemplatesListPage />} />
         <Route path="wapi/templates/new" element={<WapiTemplateEditorPage />} />
+        <Route path="audit" element={<AuditLogPage />} />
         {DEV_SIMULATOR_ENABLED && (
           <Route path="dev/wapi/simulator" element={<WapiSimulatorPage />} />
         )}

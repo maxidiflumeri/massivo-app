@@ -31,6 +31,7 @@ import ScienceIcon from '@mui/icons-material/Science';
 import ForumIcon from '@mui/icons-material/Forum';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
+import HistoryIcon from '@mui/icons-material/History';
 import { OrganizationSwitcher } from '@clerk/clerk-react';
 
 const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
@@ -141,7 +142,14 @@ const NAV_GROUPS: NavGroupSpec[] = [
   },
   {
     label: 'Cuenta',
-    items: [{ label: 'Configuración', icon: <SettingsIcon fontSize="small" />, disabled: true }],
+    items: [
+      {
+        to: '/dashboard/audit',
+        label: 'Audit log',
+        icon: <HistoryIcon fontSize="small" />,
+      },
+      { label: 'Configuración', icon: <SettingsIcon fontSize="small" />, disabled: true },
+    ],
   },
   ...(DEV_SIMULATOR_ENABLED
     ? [

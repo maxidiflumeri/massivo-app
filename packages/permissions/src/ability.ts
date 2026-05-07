@@ -32,6 +32,7 @@ export function defineAbilityFor(ctx: AbilityContext): AppAbility {
     can('manage', 'Organization', { id: organizationId });
     can('manage', 'Team', { organizationId });
     can('manage', 'Member', { organizationId });
+    can('read', 'AuditLog', { organizationId });
   }
 
   if (orgRole === 'OWNER' || orgRole === 'BILLING') {
