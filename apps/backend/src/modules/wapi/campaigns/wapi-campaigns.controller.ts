@@ -19,6 +19,7 @@ import { TenantContextGuard } from '../../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../../common/auth/tenant-context.interceptor';
 import { PoliciesGuard } from '../../../common/auth/policies.guard';
 import { CheckPolicies } from '../../../common/auth/check-policies.decorator';
+import { Audit } from '../../../common/audit/audit.decorator';
 import { WapiCampaignsService } from './wapi-campaigns.service';
 import {
   AddWapiCampaignContactsDto,
@@ -63,18 +64,21 @@ export class WapiCampaignsController {
 
   @Post()
   @CheckPolicies((a: AppAbility) => a.can('create', 'Campaign'))
+  @Audit({ action: 'wapi.campaign.created', resourceType: 'WapiCampaign', resourceIdFrom: 'response:id' })
   create(@Body() dto: CreateWapiCampaignDto): Promise<unknown> {
     return this.service.create(dto);
   }
 
   @Patch(':id')
   @CheckPolicies((a: AppAbility) => a.can('update', 'Campaign'))
+  @Audit({ action: 'wapi.campaign.updated', resourceType: 'WapiCampaign', resourceIdFrom: 'param:id' })
   update(@Param('id') id: string, @Body() dto: UpdateWapiCampaignDto): Promise<unknown> {
     return this.service.update(id, dto);
   }
 
   @Post(':id/contacts')
   @CheckPolicies((a: AppAbility) => a.can('update', 'Campaign'))
+  @Audit({ action: 'wapi.campaign.contactsAdded', resourceType: 'WapiCampaign', resourceIdFrom: 'param:id', includeBody: false })
   addContacts(@Param('id') id: string, @Body() dto: AddWapiCampaignContactsDto) {
     return this.service.addContacts(id, dto);
   }
@@ -88,24 +92,28 @@ export class WapiCampaignsController {
   @Post(':id/send')
   @HttpCode(HttpStatus.ACCEPTED)
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  @Audit({ action: 'wapi.campaign.sent', resourceType: 'WapiCampaign', resourceIdFrom: 'param:id' })
   send(@Param('id') id: string): Promise<{ enqueued: number }> {
     return this.service.send(id);
   }
 
   @Post(':id/pause')
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  @Audit({ action: 'wapi.campaign.paused', resourceType: 'WapiCampaign', resourceIdFrom: 'param:id' })
   pause(@Param('id') id: string): Promise<unknown> {
     return this.service.pause(id);
   }
 
   @Post(':id/resume')
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  @Audit({ action: 'wapi.campaign.resumed', resourceType: 'WapiCampaign', resourceIdFrom: 'param:id' })
   resume(@Param('id') id: string): Promise<{ resumed: true; reEnqueued: number }> {
     return this.service.resume(id);
   }
 
   @Post(':id/force-close')
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  @Audit({ action: 'wapi.campaign.forceClosed', resourceType: 'WapiCampaign', resourceIdFrom: 'param:id' })
   forceClose(@Param('id') id: string): Promise<{ closed: true; canceled: number }> {
     return this.service.forceClose(id);
   }
@@ -113,6 +121,7 @@ export class WapiCampaignsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @CheckPolicies((a: AppAbility) => a.can('delete', 'Campaign'))
+  @Audit({ action: 'wapi.campaign.deleted', resourceType: 'WapiCampaign', resourceIdFrom: 'param:id' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }

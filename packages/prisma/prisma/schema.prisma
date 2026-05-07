@@ -296,6 +296,8 @@ model AuditLog {
 
   @@index([organizationId, createdAt])
   @@index([organizationId, action])
+  @@index([organizationId, resourceType, resourceId])
+  @@index([actorUserId, createdAt])
 }
 
 // ============================================================

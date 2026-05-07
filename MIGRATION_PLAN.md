@@ -978,6 +978,62 @@ Cierra el ciclo handoff humano: una vez que un operador toma una conversación (
 - TICK_MS=60s elegido como balance entre granularidad (puntualidad ±60s) y carga de DB. Si alguna vez se necesita programación al segundo, bajar.
 - El scheduler usa `setInterval` simple en lugar de `@nestjs/schedule` para mantener la dep mínima — mismo patrón que `WapiBotWaitingExpirerService`.
 
+#### 4.S — Audit Log de transacciones de usuario (en curso)
+
+> **Motivación.** Necesitamos saber quién hizo qué en el sistema: quién creó una campaña, quién dio de alta SMTP, quién la pausó, quién agregó contactos, quién reveló secrets, etc. — con timestamp, organización y team. Base para compliance, debugging cross-team y forensics. El modelo `AuditLog` ya existe en Prisma desde Fase 1; lo cableamos ahora.
+>
+> **Estrategia.** Pattern decorator + interceptor (estándar Nest): un `@Audit({...})` por endpoint mutante + `AuditInterceptor` global que escribe sólo on-success vía `tap()`. Cero acoplamiento en services, fácil de cubrir incrementalmente, fail-closed (si falla la escritura no rompe la acción del usuario).
+>
+> Se descompone en sub-stages para poder ir commiteando incrementalmente.
+
+##### 4.S.1 — Stage 1: infraestructura base ✅
+- [x] **`AuditLogService.log(entry)`** (`apps/backend/src/common/audit/audit-log.service.ts`): cross-tenant, fire-and-forget. Toma `actorUserId` + `organizationId` + `teamId` del `TenantContext` (con override explícito para jobs cross-tenant). Si no hay `organizationId` ni override → descarta con WARN. Sanitiza metadata recursivamente con regex `/access[_-]?token|app[_-]?secret|verify[_-]?token|password|secret|api[_-]?key|enc$/i` → `[REDACTED]`. Try/catch interno: si falla `prisma.auditLog.create` loggea WARN pero no propaga.
+- [x] **`@Audit({ action, resourceType?, resourceIdFrom?, includeBody? })`** (`audit.decorator.ts`): `SetMetadata` clave `audit_metadata`. `resourceIdFrom` admite `param:<key>`, `body:<key>`, `response:<key>`.
+- [x] **`AuditInterceptor`** (`audit.interceptor.ts`): registrado como `APP_INTERCEPTOR` global. Lee metadata via `Reflector`, captura `req.body` (a menos que `includeBody:false`), `req.params`, `req.ip` (con `x-forwarded-for` first-hop), `req.headers['user-agent']`. Usa `tap()` de rxjs para escribir audit sólo on-success — si el handler tira, no se escribe nada.
+- [x] **`AuditLogModule`** global con `APP_INTERCEPTOR`. Registrado en `app.module.ts`.
+- [x] **Migration** `20260513100000_audit_log_resource_actor_indexes`: dos índices nuevos en `AuditLog` para queries comunes en futuro panel:
+  - `(organizationId, resourceType, resourceId)` — listar historial de un recurso específico.
+  - `(actorUserId, createdAt)` — listar historial de un usuario.
+- [x] **Tests** — +13 (8 service: contexto, override, sin org descarta, prisma falla, sanitización profunda, etc. + 5 interceptor: sin decorator, response:id, param:id, error no audita, x-forwarded-for, includeBody:false).
+
+##### 4.S.2 — Stage 2: cobertura WAPI campaigns + 4.L.5 + 4.P reveal ✅
+- [x] `WapiCampaignsController` — `@Audit` en create/update/addContacts/send/pause/resume/forceClose/remove (8 endpoints; `addContacts` con `includeBody:false` por payloads grandes).
+- [x] `DevSimulatorController` (4.L.5 pendiente) — `@Audit` en text/media/reaction/button/status (5 endpoints; media con `includeBody:false`).
+- [x] `WapiConfigsController` — `@Audit` en revealSecrets (4.P pendiente) + create/update/remove.
+- [x] **Caso especial** — `WapiCampaignSchedulerService` no pasa por HTTP. Llamada manual a `auditLog.log({ action: 'wapi.campaign.sent', actorUserId: null, metadata: { source: 'scheduler', name } })` después de cada `send()`, dentro del `TenantContext.run` para que herede org/team.
+
+##### 4.S.3 — Stage 3: cobertura WAPI configs/bot/inbox/quick-replies/opt-out (pendiente)
+- [ ] `WapiConfigsController` — restantes (ya hechos en S.2).
+- [ ] `WapiBotsController` — bot.created/updated/published/draft.
+- [ ] `WapiInboxController` — conversation.assigned/unassigned/resolved/reopened/hold/take.
+- [ ] `WapiQuickRepliesController` — quickReply.created/updated/deleted.
+- [ ] `WapiOptOutController` — optOut.added/removed/keyword updates.
+
+##### 4.S.4 — Stage 4: cobertura Email + SMTP + templates (pendiente)
+- [ ] `EmailCampaignsController` — created/updated/sent/paused/resumed/canceled/contactsAdded/deleted.
+- [ ] `EmailCampaignSchedulerService` — manual log post-send (paralelo a 4.S.2).
+- [ ] `SmtpAccountsController` — smtp.created/updated/deleted/verified.
+- [ ] `EmailTemplatesController` — template.created/updated/deleted/cloned.
+
+##### 4.S.5 — Stage 5: org-level (pendiente)
+- [ ] `OrganizationsController` — webhook regenerated, org settings updated, member role changed.
+- [ ] `TeamsController` — team.created/deleted/member.added/removed/role.changed (vía Clerk webhook + UI).
+
+##### 4.S.6 — Stage 6: frontend `/dashboard/audit` (pendiente)
+- [ ] Página con tabla paginada (cursor) + filtros: usuario, recurso (type+id), acción, rango de fechas.
+- [ ] Drawer detalle con metadata pretty-printed (usando los datos sanitizados del backend).
+- [ ] Permisos: gate `manage Organization` para ver todo el log; un usuario regular ve sólo sus propias acciones (modo "actividad").
+
+**Aceptación final 4.S**
+- Crear/pausar/borrar/asignar cualquier recurso aparece como fila en `AuditLog` con `actorUserId` correcto (Clerk userId), `organizationId` y `teamId` de la sesión, `action` con namespace canónico, `metadata` sin secrets en claro.
+- Acciones del scheduler quedan registradas con `actorUserId=NULL` y `metadata.source='scheduler'` para distinguirlas.
+- Frontend permite filtrar y exportar el historial.
+
+**Notas / decisiones**
+- No hookeamos Prisma middleware: queremos audit a nivel **acción de usuario** (UI), no a nivel **mutación de DB**. Una acción puede tocar N tablas; una mutación puede ser side-effect de un job y no le pertenece a nadie. Decorator + interceptor es lo correcto.
+- Los webhooks de Meta/Clerk **no** se auditan en este módulo — son inbound, no transacciones de usuario. Tienen su propio logging con Winston.
+- `AuditLog.metadata` es `Json?`. Cap implícito al payload: el body completo del request, sanitizado. Si en el futuro hay endpoints con payloads enormes, agregar `includeBody:false`.
+
 **Aceptación 4.L:**
 - Crear un virtual number `+5491100000001` ligado a un `WapiConfig` de prueba.
 - Desde el chat-simulator: el cliente virtual escribe "hola" → aparece en el inbox real del team. El operador responde con texto / foto / audio / documento → el simulator muestra el mensaje en la vista cliente con caption + media renderizada. Reacciones (cliente → operador) y botones (template inbound) funcionan end-to-end. Statuses delivered/read se reflejan en los checks azules del operador.

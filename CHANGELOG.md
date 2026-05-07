@@ -21,6 +21,28 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.S.1 — Audit Log de transacciones de usuario (Stages 1-2)
+
+#### Added
+- **Backend — módulo global `AuditLog`** (`apps/backend/src/common/audit/`):
+  - `AuditLogService.log(entry)` — fire-and-forget cross-tenant. Toma `actorUserId/organizationId/teamId` del `TenantContext` (con override explícito para jobs) y persiste a `AuditLog`. Si no hay `organizationId` ni override → descarta con WARN. Sanitiza metadata recursivamente con regex `/access[_-]?token|app[_-]?secret|verify[_-]?token|password|secret|api[_-]?key|enc$/i` → `[REDACTED]`. Try/catch interno: si Prisma falla loggea WARN sin propagar.
+  - `@Audit({ action, resourceType?, resourceIdFrom?, includeBody? })` — decorator declarativo. `resourceIdFrom` admite `param:<key>`, `body:<key>`, `response:<key>`.
+  - `AuditInterceptor` registrado como `APP_INTERCEPTOR` global. Captura `req.body` (a menos que `includeBody:false`), `req.params`, `req.ip` con first-hop de `x-forwarded-for`, y `user-agent`. Escribe vía `tap()` de rxjs → sólo on-success; si el handler tira no se escribe nada.
+- **Migración** `20260513100000_audit_log_resource_actor_indexes` con dos índices en `AuditLog`:
+  - `(organizationId, resourceType, resourceId)` — historial por recurso.
+  - `(actorUserId, createdAt)` — historial por usuario.
+- **Cobertura Stage 2** — `@Audit` agregado a:
+  - `WapiCampaignsController` (8 endpoints): `wapi.campaign.created/updated/contactsAdded/sent/paused/resumed/forceClosed/deleted`. `addContacts` con `includeBody:false`.
+  - `DevSimulatorController` (5 endpoints): `wapi.simulator.inbound.text/media/reaction/button` + `wapi.simulator.status`. Media con `includeBody:false`.
+  - `WapiConfigsController` (4 endpoints): `wapi.config.secretsRevealed/created/updated/deleted`.
+- **Caso especial scheduler** — `WapiCampaignSchedulerService` ahora llama `auditLog.log({ action: 'wapi.campaign.sent', actorUserId: null, metadata: { source: 'scheduler', name } })` después de cada `send()`, dentro del `TenantContext.run` para heredar org/team.
+- **Tests** — +13 (8 `audit-log.service.spec.ts` + 5 `audit.interceptor.spec.ts`) + actualización de `wapi-campaign-scheduler.service.spec.ts` por la nueva dep. 17/17 verde en suite audit+scheduler.
+
+#### Why
+- Necesitamos saber quién hizo qué: quién creó una campaña, quién pausó, quién dio de alta SMTP, quién reveló verify tokens, etc., con timestamp + organización + team. Base para compliance, debugging cross-team y forensics.
+- El modelo `AuditLog` ya existía desde Fase 1; lo cableamos ahora con un patrón estándar (decorator + interceptor) que escala incrementalmente sin tocar services.
+- Stages 3-6 (WAPI inbox/bot, Email/SMTP, org-level, frontend `/dashboard/audit`) quedan para próximos commits.
+
 ### 4.R — Scheduler de campañas (WAPI + Email)
 
 #### Added

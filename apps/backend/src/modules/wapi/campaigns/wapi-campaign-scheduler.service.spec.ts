@@ -3,12 +3,18 @@ import { WapiCampaignSchedulerService } from './wapi-campaign-scheduler.service'
 describe('WapiCampaignSchedulerService', () => {
   let prisma: { wapiCampaign: { findMany: jest.Mock } };
   let campaigns: { send: jest.Mock };
+  let auditLog: { log: jest.Mock };
   let svc: WapiCampaignSchedulerService;
 
   beforeEach(() => {
     prisma = { wapiCampaign: { findMany: jest.fn().mockResolvedValue([]) } };
     campaigns = { send: jest.fn().mockResolvedValue({ enqueued: 0 }) };
-    svc = new WapiCampaignSchedulerService(prisma as never, campaigns as never);
+    auditLog = { log: jest.fn().mockResolvedValue(undefined) };
+    svc = new WapiCampaignSchedulerService(
+      prisma as never,
+      campaigns as never,
+      auditLog as never,
+    );
   });
 
   it('sin campañas vencidas → fired: 0', async () => {

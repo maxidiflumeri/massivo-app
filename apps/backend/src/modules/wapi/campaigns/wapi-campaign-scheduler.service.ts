@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
+import { AuditLogService } from '../../../common/audit/audit-log.service';
 import { WapiCampaignsService } from './wapi-campaigns.service';
 
 const TICK_MS = 60_000;
@@ -23,6 +24,7 @@ export class WapiCampaignSchedulerService implements OnModuleInit, OnModuleDestr
   constructor(
     private readonly prisma: PrismaService,
     private readonly campaigns: WapiCampaignsService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   onModuleInit() {
@@ -69,7 +71,16 @@ export class WapiCampaignSchedulerService implements OnModuleInit, OnModuleDestr
             orgRole: 'OWNER',
             teamRole: 'ADMIN',
           },
-          () => this.campaigns.send(row.id),
+          async () => {
+            await this.campaigns.send(row.id);
+            await this.auditLog.log({
+              action: 'wapi.campaign.sent',
+              resourceType: 'WapiCampaign',
+              resourceId: row.id,
+              actorUserId: null,
+              metadata: { source: 'scheduler', name: row.name },
+            });
+          },
         );
         fired++;
         this.logger.log(

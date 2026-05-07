@@ -18,6 +18,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ClerkAuthGuard } from '../../common/auth/clerk-auth.guard';
 import { TenantContextGuard } from '../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../common/auth/tenant-context.interceptor';
+import { Audit } from '../../common/audit/audit.decorator';
 import { MEDIA_LIMITS_BY_TYPE } from '../wapi/media/wapi-media.types';
 import { DevSimulatorService } from './dev-simulator.service';
 import {
@@ -52,6 +53,7 @@ export class DevSimulatorController {
 
   @Post('inbound/text')
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'wapi.simulator.inbound.text', resourceType: 'WapiSimulator' })
   inboundText(@Body() dto: SimulateInboundTextDto) {
     return this.service.simulateInboundText(dto);
   }
@@ -59,6 +61,7 @@ export class DevSimulatorController {
   @Post('inbound/media')
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }))
+  @Audit({ action: 'wapi.simulator.inbound.media', resourceType: 'WapiSimulator', includeBody: false })
   inboundMedia(
     @Body() dto: SimulateInboundMediaDto,
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -76,18 +79,21 @@ export class DevSimulatorController {
 
   @Post('inbound/reaction')
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'wapi.simulator.inbound.reaction', resourceType: 'WapiSimulator' })
   inboundReaction(@Body() dto: SimulateInboundReactionDto) {
     return this.service.simulateInboundReaction(dto);
   }
 
   @Post('inbound/button')
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'wapi.simulator.inbound.button', resourceType: 'WapiSimulator' })
   inboundButton(@Body() dto: SimulateInboundButtonDto) {
     return this.service.simulateInboundButton(dto);
   }
 
   @Post('status')
   @HttpCode(HttpStatus.OK)
+  @Audit({ action: 'wapi.simulator.status', resourceType: 'WapiSimulator' })
   status(@Body() dto: SimulateStatusDto) {
     return this.service.simulateStatus(dto);
   }
