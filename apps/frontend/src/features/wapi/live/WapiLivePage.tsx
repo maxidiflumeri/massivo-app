@@ -197,6 +197,18 @@ function CampaignsWidget({ campaigns }: { campaigns: LiveCampaignSummary[] }) {
   );
 }
 
+function formatDelaySec(ms: number): string {
+  return `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1)}s`;
+}
+
+function delayTooltip(min: number, max: number, source: 'campaign' | 'config'): string {
+  const avg = (min + max) / 2 / 1000;
+  const perMin = avg > 0 ? (60 / avg).toFixed(1) : '0';
+  const sourceLabel =
+    source === 'campaign' ? 'override per-campaña' : 'heredado del número';
+  return `Velocidad efectiva: ${formatDelaySec(min)}–${formatDelaySec(max)} entre envíos (${sourceLabel}). ~${perMin} envíos/min.`;
+}
+
 function CampaignRow({ c }: { c: LiveCampaignSummary }) {
   const sent = c.totals.SENT + c.totals.DELIVERED + c.totals.READ;
   const failed = c.totals.FAILED + c.totals.CANCELED;
@@ -205,9 +217,22 @@ function CampaignRow({ c }: { c: LiveCampaignSummary }) {
   return (
     <TableRow hover>
       <TableCell>
-        <Typography variant="body2" sx={{ fontWeight: 500 }}>
-          {c.name}
-        </Typography>
+        <Tooltip title={delayTooltip(c.delayMinMs, c.delayMaxMs, c.delaySource)}>
+          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ width: 'fit-content' }}>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {c.name}
+            </Typography>
+            {c.delaySource === 'campaign' && (
+              <Chip
+                label="Velocidad ★"
+                size="small"
+                color="info"
+                variant="outlined"
+                sx={{ height: 18, fontSize: 10 }}
+              />
+            )}
+          </Stack>
+        </Tooltip>
       </TableCell>
       <TableCell>
         <Typography variant="body2" color="text.secondary">
@@ -319,12 +344,18 @@ function ConfigsWidget({ configs }: { configs: LiveConfigUsage[] }) {
 function ConfigRow({ cfg }: { cfg: LiveConfigUsage }) {
   const color: 'success' | 'warning' | 'error' =
     cfg.percent >= 100 ? 'error' : cfg.percent >= 80 ? 'warning' : 'success';
+  const avgSec = (cfg.sendDelayMinMs + cfg.sendDelayMaxMs) / 2 / 1000;
+  const perMin = avgSec > 0 ? (60 / avgSec).toFixed(1) : '0';
   return (
     <Box>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
-        <Typography variant="body2" sx={{ fontWeight: 500, flex: 1 }}>
-          {cfg.name?.trim() || cfg.phoneNumberId}
-        </Typography>
+        <Tooltip
+          title={`Velocidad base: ${formatDelaySec(cfg.sendDelayMinMs)}–${formatDelaySec(cfg.sendDelayMaxMs)} (~${perMin} envíos/min). Las campañas pueden pisar este valor.`}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 500, flex: 1, cursor: 'help' }}>
+            {cfg.name?.trim() || cfg.phoneNumberId}
+          </Typography>
+        </Tooltip>
         {cfg.isTestMode && <Chip label="TEST" size="small" color="warning" variant="outlined" />}
         <Typography variant="body2" color="text.secondary">
           {cfg.sentLast24h.toLocaleString()} / {cfg.dailyLimit.toLocaleString()}

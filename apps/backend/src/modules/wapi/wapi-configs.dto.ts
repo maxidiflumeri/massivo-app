@@ -6,9 +6,13 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
+
+/** 4.Q — máximo razonable para el delay (1h). Evita typos catastróficos. */
+const MAX_DELAY_MS = 60 * 60 * 1000;
 
 export class CreateWapiConfigDto {
   @IsOptional()
@@ -57,6 +61,18 @@ export class CreateWapiConfigDto {
   @IsInt()
   @Min(1)
   dailyLimit?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  @Max(MAX_DELAY_MS)
+  sendDelayMinMs?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  @Max(MAX_DELAY_MS)
+  sendDelayMaxMs?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -114,6 +130,18 @@ export class UpdateWapiConfigDto {
   @IsInt()
   @Min(1)
   dailyLimit?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  @Max(MAX_DELAY_MS)
+  sendDelayMinMs?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  @Max(MAX_DELAY_MS)
+  sendDelayMaxMs?: number;
 
   @IsOptional()
   @IsBoolean()

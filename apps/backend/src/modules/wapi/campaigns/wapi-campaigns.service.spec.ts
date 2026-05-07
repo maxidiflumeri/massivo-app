@@ -87,6 +87,44 @@ describe('WapiCampaignsService', () => {
       prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'PROCESSING' });
       await expect(svc.update('c1', { name: 'X' })).rejects.toBeInstanceOf(ConflictException);
     });
+
+    it('4.Q config.delay* válido se persiste', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      await svc.update('c1', { config: { delayMinMs: 5000, delayMaxMs: 10000 } } as never);
+      expect(prisma.scoped.wapiCampaign.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ config: { delayMinMs: 5000, delayMaxMs: 10000 } }),
+        }),
+      );
+    });
+
+    it('4.Q config.delayMinMs no entero → BadRequest', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      await expect(
+        svc.update('c1', { config: { delayMinMs: 1500.5 } } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.scoped.wapiCampaign.update).not.toHaveBeenCalled();
+    });
+
+    it('4.Q config.delayMinMs fuera de rango (<1000) → BadRequest', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      await expect(
+        svc.update('c1', { config: { delayMinMs: 500 } } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('4.Q config.delayMinMs > delayMaxMs → BadRequest', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      await expect(
+        svc.update('c1', { config: { delayMinMs: 60000, delayMaxMs: 5000 } } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('4.Q config sin delays (otras keys) pasa intacto', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      await svc.update('c1', { config: { bodyVars: ['firstName'] } } as never);
+      expect(prisma.scoped.wapiCampaign.update).toHaveBeenCalled();
+    });
   });
 
   describe('addContacts', () => {

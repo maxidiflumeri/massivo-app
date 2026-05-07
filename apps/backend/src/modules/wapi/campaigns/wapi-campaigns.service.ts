@@ -19,6 +19,35 @@ import {
 const EDITABLE_STATUSES = new Set(['DRAFT', 'SCHEDULED', 'PAUSED']);
 const SENDABLE_STATUSES = new Set(['DRAFT', 'SCHEDULED', 'PAUSED']);
 
+const MIN_DELAY_MS = 1000;
+const MAX_DELAY_MS = 60 * 60 * 1000;
+
+/**
+ * 4.Q — Valida throttle override en campaign.config (JSON libre, no DTO-validable
+ * por field). Acepta `delayMinMs`/`delayMaxMs` opcionales; ignora otras keys.
+ */
+function assertCampaignConfig(config: Record<string, unknown> | null | undefined): void {
+  if (!config) return;
+  const checkBound = (label: string, raw: unknown): void => {
+    if (raw === undefined || raw === null) return;
+    if (typeof raw !== 'number' || !Number.isInteger(raw)) {
+      throw new BadRequestException(`config.${label} debe ser entero en ms`);
+    }
+    if (raw < MIN_DELAY_MS || raw > MAX_DELAY_MS) {
+      throw new BadRequestException(
+        `config.${label} fuera de rango (${MIN_DELAY_MS}..${MAX_DELAY_MS} ms)`,
+      );
+    }
+  };
+  checkBound('delayMinMs', config['delayMinMs']);
+  checkBound('delayMaxMs', config['delayMaxMs']);
+  const min = config['delayMinMs'];
+  const max = config['delayMaxMs'];
+  if (typeof min === 'number' && typeof max === 'number' && min > max) {
+    throw new BadRequestException('config.delayMinMs debe ser ≤ config.delayMaxMs');
+  }
+}
+
 @Injectable()
 export class WapiCampaignsService {
   private readonly logger = new Logger(WapiCampaignsService.name);
@@ -77,6 +106,9 @@ export class WapiCampaignsService {
     }
     if (dto.scheduledAt && dto.scheduledAt.getTime() < Date.now()) {
       throw new BadRequestException('scheduledAt debe ser futuro');
+    }
+    if (dto.config !== undefined) {
+      assertCampaignConfig(dto.config);
     }
     return this.prisma.scoped.wapiCampaign.update({
       where: { id },

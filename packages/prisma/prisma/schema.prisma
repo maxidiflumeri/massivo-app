@@ -552,6 +552,11 @@ model WapiConfig {
   // handler (BAJA, STOP, UNSUBSCRIBE, CANCELAR).
   optOutKeywords        String[] @default([])
   dailyLimit            Int      @default(200)
+  // 4.Q — Throttle entre envíos. Defaults 30s/60s. Pisable per-campaña vía
+  // WapiCampaign.config.delayMinMs/Max. Si null, fallback a env y luego a hard
+  // defaults (DEFAULT_DELAY_MIN_MS/MAX en wapi-worker.service.ts).
+  sendDelayMinMs        Int      @default(30000)
+  sendDelayMaxMs        Int      @default(60000)
   isActive              Boolean  @default(true)
   // Si true, el sender NO pega a Meta — devuelve un wamid SIM_ y persiste el
   // mensaje como si Meta hubiera respondido OK. Usado por la página

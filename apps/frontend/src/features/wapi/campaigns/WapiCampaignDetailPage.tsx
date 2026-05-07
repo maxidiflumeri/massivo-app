@@ -5,14 +5,17 @@ import {
   Box,
   Button,
   Chip,
+  Collapse,
   Divider,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Paper,
   Select,
   Skeleton,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from '@mui/material';
@@ -153,6 +156,10 @@ export function WapiCampaignDetailPage() {
   const [bodyVars, setBodyVars] = useState<string[]>([]);
   const [templateDetail, setTemplateDetail] = useState<WapiTemplateDetailFull | null>(null);
   const [savedDataKeys, setSavedDataKeys] = useState<string[]>([]);
+  // 4.Q — override per-campaña del throttle (campaign.config.delay*).
+  const [delayOverride, setDelayOverride] = useState(false);
+  const [delayMinSec, setDelayMinSec] = useState('30');
+  const [delayMaxSec, setDelayMaxSec] = useState('60');
 
   const [contactsText, setContactsText] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -179,6 +186,15 @@ export function WapiCampaignDetailPage() {
       setScheduledAt(c.scheduledAt ? c.scheduledAt.slice(0, 16) : '');
       const cfg = (c.config ?? {}) as WapiCampaignConfig;
       setBodyVars(Array.isArray(cfg.bodyVars) ? cfg.bodyVars : []);
+      const hasOverride =
+        typeof cfg.delayMinMs === 'number' || typeof cfg.delayMaxMs === 'number';
+      setDelayOverride(hasOverride);
+      if (typeof cfg.delayMinMs === 'number') {
+        setDelayMinSec(String(Math.round(cfg.delayMinMs / 1000)));
+      }
+      if (typeof cfg.delayMaxMs === 'number') {
+        setDelayMaxSec(String(Math.round(cfg.delayMaxMs / 1000)));
+      }
       setError(null);
       try {
         const keys = await api.get<string[]>(`/api/wapi/campaigns/${id}/contacts/data-keys`);
@@ -290,7 +306,21 @@ export function WapiCampaignDetailPage() {
       payload.templateId = templateId || null;
       payload.configId = configId || null;
       payload.scheduledAt = scheduledAt ? new Date(scheduledAt).toISOString() : null;
-      payload.config = bodyVarsCount > 0 ? { bodyVars: bodyVars.slice(0, bodyVarsCount) } : null;
+      const cfg: WapiCampaignConfig = {};
+      if (bodyVarsCount > 0) cfg.bodyVars = bodyVars.slice(0, bodyVarsCount);
+      if (delayOverride) {
+        const minSec = Number(delayMinSec);
+        const maxSec = Number(delayMaxSec);
+        if (!Number.isFinite(minSec) || !Number.isFinite(maxSec) || minSec < 1 || maxSec < 1) {
+          throw new Error('Velocidad inválida: min/max deben ser >= 1 segundo');
+        }
+        if (minSec > maxSec) {
+          throw new Error('Velocidad: el mínimo debe ser ≤ al máximo');
+        }
+        cfg.delayMinMs = Math.round(minSec * 1000);
+        cfg.delayMaxMs = Math.round(maxSec * 1000);
+      }
+      payload.config = Object.keys(cfg).length > 0 ? cfg : null;
       await api.patch(`/api/wapi/campaigns/${campaign.id}`, payload);
       notify.success('Cambios guardados');
       await load();
@@ -676,6 +706,63 @@ export function WapiCampaignDetailPage() {
               ))}
             </Select>
           </FormControl>
+          <Box sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={delayOverride}
+                  onChange={(e) => setDelayOverride(e.target.checked)}
+                  disabled={!editable}
+                />
+              }
+              label={
+                <Stack>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Pisar velocidad de envío para esta campaña
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Si está apagado, se usa el throttle del número origen. Activalo solo cuando
+                    necesites una cadencia distinta puntual.
+                  </Typography>
+                </Stack>
+              }
+            />
+            <Collapse in={delayOverride} unmountOnExit>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 1.5 }}>
+                <TextField
+                  label="Mínimo (segundos)"
+                  type="number"
+                  fullWidth
+                  size="small"
+                  value={delayMinSec}
+                  onChange={(e) => setDelayMinSec(e.target.value)}
+                  disabled={!editable}
+                  inputProps={{ min: 1, max: 3600 }}
+                />
+                <TextField
+                  label="Máximo (segundos)"
+                  type="number"
+                  fullWidth
+                  size="small"
+                  value={delayMaxSec}
+                  onChange={(e) => setDelayMaxSec(e.target.value)}
+                  disabled={!editable}
+                  inputProps={{ min: 1, max: 3600 }}
+                />
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                {(() => {
+                  const min = Number(delayMinSec);
+                  const max = Number(delayMaxSec);
+                  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) {
+                    return 'Ingresá min y max válidos.';
+                  }
+                  const avg = (min + max) / 2;
+                  return `~${(60 / avg).toFixed(1)} envíos/min · ~${Math.round(3600 / avg)}/hora`;
+                })()}
+              </Typography>
+            </Collapse>
+          </Box>
           <TextField
             label="Programada para"
             type="datetime-local"

@@ -21,6 +21,23 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.Q — Throttle de envío configurable por línea y por campaña
+
+#### Added
+- **Schema — `WapiConfig.sendDelayMinMs / sendDelayMaxMs`**: dos `Int` con defaults 30000/60000 (los mismos que tenía hardcoded el worker via env). Migration `20260512100000_wapi_config_send_delay`. Ahora el throttle vive en BD per-línea en lugar de un único par de envs global.
+- **Backend — `WapiWorkerService.jitterMs()` cascada**: resuelve el delay por report en orden `campaign.config.delayMinMs/Max → WapiConfig.sendDelayMinMs/Max → WAPI_DELAY_MIN/MAX_MS env → defaults 30s/60s`. Min/max se ordenan defensivamente por si la BD trae datos sucios. La llamada `sleep(jitterMs(...))` después del send pasa `report.campaign.config` y `report.campaign.configRel`, los dos ya cargados por la query del worker — cero queries extras per-job.
+- **Backend — DTO + service validation (`WapiConfig`)**: `CreateWapiConfigDto` / `UpdateWapiConfigDto` aceptan `sendDelayMinMs/Max` con `@Min(1000)` y `@Max(3_600_000)` (1h tope de seguridad). `WapiConfigsService.assertDelayRange()` cruza con valores persistidos en updates parciales — si pasás sólo `sendDelayMinMs`, se compara contra el `sendDelayMaxMs` actual de la fila para no permitir min > max.
+- **Backend — Validación `campaign.config` (4.Q)**: `WapiCampaignsService.assertCampaignConfig()` valida que las keys opcionales `delayMinMs/delayMaxMs` (cuando vienen) sean enteros en el rango `[1000, 3_600_000]` y que `delayMinMs ≤ delayMaxMs`. Otras keys del JSON (ej `bodyVars`) pasan intactas.
+- **Backend — Live snapshot**: `LiveCampaignSummary` expone `delayMinMs/delayMaxMs` resueltos + `delaySource` (`'campaign' | 'config'`). `LiveConfigUsage` agrega `sendDelayMinMs/Max` (delay base de la línea). El service hace el resolve once-per-snapshot para que el frontend no tenga que duplicar la cascada.
+- **Frontend — Sección "Velocidad de envío" en dialog `WapiConfig`** (`apps/frontend/src/features/wapi/configs/WapiConfigsPage.tsx`): dos `TextField` (segundos) min/max con helper text en vivo `~X envíos/min · ~Y/hora` calculado en base al promedio del jitter. Validación local antes del PATCH (min ≥ 1, min ≤ max).
+- **Frontend — Override per-campaña en wizard** (`WapiCampaignDetailPage.tsx`): switch "Pisar velocidad de envío para esta campaña" que despliega los TextField de min/max + estimación de throughput. Al guardar, se persiste como `config.delayMinMs/delayMaxMs` (junto a `bodyVars`); apagado limpia esas keys del JSON.
+- **Frontend — Tooltip de delay efectivo en `WapiLivePage`**: el nombre de cada campaña activa lleva tooltip "Velocidad efectiva: X–Y entre envíos (override per-campaña / heredado del número). ~Z envíos/min." y un mini chip `Velocidad ★` cuando hay override de campaña. El nombre de cada línea en "Uso de líneas" también lleva tooltip con el delay base.
+- **Tests** — `wapi-worker.service.spec.ts` (+5): cascada `campaign > config > env > default`, ordenamiento defensivo de min>max sucio. `wapi-configs.service.spec.ts` (+4): create/update con min>max → 400, update parcial cruza con valor persistido. `wapi-campaigns.service.spec.ts` (+5): valida `delayMinMs/Max` tipo, rango y cruce min/max; pasa `bodyVars` intacto. `wapi-live.service.spec.ts` actualizado: snapshot expone `delaySource` + `sendDelayMin/Max`. **+14 tests netos**.
+
+#### Why
+- Antes: throttle único global por env (`WAPI_DELAY_MIN_MS / WAPI_DELAY_MAX_MS`). Cambiar la velocidad implicaba reiniciar el worker, y todas las líneas iban al mismo ritmo independientemente del Tier de Meta de cada número (un número Tier 250k puede ir mucho más rápido que un Tier 1k recién aprobado).
+- Ahora: cada línea (`WapiConfig`) tiene su propio par min/max persistido y editable desde la UI; cada campaña puede pisarlo cuando necesita una cadencia distinta puntual (ej. recordatorios urgentes contra promo masiva). El worker resuelve la cascada per-report sin queries extras y el dashboard live muestra la velocidad efectiva con tooltip.
+
 ### 4.P — Webhook URL por organización (org-scoped)
 
 #### Added

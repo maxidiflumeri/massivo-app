@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -25,7 +26,19 @@ export interface WapiConfigDetail extends WapiConfigListItem {
   optOutConfirmMessage: string | null;
   optOutKeywords: string[];
   dailyLimit: number;
+  sendDelayMinMs: number;
+  sendDelayMaxMs: number;
   updatedAt: Date;
+}
+
+/** 4.Q — valida min ≤ max del throttle. Considera defaults persistidos para edits parciales. */
+function assertDelayRange(min: number | undefined, max: number | undefined, current?: { sendDelayMinMs: number; sendDelayMaxMs: number }): void {
+  const effectiveMin = min ?? current?.sendDelayMinMs;
+  const effectiveMax = max ?? current?.sendDelayMaxMs;
+  if (effectiveMin === undefined || effectiveMax === undefined) return;
+  if (effectiveMin > effectiveMax) {
+    throw new BadRequestException('sendDelayMinMs debe ser ≤ sendDelayMaxMs');
+  }
 }
 
 function normalizeKeywords(input: string[] | undefined): string[] {
@@ -98,6 +111,8 @@ export class WapiConfigsService {
       optOutConfirmMessage: row.optOutConfirmMessage,
       optOutKeywords: row.optOutKeywords ?? [],
       dailyLimit: row.dailyLimit,
+      sendDelayMinMs: row.sendDelayMinMs,
+      sendDelayMaxMs: row.sendDelayMaxMs,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -105,6 +120,7 @@ export class WapiConfigsService {
 
   async create(dto: CreateWapiConfigDto): Promise<WapiConfigListItem> {
     const ctx = this.requireContext();
+    assertDelayRange(dto.sendDelayMinMs, dto.sendDelayMaxMs);
     const row = await this.prisma.scoped.wapiConfig.create({
       data: {
         name: dto.name,
@@ -117,6 +133,8 @@ export class WapiConfigsService {
         optOutConfirmMessage: dto.optOutConfirmMessage,
         optOutKeywords: normalizeKeywords(dto.optOutKeywords),
         dailyLimit: dto.dailyLimit,
+        sendDelayMinMs: dto.sendDelayMinMs,
+        sendDelayMaxMs: dto.sendDelayMaxMs,
         isTestMode: dto.isTestMode ?? false,
       } as Prisma.WapiConfigUncheckedCreateInput,
     });
@@ -133,6 +151,11 @@ export class WapiConfigsService {
       throw new NotFoundException(`WapiConfig ${id} no encontrado en este scope`);
     }
 
+    assertDelayRange(dto.sendDelayMinMs, dto.sendDelayMaxMs, {
+      sendDelayMinMs: current.sendDelayMinMs,
+      sendDelayMaxMs: current.sendDelayMaxMs,
+    });
+
     const updateData: any = {
       name: dto.name,
       phoneNumberId: dto.phoneNumberId,
@@ -140,6 +163,8 @@ export class WapiConfigsService {
       welcomeMessage: dto.welcomeMessage,
       optOutConfirmMessage: dto.optOutConfirmMessage,
       dailyLimit: dto.dailyLimit,
+      sendDelayMinMs: dto.sendDelayMinMs,
+      sendDelayMaxMs: dto.sendDelayMaxMs,
       isActive: dto.isActive,
       isTestMode: dto.isTestMode,
     };

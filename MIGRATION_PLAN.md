@@ -930,32 +930,23 @@ Cierra el ciclo handoff humano: una vez que un operador toma una conversación (
 - Cache del slug→orgId: empezar con 60s TTL en proceso. Si crece tráfico, mover a Redis.
 - Formato del slug: `wbh_` + 22 chars base62. Prefijo facilita identificarlo en logs y diferenciarlo de otros tokens.
 
-#### 4.Q — Throttle configurable por línea / campaña
+#### 4.Q — Throttle configurable por línea / campaña ✅
 
 > **Motivación.** Hoy el delay entre envíos sucesivos vive sólo como env (`WAPI_DELAY_MIN_MS` / `WAPI_DELAY_MAX_MS`, defaults 30s/60s) — no se puede ajustar por UI ni por línea/campaña. Con `WAPI_WORKER_CONCURRENCY=1` (default) el throughput resultante es ≈ 1.3 mensajes/min ≈ 80/hora. Para campañas urgentes o líneas con quality rating alto necesitamos poder bajar el delay; para líneas nuevas (rating en construcción) necesitamos poder subirlo.
 >
 > El daily limit per `WapiConfig` ya existe (`dailyLimit`, default 200) — esto es complementario: **cota diaria** (cap), no **rate** (velocidad).
 
 **Backend**
-- [ ] **Schema** — `WapiConfig.sendDelayMinMs Int @default(30000)` + `WapiConfig.sendDelayMaxMs Int @default(60000)`. Migración aditiva con backfill al default.
-- [ ] **Override per-campaña** — `WapiCampaign.config` (JSON) acepta opcional `{ delayMinMs?: number, delayMaxMs?: number }`. Si están seteados, pisan los del config; sino, fallback al config; sino, fallback a env; sino, hardcoded defaults.
-- [ ] **Worker** — `WapiWorkerService.jitterMs(report)` cambia firma para recibir el report (ya lo tiene cargado en `process()`). Lee:
-  ```
-  const cmpCfg = (campaign.config as { delayMinMs?, delayMaxMs? }) ?? {};
-  const min = cmpCfg.delayMinMs ?? configRel.sendDelayMinMs ?? env ?? DEFAULT;
-  const max = cmpCfg.delayMaxMs ?? configRel.sendDelayMaxMs ?? env ?? DEFAULT;
-  ```
-- [ ] **DTOs + validación** — `Create/UpdateWapiConfigDto`: `sendDelayMinMs` y `sendDelayMaxMs` opcionales, `IsInt + Min(1000)`. Service valida `min ≤ max` (BadRequestException). Wizard de campaña: mismos campos, opcionales (default null = hereda del config).
-- [ ] **Tests**:
-  - Worker spec: con `WapiCampaign.config.delayMinMs/Max` setados → usa esos valores.
-  - Worker spec: sin override de campaña, con `WapiConfig.sendDelay*` setados → usa los del config.
-  - Worker spec: sin nada seteado → cae en env / defaults.
-  - DTO spec: `min > max` da 400. `min < 1000` da 400.
+- [x] **Schema** — `WapiConfig.sendDelayMinMs Int @default(30000)` + `WapiConfig.sendDelayMaxMs Int @default(60000)`. Migración aditiva `20260512100000_wapi_config_send_delay`.
+- [x] **Override per-campaña** — `WapiCampaign.config` (JSON) acepta opcional `{ delayMinMs?: number, delayMaxMs?: number }`. Validado en `assertCampaignConfig()` (rango `[1000, 3_600_000]`, min ≤ max).
+- [x] **Worker** — `WapiWorkerService.jitterMs({campaignConfig, configRel})` resuelve cascada `campaign override → config → env → default 30s/60s`, ordena lo/hi defensivamente.
+- [x] **DTOs + validación** — `Create/UpdateWapiConfigDto.sendDelayMinMs/Max` con `@IsInt @Min(1000) @Max(3_600_000)`. Service `assertDelayRange()` cruza con valor persistido en updates parciales.
+- [x] **Tests** — +5 worker (cascada + min>max sucio), +4 configs service (range + partial update), +5 campaigns service (`assertCampaignConfig`), live spec actualizado con `delaySource/sendDelayMin*`.
 
 **Frontend**
-- [ ] **`WapiConfigsPage`** — en el dialog Crear/Editar, sección "Velocidad de envío" con dos TextField numéricos (segundos, no ms — convertir a ms en el submit): "Delay mínimo (s)" y "Delay máximo (s)". Helper text con el throughput estimado: "≈ N mensajes/min (con concurrency=1)".
-- [ ] **Wizard de campaña** — collapsible "Velocidad (avanzado)" con dos TextField opcionales. Placeholder muestra el valor del config seleccionado para dar pista. Si vacíos, no se manda override.
-- [ ] **Live dashboard** (`WapiLivePage`) — mostrar el delay efectivo por config en la tabla de uso de líneas (puede ser un Tooltip sobre el nombre).
+- [x] **`WapiConfigsPage`** — sección "Velocidad de envío" con TextField min/max (segundos) + helper en vivo `~X envíos/min · ~Y/hora`. Validación local antes del PATCH.
+- [x] **Wizard de campaña** (`WapiCampaignDetailPage`) — switch "Pisar velocidad de envío para esta campaña" + Collapse con min/max + estimación. Persiste como `config.delayMinMs/Max`; off limpia las keys.
+- [x] **Live dashboard** (`WapiLivePage`) — tooltip sobre nombre de campaña con velocidad efectiva (`delayMin–Max`, source `campaign|config`, throughput estimado), mini chip `Velocidad ★` cuando hay override; tooltip sobre nombre de línea con su delay base.
 
 **Aceptación**
 - Editar `WapiConfig` y bajar `sendDelayMinMs` a 5000 / `sendDelayMaxMs` a 10000 → próximas campañas que no overrideen corren a ≈ 8 mensajes/min en vez de 1.3.

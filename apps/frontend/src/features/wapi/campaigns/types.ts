@@ -73,6 +73,9 @@ export interface UpdateWapiCampaignPayload {
 
 export interface WapiCampaignConfig {
   bodyVars?: string[];
+  /** 4.Q — override per-campaña del throttle. Si null/undefined, se usa el de WapiConfig. */
+  delayMinMs?: number;
+  delayMaxMs?: number;
 }
 
 export interface WapiTemplateComponent {

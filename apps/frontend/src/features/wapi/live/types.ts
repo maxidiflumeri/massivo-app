@@ -16,6 +16,9 @@ export interface LiveCampaignSummary {
     CANCELED: number;
   };
   throughputLast5min: number;
+  delayMinMs: number;
+  delayMaxMs: number;
+  delaySource: 'campaign' | 'config';
 }
 
 export interface LiveConfigUsage {
@@ -26,6 +29,8 @@ export interface LiveConfigUsage {
   sentLast24h: number;
   percent: number;
   isTestMode: boolean;
+  sendDelayMinMs: number;
+  sendDelayMaxMs: number;
 }
 
 export interface LiveInboxSnapshot {

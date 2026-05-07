@@ -51,7 +51,8 @@ describe('WapiLiveService', () => {
         status: 'PROCESSING',
         configId: 'cfg1',
         sentAt: new Date('2026-05-06T10:00:00Z'),
-        configRel: { name: 'Línea principal' },
+        config: null,
+        configRel: { name: 'Línea principal', sendDelayMinMs: 30000, sendDelayMaxMs: 60000 },
         template: { metaName: 'promo_abril' },
       },
       {
@@ -60,7 +61,8 @@ describe('WapiLiveService', () => {
         status: 'PAUSED',
         configId: 'cfg2',
         sentAt: null,
-        configRel: { name: null },
+        config: { delayMinMs: 5000, delayMaxMs: 10000 },
+        configRel: { name: null, sendDelayMinMs: 30000, sendDelayMaxMs: 60000 },
         template: { metaName: null },
       },
     ]);
@@ -96,6 +98,14 @@ describe('WapiLiveService', () => {
     expect(c1!.templateName).toBe('promo_abril');
     expect(c2!.totals.PENDING).toBe(5);
     expect(c2!.throughputLast5min).toBe(0);
+
+    // 4.Q — c1 hereda del config; c2 tiene override per-campaña
+    expect(c1!.delaySource).toBe('config');
+    expect(c1!.delayMinMs).toBe(30000);
+    expect(c1!.delayMaxMs).toBe(60000);
+    expect(c2!.delaySource).toBe('campaign');
+    expect(c2!.delayMinMs).toBe(5000);
+    expect(c2!.delayMaxMs).toBe(10000);
   });
 
   it('configs: percent calculado contra dailyLimit con cap a 100', async () => {
@@ -106,6 +116,8 @@ describe('WapiLiveService', () => {
         phoneNumberId: '111',
         dailyLimit: 200,
         isTestMode: false,
+        sendDelayMinMs: 30000,
+        sendDelayMaxMs: 60000,
       },
       {
         id: 'cfg2',
@@ -113,6 +125,8 @@ describe('WapiLiveService', () => {
         phoneNumberId: '222',
         dailyLimit: 100,
         isTestMode: true,
+        sendDelayMinMs: 15000,
+        sendDelayMaxMs: 25000,
       },
     ]);
     // 1) groupBy de status (vacío) — esto se llama incluso si no hay campañas activas? no, sólo si hay rows. dejamos vacío
@@ -135,8 +149,21 @@ describe('WapiLiveService', () => {
     const out = await svc.snapshot();
 
     expect(out.configs).toEqual([
-      expect.objectContaining({ id: 'cfg1', sentLast24h: 180, percent: 90 }),
-      expect.objectContaining({ id: 'cfg2', sentLast24h: 250, percent: 100, isTestMode: true }),
+      expect.objectContaining({
+        id: 'cfg1',
+        sentLast24h: 180,
+        percent: 90,
+        sendDelayMinMs: 30000,
+        sendDelayMaxMs: 60000,
+      }),
+      expect.objectContaining({
+        id: 'cfg2',
+        sentLast24h: 250,
+        percent: 100,
+        isTestMode: true,
+        sendDelayMinMs: 15000,
+        sendDelayMaxMs: 25000,
+      }),
     ]);
   });
 

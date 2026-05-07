@@ -56,6 +56,8 @@ interface FormState {
   optOutConfirmMessage: string;
   optOutKeywords: string;
   dailyLimit: string;
+  sendDelayMinSec: string;
+  sendDelayMaxSec: string;
   isTestMode: boolean;
 }
 
@@ -70,8 +72,21 @@ const EMPTY_FORM: FormState = {
   optOutConfirmMessage: '',
   optOutKeywords: '',
   dailyLimit: '',
+  sendDelayMinSec: '30',
+  sendDelayMaxSec: '60',
   isTestMode: false,
 };
+
+/** 4.Q — Estimación de throughput. Promedio simple por jitter uniforme. */
+function estimateThroughput(minSec: number, maxSec: number): string {
+  if (!Number.isFinite(minSec) || !Number.isFinite(maxSec) || minSec <= 0 || maxSec <= 0) {
+    return '';
+  }
+  const avg = (minSec + maxSec) / 2;
+  const perMin = 60 / avg;
+  const perHour = 3600 / avg;
+  return `~${perMin.toFixed(1)} envíos/min · ~${Math.round(perHour)}/hora`;
+}
 
 function parseKeywords(input: string): string[] {
   const seen = new Set<string>();
@@ -216,6 +231,8 @@ export function WapiConfigsPage() {
         optOutConfirmMessage: detail.optOutConfirmMessage ?? '',
         optOutKeywords: (detail.optOutKeywords ?? []).join(', '),
         dailyLimit: String(detail.dailyLimit),
+        sendDelayMinSec: String(Math.round((detail.sendDelayMinMs ?? 30000) / 1000)),
+        sendDelayMaxSec: String(Math.round((detail.sendDelayMaxMs ?? 60000) / 1000)),
         isTestMode: detail.isTestMode ?? false,
       });
       setError(null);
@@ -241,6 +258,17 @@ export function WapiConfigsPage() {
     setSaving(true);
     setError(null);
     try {
+      const minSec = Number(form.sendDelayMinSec);
+      const maxSec = Number(form.sendDelayMaxSec);
+      if (!Number.isFinite(minSec) || !Number.isFinite(maxSec) || minSec < 1 || maxSec < 1) {
+        throw new Error('Delays inválidos: deben ser >= 1 segundo');
+      }
+      if (minSec > maxSec) {
+        throw new Error('Velocidad: el mínimo debe ser ≤ al máximo');
+      }
+      const sendDelayMinMs = Math.round(minSec * 1000);
+      const sendDelayMaxMs = Math.round(maxSec * 1000);
+
       if (isEdit && editing) {
         const payload: UpdateWapiConfigPayload = {
           name: form.name.trim() || undefined,
@@ -250,6 +278,8 @@ export function WapiConfigsPage() {
           optOutConfirmMessage: form.optOutConfirmMessage.trim() || null,
           optOutKeywords: parseKeywords(form.optOutKeywords),
           dailyLimit: form.dailyLimit ? Number(form.dailyLimit) : undefined,
+          sendDelayMinMs,
+          sendDelayMaxMs,
           isTestMode: form.isTestMode,
         };
         if (form.accessToken.trim()) payload.accessToken = form.accessToken.trim();
@@ -270,6 +300,8 @@ export function WapiConfigsPage() {
           optOutConfirmMessage: form.optOutConfirmMessage.trim() || undefined,
           optOutKeywords: parseKeywords(form.optOutKeywords),
           dailyLimit: form.dailyLimit ? Number(form.dailyLimit) : undefined,
+          sendDelayMinMs,
+          sendDelayMaxMs,
           isTestMode: form.isTestMode,
         };
         await api.post('/api/wapi/configs', payload);
@@ -589,6 +621,44 @@ export function WapiConfigsPage() {
               helperText="Tope de envíos diarios por config (default 200). Al alcanzarlo, los jobs reintentan en 1h."
               inputProps={{ min: 1 }}
             />
+            <Box
+              sx={{
+                p: 1.5,
+                borderRadius: 1,
+                border: 1,
+                borderColor: 'divider',
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                Velocidad de envío
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                Pausa aleatoria entre envíos consecutivos (jitter). Sirve para parecer humano y
+                evitar rate-limits de Meta. Cada campaña puede pisar este default desde el wizard.
+              </Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField
+                  label="Mínimo (segundos)"
+                  type="number"
+                  fullWidth
+                  value={form.sendDelayMinSec}
+                  onChange={(e) => update('sendDelayMinSec', e.target.value)}
+                  inputProps={{ min: 1, max: 3600 }}
+                />
+                <TextField
+                  label="Máximo (segundos)"
+                  type="number"
+                  fullWidth
+                  value={form.sendDelayMaxSec}
+                  onChange={(e) => update('sendDelayMaxSec', e.target.value)}
+                  inputProps={{ min: 1, max: 3600 }}
+                />
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                {estimateThroughput(Number(form.sendDelayMinSec), Number(form.sendDelayMaxSec)) ||
+                  'Ingresá min y max válidos para ver throughput estimado.'}
+              </Typography>
+            </Box>
             <TextField
               label="Welcome message (opcional)"
               fullWidth

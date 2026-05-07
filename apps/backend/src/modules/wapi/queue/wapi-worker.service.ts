@@ -104,13 +104,20 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Calcula un delay random entre min y max (jitter uniforme). El worker se
-   * "duerme" este tiempo después de cada envío OK; con concurrency=1 esto
-   * traduce a un throughput de aprox. `60_000 / mid(min,max)` envíos/min.
+   * 4.Q — Throttle resuelto en cascada per-report:
+   *   campaign.config.delayMinMs/Max → WapiConfig.sendDelayMinMs/Max → env
+   *   (WAPI_DELAY_MIN_MS / WAPI_DELAY_MAX_MS) → defaults (30s/60s).
+   * Los pares min/max se resuelven independientes, después se ordenan para
+   * tolerar config sucia (min>max no debería pasar pero validate-only no es
+   * suficiente — alguien edita Postgres a mano y rompemos producción).
    */
-  private jitterMs(): number {
-    const min = Number(this.config.get<string>('WAPI_DELAY_MIN_MS') ?? DEFAULT_DELAY_MIN_MS);
-    const max = Number(this.config.get<string>('WAPI_DELAY_MAX_MS') ?? DEFAULT_DELAY_MAX_MS);
+  private jitterMs(opts?: { campaignConfig?: unknown; configRel?: { sendDelayMinMs?: number; sendDelayMaxMs?: number } }): number {
+    const cmp = (opts?.campaignConfig ?? null) as { delayMinMs?: number; delayMaxMs?: number } | null;
+    const cfg = opts?.configRel;
+    const envMin = this.config.get<string>('WAPI_DELAY_MIN_MS');
+    const envMax = this.config.get<string>('WAPI_DELAY_MAX_MS');
+    const min = cmp?.delayMinMs ?? cfg?.sendDelayMinMs ?? (envMin !== undefined ? Number(envMin) : DEFAULT_DELAY_MIN_MS);
+    const max = cmp?.delayMaxMs ?? cfg?.sendDelayMaxMs ?? (envMax !== undefined ? Number(envMax) : DEFAULT_DELAY_MAX_MS);
     const lo = Math.min(min, max);
     const hi = Math.max(min, max);
     return Math.floor(lo + Math.random() * (hi - lo));
@@ -301,7 +308,12 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
           metaMessageId: result.metaMessageId,
         });
         await this.maybeCompleteCampaign(report.campaignId, teamId);
-        await this.sleep(this.jitterMs());
+        await this.sleep(
+          this.jitterMs({
+            campaignConfig: report.campaign.config,
+            configRel: report.campaign.configRel ?? undefined,
+          }),
+        );
         return { metaMessageId: result.metaMessageId };
       } catch (err) {
         if (err instanceof WapiSendException && err.detail.isRateLimit) {

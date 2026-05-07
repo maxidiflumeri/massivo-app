@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { WapiConfigsService } from './wapi-configs.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
@@ -102,5 +102,63 @@ describe('WapiConfigsService', () => {
       TenantContext.run(mockCtx, () => service.remove('c1')),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prismaMock.wapiConfig.delete).not.toHaveBeenCalled();
+  });
+
+  describe('4.Q sendDelay throttle', () => {
+    it('create con min>max → BadRequest', async () => {
+      const dto = {
+        phoneNumberId: '123',
+        businessAccountId: '456',
+        accessToken: 'a',
+        webhookVerifyToken: 'b',
+        sendDelayMinMs: 60000,
+        sendDelayMaxMs: 30000,
+      };
+      await expect(
+        TenantContext.run(mockCtx, () => service.create(dto)),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.wapiConfig.create).not.toHaveBeenCalled();
+    });
+
+    it('create con min==max OK', async () => {
+      prismaMock.wapiConfig.create.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
+      const dto = {
+        phoneNumberId: '123',
+        businessAccountId: '456',
+        accessToken: 'a',
+        webhookVerifyToken: 'b',
+        sendDelayMinMs: 30000,
+        sendDelayMaxMs: 30000,
+      };
+      await TenantContext.run(mockCtx, () => service.create(dto));
+      expect(prismaMock.wapiConfig.create).toHaveBeenCalled();
+    });
+
+    it('update parcial: solo min, contra current.max persistido', async () => {
+      prismaMock.wapiConfig.findFirst.mockResolvedValue({
+        id: 'c1', sendDelayMinMs: 10000, sendDelayMaxMs: 20000,
+      });
+      prismaMock.wapiConfig.update.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
+      // min nuevo (50000) > max persistido (20000) → debe fallar
+      await expect(
+        TenantContext.run(mockCtx, () => service.update('c1', { sendDelayMinMs: 50000 })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.wapiConfig.update).not.toHaveBeenCalled();
+    });
+
+    it('update parcial: min nuevo válido contra current.max → OK', async () => {
+      prismaMock.wapiConfig.findFirst.mockResolvedValue({
+        id: 'c1', sendDelayMinMs: 10000, sendDelayMaxMs: 60000,
+      });
+      prismaMock.wapiConfig.update.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
+      await TenantContext.run(mockCtx, () =>
+        service.update('c1', { sendDelayMinMs: 30000 }),
+      );
+      expect(prismaMock.wapiConfig.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ sendDelayMinMs: 30000 }),
+        }),
+      );
+    });
   });
 });

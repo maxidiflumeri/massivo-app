@@ -19,6 +19,10 @@ export interface LiveCampaignSummary {
     CANCELED: number;
   };
   throughputLast5min: number;
+  /** 4.Q — throttle resuelto (campaign.config override o WapiConfig). En ms. */
+  delayMinMs: number;
+  delayMaxMs: number;
+  delaySource: 'campaign' | 'config';
 }
 
 export interface LiveConfigUsage {
@@ -29,6 +33,9 @@ export interface LiveConfigUsage {
   sentLast24h: number;
   percent: number;
   isTestMode: boolean;
+  /** 4.Q — throttle base de la línea (sin overrides per-campaña). En ms. */
+  sendDelayMinMs: number;
+  sendDelayMaxMs: number;
 }
 
 export interface LiveInboxSnapshot {
@@ -94,7 +101,8 @@ export class WapiLiveService {
         status: true,
         configId: true,
         sentAt: true,
-        configRel: { select: { name: true } },
+        config: true,
+        configRel: { select: { name: true, sendDelayMinMs: true, sendDelayMaxMs: true } },
         template: { select: { metaName: true } },
       },
     })) as Array<{
@@ -103,7 +111,12 @@ export class WapiLiveService {
       status: string;
       configId: string;
       sentAt: Date | null;
-      configRel: { name: string | null } | null;
+      config: unknown;
+      configRel: {
+        name: string | null;
+        sendDelayMinMs: number;
+        sendDelayMaxMs: number;
+      } | null;
       template: { metaName: string | null } | null;
     }>;
     if (rows.length === 0) return [];
@@ -171,6 +184,16 @@ export class WapiLiveService {
         totals.READ +
         totals.FAILED +
         totals.CANCELED;
+      const cmpCfg = (r.config ?? null) as {
+        delayMinMs?: number;
+        delayMaxMs?: number;
+      } | null;
+      const cfgMin = r.configRel?.sendDelayMinMs ?? 30_000;
+      const cfgMax = r.configRel?.sendDelayMaxMs ?? 60_000;
+      const hasOverride =
+        typeof cmpCfg?.delayMinMs === 'number' || typeof cmpCfg?.delayMaxMs === 'number';
+      const delayMinMs = cmpCfg?.delayMinMs ?? cfgMin;
+      const delayMaxMs = cmpCfg?.delayMaxMs ?? cfgMax;
       return {
         id: r.id,
         name: r.name,
@@ -182,6 +205,9 @@ export class WapiLiveService {
         total,
         totals,
         throughputLast5min: throughputByCampaign.get(r.id) ?? 0,
+        delayMinMs,
+        delayMaxMs,
+        delaySource: hasOverride ? ('campaign' as const) : ('config' as const),
       };
     });
   }
@@ -196,6 +222,8 @@ export class WapiLiveService {
         phoneNumberId: true,
         dailyLimit: true,
         isTestMode: true,
+        sendDelayMinMs: true,
+        sendDelayMaxMs: true,
       },
     })) as Array<{
       id: string;
@@ -203,6 +231,8 @@ export class WapiLiveService {
       phoneNumberId: string;
       dailyLimit: number;
       isTestMode: boolean;
+      sendDelayMinMs: number;
+      sendDelayMaxMs: number;
     }>;
     if (configs.length === 0) return [];
 
@@ -249,6 +279,8 @@ export class WapiLiveService {
         sentLast24h: sent,
         percent,
         isTestMode: c.isTestMode,
+        sendDelayMinMs: c.sendDelayMinMs,
+        sendDelayMaxMs: c.sendDelayMaxMs,
       };
     });
   }

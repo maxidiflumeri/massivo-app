@@ -290,3 +290,67 @@ describe('WapiWorkerService.process', () => {
     });
   });
 });
+
+/**
+ * 4.Q — Tests aislados del jitter cascade. Acceden a `jitterMs` por bracket
+ * notation (es private). Forzamos Math.random=0 para que el resultado sea
+ * determinístico = lo (mínimo del par).
+ */
+describe('WapiWorkerService.jitterMs (4.Q cascade)', () => {
+  let randomSpy: jest.SpyInstance;
+  beforeEach(() => {
+    randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+  });
+  afterEach(() => {
+    randomSpy.mockRestore();
+  });
+
+  function buildWorker(env: Record<string, string>): WapiWorkerService {
+    return new WapiWorkerService(
+      new ConfigService(env),
+      { scoped: {}, wapiCampaign: {} } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  }
+
+  it('campaign.config.delay* gana sobre todo lo demás', () => {
+    const w = buildWorker({ WAPI_DELAY_MIN_MS: '10000', WAPI_DELAY_MAX_MS: '20000' });
+    const ms = (w as any).jitterMs({
+      campaignConfig: { delayMinMs: 5000, delayMaxMs: 5000 },
+      configRel: { sendDelayMinMs: 30000, sendDelayMaxMs: 60000 },
+    });
+    expect(ms).toBe(5000);
+  });
+
+  it('sin campaign override, usa WapiConfig.sendDelay*', () => {
+    const w = buildWorker({ WAPI_DELAY_MIN_MS: '10000', WAPI_DELAY_MAX_MS: '20000' });
+    const ms = (w as any).jitterMs({
+      campaignConfig: null,
+      configRel: { sendDelayMinMs: 7000, sendDelayMaxMs: 7000 },
+    });
+    expect(ms).toBe(7000);
+  });
+
+  it('sin campaign ni config, usa env WAPI_DELAY_MIN_MS', () => {
+    const w = buildWorker({ WAPI_DELAY_MIN_MS: '12000', WAPI_DELAY_MAX_MS: '12000' });
+    const ms = (w as any).jitterMs({ campaignConfig: null, configRel: undefined });
+    expect(ms).toBe(12000);
+  });
+
+  it('sin nada → defaults 30s/60s (con random=0 → 30000)', () => {
+    const w = buildWorker({});
+    const ms = (w as any).jitterMs();
+    expect(ms).toBe(30000);
+  });
+
+  it('min>max accidental → ordena lo/hi y no negativiza', () => {
+    const w = buildWorker({});
+    const ms = (w as any).jitterMs({
+      campaignConfig: { delayMinMs: 9000, delayMaxMs: 3000 },
+    });
+    expect(ms).toBe(3000); // ordenado: lo=3000, hi=9000, random=0 → lo
+  });
+});

@@ -13,6 +13,8 @@ export interface WapiConfigDetail extends WapiConfigListItem {
   optOutConfirmMessage: string | null;
   optOutKeywords: string[];
   dailyLimit: number;
+  sendDelayMinMs: number;
+  sendDelayMaxMs: number;
   updatedAt: string;
 }
 
@@ -27,6 +29,8 @@ export interface CreateWapiConfigPayload {
   optOutConfirmMessage?: string;
   optOutKeywords?: string[];
   dailyLimit?: number;
+  sendDelayMinMs?: number;
+  sendDelayMaxMs?: number;
   isTestMode?: boolean;
 }
 
@@ -41,6 +45,8 @@ export interface UpdateWapiConfigPayload {
   optOutConfirmMessage?: string | null;
   optOutKeywords?: string[];
   dailyLimit?: number;
+  sendDelayMinMs?: number;
+  sendDelayMaxMs?: number;
   isActive?: boolean;
   isTestMode?: boolean;
 }
