@@ -11,6 +11,7 @@ import { TenantContextGuard } from '../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../common/auth/tenant-context.interceptor';
 import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
+import { Audit } from '../../common/audit/audit.decorator';
 import { OrganizationsService } from './organizations.service';
 import type { AppAbility } from '@massivo/permissions';
 
@@ -27,6 +28,7 @@ export class OrganizationsController {
   @Post('webhook-slug/regenerate')
   @HttpCode(HttpStatus.OK)
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'Organization'))
+  @Audit({ action: 'org.webhookSlugRegenerated', resourceType: 'Organization' })
   regenerateWebhookSlug() {
     return this.organizationsService.regenerateWebhookSlug();
   }

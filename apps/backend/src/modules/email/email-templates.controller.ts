@@ -16,6 +16,7 @@ import { TenantContextGuard } from '../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../common/auth/tenant-context.interceptor';
 import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
+import { Audit } from '../../common/audit/audit.decorator';
 import { EmailTemplatesService } from './email-templates.service';
 import { CreateEmailTemplateDto, UpdateEmailTemplateDto } from './email-templates.dto';
 import type { AppAbility } from '@massivo/permissions';
@@ -40,12 +41,14 @@ export class EmailTemplatesController {
 
   @Post()
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'Template'))
+  @Audit({ action: 'email.template.created', resourceType: 'EmailTemplate', resourceIdFrom: 'response:id', includeBody: false })
   create(@Body() dto: CreateEmailTemplateDto) {
     return this.service.create(dto);
   }
 
   @Patch(':id')
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'Template'))
+  @Audit({ action: 'email.template.updated', resourceType: 'EmailTemplate', resourceIdFrom: 'param:id', includeBody: false })
   update(@Param('id') id: string, @Body() dto: UpdateEmailTemplateDto) {
     return this.service.update(id, dto);
   }
@@ -53,6 +56,7 @@ export class EmailTemplatesController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @CheckPolicies((ability: AppAbility) => ability.can('delete', 'Template'))
+  @Audit({ action: 'email.template.deleted', resourceType: 'EmailTemplate', resourceIdFrom: 'param:id' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }

@@ -1002,22 +1002,24 @@ Cierra el ciclo handoff humano: una vez que un operador toma una conversación (
 - [x] `WapiConfigsController` — `@Audit` en revealSecrets (4.P pendiente) + create/update/remove.
 - [x] **Caso especial** — `WapiCampaignSchedulerService` no pasa por HTTP. Llamada manual a `auditLog.log({ action: 'wapi.campaign.sent', actorUserId: null, metadata: { source: 'scheduler', name } })` después de cada `send()`, dentro del `TenantContext.run` para que herede org/team.
 
-##### 4.S.3 — Stage 3: cobertura WAPI configs/bot/inbox/quick-replies/opt-out (pendiente)
-- [ ] `WapiConfigsController` — restantes (ya hechos en S.2).
-- [ ] `WapiBotsController` — bot.created/updated/published/draft.
-- [ ] `WapiInboxController` — conversation.assigned/unassigned/resolved/reopened/hold/take.
-- [ ] `WapiQuickRepliesController` — quickReply.created/updated/deleted.
-- [ ] `WapiOptOutController` — optOut.added/removed/keyword updates.
+##### 4.S.3 — Stage 3: cobertura WAPI inbox/bot/quick-replies/templates ✅
+- [x] `WapiBotController` — bot.updated/mediaUploaded/draftSaved/published/draftDiscarded (sandbox/step queda sin auditar — preview in-memory sin side-effects).
+- [x] `WapiInboxController` — messageSent/mediaSent/taken/assigned/unassigned/resolved/reopened/held (8 endpoints; mediaSent con includeBody:false).
+- [x] `WapiQuickRepliesController` — created/updated/deleted.
+- [x] `WapiTemplatesController` — syncedFromMeta/submittedToMeta/created/updated/deleted.
+- [x] **Sin opt-out controller** — el opt-out se procesa internamente en `WapiButtonActionService` y `WapiWebhookService` por keyword inbound; no es transacción de usuario.
 
-##### 4.S.4 — Stage 4: cobertura Email + SMTP + templates (pendiente)
-- [ ] `EmailCampaignsController` — created/updated/sent/paused/resumed/canceled/contactsAdded/deleted.
-- [ ] `EmailCampaignSchedulerService` — manual log post-send (paralelo a 4.S.2).
-- [ ] `SmtpAccountsController` — smtp.created/updated/deleted/verified.
-- [ ] `EmailTemplatesController` — template.created/updated/deleted/cloned.
+##### 4.S.4 — Stage 4: cobertura Email + SMTP + templates ✅
+- [x] `EmailCampaignsController` — created/updated/contactsAdded/sent/paused/resumed/forceClosed/deleted (8 endpoints; contactsAdded con includeBody:false).
+- [x] `EmailCampaignSchedulerService` — manual log post-send (paralelo a 4.S.2 WAPI).
+- [x] `SmtpAccountsController` — smtp.created/verified/testSent/updated/deleted.
+- [x] `EmailTemplatesController` — template.created/updated/deleted (create/update con includeBody:false — payloads HTML/JSON Unlayer pesados).
+- [x] `SuppressionsController` — suppression.unsubscribeAdded/unsubscribeRemoved/bounceRemoved.
 
-##### 4.S.5 — Stage 5: org-level (pendiente)
-- [ ] `OrganizationsController` — webhook regenerated, org settings updated, member role changed.
-- [ ] `TeamsController` — team.created/deleted/member.added/removed/role.changed (vía Clerk webhook + UI).
+##### 4.S.5 — Stage 5: org-level ✅
+- [x] `OrganizationsController` — `org.webhookSlugRegenerated`.
+- [x] `TeamsController` — team.created/updated/deleted.
+- [x] `TeamMembersController` — team.memberAdded/memberRoleChanged/memberRemoved.
 
 ##### 4.S.6 — Stage 6: frontend `/dashboard/audit` (pendiente)
 - [ ] Página con tabla paginada (cursor) + filtros: usuario, recurso (type+id), acción, rango de fechas.

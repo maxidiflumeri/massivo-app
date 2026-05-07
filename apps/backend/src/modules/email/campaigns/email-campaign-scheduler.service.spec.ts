@@ -3,12 +3,18 @@ import { EmailCampaignSchedulerService } from './email-campaign-scheduler.servic
 describe('EmailCampaignSchedulerService', () => {
   let prisma: { emailCampaign: { findMany: jest.Mock } };
   let campaigns: { send: jest.Mock };
+  let auditLog: { log: jest.Mock };
   let svc: EmailCampaignSchedulerService;
 
   beforeEach(() => {
     prisma = { emailCampaign: { findMany: jest.fn().mockResolvedValue([]) } };
     campaigns = { send: jest.fn().mockResolvedValue({ enqueued: 0 }) };
-    svc = new EmailCampaignSchedulerService(prisma as never, campaigns as never);
+    auditLog = { log: jest.fn().mockResolvedValue(undefined) };
+    svc = new EmailCampaignSchedulerService(
+      prisma as never,
+      campaigns as never,
+      auditLog as never,
+    );
   });
 
   it('sin campañas vencidas → fired: 0', async () => {

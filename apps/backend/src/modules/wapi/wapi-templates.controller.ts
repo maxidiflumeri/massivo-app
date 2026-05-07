@@ -16,6 +16,7 @@ import { TenantContextGuard } from '../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../common/auth/tenant-context.interceptor';
 import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
+import { Audit } from '../../common/audit/audit.decorator';
 import { WapiTemplatesService } from './wapi-templates.service';
 import { WapiTemplatesSyncService } from './templates-sync/wapi-templates-sync.service';
 import { WapiTemplatesPostingService } from './templates-posting/wapi-templates-posting.service';
@@ -37,6 +38,7 @@ export class WapiTemplatesController {
   @Post('sync/:configId')
   @HttpCode(HttpStatus.OK)
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'WapiTemplate'))
+  @Audit({ action: 'wapi.template.syncedFromMeta', resourceType: 'WapiConfig', resourceIdFrom: 'param:configId' })
   syncFromMeta(@Param('configId') configId: string) {
     return this.sync.sync(configId);
   }
@@ -44,6 +46,7 @@ export class WapiTemplatesController {
   @Post('submit/:configId')
   @HttpCode(HttpStatus.CREATED)
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'WapiTemplate'))
+  @Audit({ action: 'wapi.template.submittedToMeta', resourceType: 'WapiConfig', resourceIdFrom: 'param:configId' })
   submitToMeta(
     @Param('configId') configId: string,
     @Body() dto: CreateWapiTemplateMetaDto,
@@ -71,12 +74,14 @@ export class WapiTemplatesController {
 
   @Post()
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'WapiTemplate'))
+  @Audit({ action: 'wapi.template.created', resourceType: 'WapiTemplate', resourceIdFrom: 'response:id' })
   create(@Body() dto: CreateWapiTemplateDto) {
     return this.service.create(dto);
   }
 
   @Patch(':id')
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiTemplate'))
+  @Audit({ action: 'wapi.template.updated', resourceType: 'WapiTemplate', resourceIdFrom: 'param:id' })
   update(@Param('id') id: string, @Body() dto: UpdateWapiTemplateDto) {
     return this.service.update(id, dto);
   }
@@ -84,6 +89,7 @@ export class WapiTemplatesController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @CheckPolicies((ability: AppAbility) => ability.can('delete', 'WapiTemplate'))
+  @Audit({ action: 'wapi.template.deleted', resourceType: 'WapiTemplate', resourceIdFrom: 'param:id' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }

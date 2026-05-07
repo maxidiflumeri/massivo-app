@@ -18,6 +18,7 @@ import { TenantContextGuard } from '../../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../../common/auth/tenant-context.interceptor';
 import { PoliciesGuard } from '../../../common/auth/policies.guard';
 import { CheckPolicies } from '../../../common/auth/check-policies.decorator';
+import { Audit } from '../../../common/audit/audit.decorator';
 import { EmailCampaignsService } from './email-campaigns.service';
 import {
   AddCampaignContactsDto,
@@ -72,18 +73,21 @@ export class EmailCampaignsController {
 
   @Post()
   @CheckPolicies((a: AppAbility) => a.can('create', 'Campaign'))
+  @Audit({ action: 'email.campaign.created', resourceType: 'EmailCampaign', resourceIdFrom: 'response:id' })
   create(@Body() dto: CreateEmailCampaignDto): Promise<unknown> {
     return this.service.create(dto);
   }
 
   @Patch(':id')
   @CheckPolicies((a: AppAbility) => a.can('update', 'Campaign'))
+  @Audit({ action: 'email.campaign.updated', resourceType: 'EmailCampaign', resourceIdFrom: 'param:id' })
   update(@Param('id') id: string, @Body() dto: UpdateEmailCampaignDto): Promise<unknown> {
     return this.service.update(id, dto);
   }
 
   @Post(':id/contacts')
   @CheckPolicies((a: AppAbility) => a.can('update', 'Campaign'))
+  @Audit({ action: 'email.campaign.contactsAdded', resourceType: 'EmailCampaign', resourceIdFrom: 'param:id', includeBody: false })
   addContacts(@Param('id') id: string, @Body() dto: AddCampaignContactsDto) {
     return this.service.addContacts(id, dto);
   }
@@ -91,24 +95,28 @@ export class EmailCampaignsController {
   @Post(':id/send')
   @HttpCode(HttpStatus.ACCEPTED)
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  @Audit({ action: 'email.campaign.sent', resourceType: 'EmailCampaign', resourceIdFrom: 'param:id' })
   send(@Param('id') id: string) {
     return this.service.send(id);
   }
 
   @Post(':id/pause')
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  @Audit({ action: 'email.campaign.paused', resourceType: 'EmailCampaign', resourceIdFrom: 'param:id' })
   pause(@Param('id') id: string): Promise<unknown> {
     return this.service.pause(id);
   }
 
   @Post(':id/resume')
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  @Audit({ action: 'email.campaign.resumed', resourceType: 'EmailCampaign', resourceIdFrom: 'param:id' })
   resume(@Param('id') id: string): Promise<{ resumed: true; reEnqueued: number }> {
     return this.service.resume(id);
   }
 
   @Post(':id/force-close')
   @CheckPolicies((a: AppAbility) => a.can('send', 'Campaign'))
+  @Audit({ action: 'email.campaign.forceClosed', resourceType: 'EmailCampaign', resourceIdFrom: 'param:id' })
   forceClose(@Param('id') id: string): Promise<{ closed: true; canceled: number }> {
     return this.service.forceClose(id);
   }
@@ -116,6 +124,7 @@ export class EmailCampaignsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @CheckPolicies((a: AppAbility) => a.can('delete', 'Campaign'))
+  @Audit({ action: 'email.campaign.deleted', resourceType: 'EmailCampaign', resourceIdFrom: 'param:id' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }

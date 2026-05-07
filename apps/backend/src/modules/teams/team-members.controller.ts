@@ -16,6 +16,7 @@ import { TenantContextGuard } from '../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../common/auth/tenant-context.interceptor';
 import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
+import { Audit } from '../../common/audit/audit.decorator';
 import { TeamMembersService } from './team-members.service';
 import { AddTeamMemberDto, UpdateTeamMemberRoleDto } from './team-members.dto';
 import type { AppAbility } from '@massivo/permissions';
@@ -34,12 +35,14 @@ export class TeamMembersController {
 
   @Post()
   @CheckPolicies((ability: AppAbility) => ability.can('manage', 'Member'))
+  @Audit({ action: 'team.memberAdded', resourceType: 'Team', resourceIdFrom: 'param:teamId' })
   addMember(@Param('teamId') teamId: string, @Body() dto: AddTeamMemberDto) {
     return this.teamMembersService.addMember(teamId, dto);
   }
 
   @Patch(':userId')
   @CheckPolicies((ability: AppAbility) => ability.can('manage', 'Member'))
+  @Audit({ action: 'team.memberRoleChanged', resourceType: 'Team', resourceIdFrom: 'param:teamId' })
   updateRole(
     @Param('teamId') teamId: string,
     @Param('userId') userId: string,
@@ -51,6 +54,7 @@ export class TeamMembersController {
   @Delete(':userId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @CheckPolicies((ability: AppAbility) => ability.can('manage', 'Member'))
+  @Audit({ action: 'team.memberRemoved', resourceType: 'Team', resourceIdFrom: 'param:teamId' })
   removeMember(@Param('teamId') teamId: string, @Param('userId') userId: string) {
     return this.teamMembersService.removeMember(teamId, userId);
   }

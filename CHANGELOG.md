@@ -21,6 +21,34 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.S.2 — Audit Log: cobertura ampliada (Stages 3-5)
+
+#### Added
+- **Stage 3 — WAPI inbox/bot/quick-replies/templates**:
+  - `WapiBotController` (5 endpoints): `wapi.bot.updated/mediaUploaded/draftSaved/published/draftDiscarded`. Bot config flows con `includeBody:false` (los payloads de flow son enormes).
+  - `WapiInboxController` (8 endpoints): `wapi.conversation.messageSent/mediaSent/taken/assigned/unassigned/resolved/reopened/held`. Media con `includeBody:false`.
+  - `WapiQuickRepliesController` (3 endpoints): `wapi.quickReply.created/updated/deleted`.
+  - `WapiTemplatesController` (5 endpoints): `wapi.template.syncedFromMeta/submittedToMeta/created/updated/deleted`.
+- **Stage 4 — Email + SMTP + templates + suppression**:
+  - `EmailCampaignsController` (8 endpoints): `email.campaign.created/updated/contactsAdded/sent/paused/resumed/forceClosed/deleted`. `addContacts` con `includeBody:false`.
+  - `EmailCampaignSchedulerService` con llamada manual post-send (`actorUserId:null, metadata:{source:'scheduler', name}`) dentro del `TenantContext.run`, paralelo a WAPI scheduler.
+  - `SmtpAccountsController` (5 endpoints): `email.smtp.created/verified/testSent/updated/deleted`.
+  - `EmailTemplatesController` (3 endpoints): `email.template.created/updated/deleted`. Create/update con `includeBody:false` (payloads HTML/JSON Unlayer).
+  - `SuppressionsController` (3 endpoints): `email.suppression.unsubscribeAdded/unsubscribeRemoved/bounceRemoved`.
+- **Stage 5 — org-level**:
+  - `OrganizationsController` (1 endpoint): `org.webhookSlugRegenerated`.
+  - `TeamsController` (3 endpoints): `team.created/updated/deleted`.
+  - `TeamMembersController` (3 endpoints): `team.memberAdded/memberRoleChanged/memberRemoved`.
+
+#### Tests
+- `email-campaign-scheduler.service.spec.ts` actualizado por la nueva dep `AuditLogService`.
+- 232/232 verde en suite combinada (audit/scheduler/inbox/quick-replies/smtp/templates/teams/organizations/email-campaigns/wapi-campaigns/wapi-bot). Backend typecheck ✅.
+
+#### Why
+- Completa la cobertura de transacciones de usuario en backend para WAPI + Email + org-level. Todo lo que un usuario puede hacer desde la UI queda registrado con quién/cuándo/qué.
+- Los inbound webhooks (Meta, SES, Clerk) siguen sin auditarse — no son transacciones de usuario, tienen su propio logging Winston.
+- Stage 6 (frontend `/dashboard/audit` con tabla + filtros) queda como próximo commit.
+
 ### 4.S.1 — Audit Log de transacciones de usuario (Stages 1-2)
 
 #### Added

@@ -16,6 +16,7 @@ import { TenantContextGuard } from '../../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../../common/auth/tenant-context.interceptor';
 import { PoliciesGuard } from '../../../common/auth/policies.guard';
 import { CheckPolicies } from '../../../common/auth/check-policies.decorator';
+import { Audit } from '../../../common/audit/audit.decorator';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { AppAbility } from '@massivo/permissions';
 import { SuppressionService } from './suppression.service';
@@ -109,6 +110,7 @@ export class SuppressionsController {
 
   @Post('unsubscribes')
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'EmailSuppression'))
+  @Audit({ action: 'email.suppression.unsubscribeAdded', resourceType: 'EmailUnsubscribe' })
   async createUnsubscribe(@Body() dto: CreateUnsubscribeDto): Promise<{ ok: true }> {
     await this.suppression.addUnsubscribe({
       email: dto.email,
@@ -123,6 +125,7 @@ export class SuppressionsController {
   @Delete('unsubscribes/:id')
   @HttpCode(204)
   @CheckPolicies((ability: AppAbility) => ability.can('delete', 'EmailSuppression'))
+  @Audit({ action: 'email.suppression.unsubscribeRemoved', resourceType: 'EmailUnsubscribe', resourceIdFrom: 'param:id' })
   async deleteUnsubscribe(@Param('id') id: string): Promise<void> {
     const ok = await this.suppression.deleteUnsubscribe(id);
     if (!ok) throw new NotFoundException(`EmailUnsubscribe ${id} not found`);
@@ -131,6 +134,7 @@ export class SuppressionsController {
   @Delete('bounces/:id')
   @HttpCode(204)
   @CheckPolicies((ability: AppAbility) => ability.can('delete', 'EmailSuppression'))
+  @Audit({ action: 'email.suppression.bounceRemoved', resourceType: 'EmailBounce', resourceIdFrom: 'param:id' })
   async deleteBounce(@Param('id') id: string): Promise<void> {
     const ok = await this.suppression.deleteBounce(id);
     if (!ok) throw new NotFoundException(`EmailBounce ${id} not found`);

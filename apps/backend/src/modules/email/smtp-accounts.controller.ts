@@ -16,6 +16,7 @@ import { TenantContextGuard } from '../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../common/auth/tenant-context.interceptor';
 import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
+import { Audit } from '../../common/audit/audit.decorator';
 import { SmtpAccountsService } from './smtp-accounts.service';
 import {
   CreateSmtpAccountDto,
@@ -44,6 +45,7 @@ export class SmtpAccountsController {
 
   @Post()
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'SmtpAccount'))
+  @Audit({ action: 'email.smtp.created', resourceType: 'SmtpAccount', resourceIdFrom: 'response:id' })
   create(@Body() dto: CreateSmtpAccountDto) {
     return this.service.create(dto);
   }
@@ -51,6 +53,7 @@ export class SmtpAccountsController {
   @Post(':id/verify')
   @HttpCode(HttpStatus.OK)
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'SmtpAccount'))
+  @Audit({ action: 'email.smtp.verified', resourceType: 'SmtpAccount', resourceIdFrom: 'param:id' })
   verify(@Param('id') id: string) {
     return this.service.verify(id);
   }
@@ -58,12 +61,14 @@ export class SmtpAccountsController {
   @Post(':id/test')
   @HttpCode(HttpStatus.OK)
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'SmtpAccount'))
+  @Audit({ action: 'email.smtp.testSent', resourceType: 'SmtpAccount', resourceIdFrom: 'param:id' })
   testSend(@Param('id') id: string, @Body() dto: TestSmtpAccountDto) {
     return this.service.testSend(id, dto);
   }
 
   @Patch(':id')
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'SmtpAccount'))
+  @Audit({ action: 'email.smtp.updated', resourceType: 'SmtpAccount', resourceIdFrom: 'param:id' })
   update(@Param('id') id: string, @Body() dto: UpdateSmtpAccountDto) {
     return this.service.update(id, dto);
   }
@@ -71,6 +76,7 @@ export class SmtpAccountsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @CheckPolicies((ability: AppAbility) => ability.can('delete', 'SmtpAccount'))
+  @Audit({ action: 'email.smtp.deleted', resourceType: 'SmtpAccount', resourceIdFrom: 'param:id' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }

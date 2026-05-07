@@ -17,6 +17,7 @@ import { TenantContextGuard } from '../../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../../common/auth/tenant-context.interceptor';
 import { PoliciesGuard } from '../../../common/auth/policies.guard';
 import { CheckPolicies } from '../../../common/auth/check-policies.decorator';
+import { Audit } from '../../../common/audit/audit.decorator';
 import { WapiQuickRepliesService } from './wapi-quick-replies.service';
 import {
   CreateWapiQuickReplyDto,
@@ -43,12 +44,14 @@ export class WapiQuickRepliesController {
 
   @Post()
   @CheckPolicies((a: AppAbility) => a.can('create', 'QuickReply'))
+  @Audit({ action: 'wapi.quickReply.created', resourceType: 'WapiQuickReply', resourceIdFrom: 'response:id' })
   create(@Body() dto: CreateWapiQuickReplyDto) {
     return this.service.create(dto);
   }
 
   @Patch(':id')
   @CheckPolicies((a: AppAbility) => a.can('update', 'QuickReply'))
+  @Audit({ action: 'wapi.quickReply.updated', resourceType: 'WapiQuickReply', resourceIdFrom: 'param:id' })
   update(@Param('id') id: string, @Body() dto: UpdateWapiQuickReplyDto) {
     return this.service.update(id, dto);
   }
@@ -56,6 +59,7 @@ export class WapiQuickRepliesController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @CheckPolicies((a: AppAbility) => a.can('delete', 'QuickReply'))
+  @Audit({ action: 'wapi.quickReply.deleted', resourceType: 'WapiQuickReply', resourceIdFrom: 'param:id' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }

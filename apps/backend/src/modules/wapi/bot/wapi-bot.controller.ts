@@ -18,6 +18,7 @@ import { TenantContextGuard } from '../../../common/auth/tenant-context.guard';
 import { TenantContextInterceptor } from '../../../common/auth/tenant-context.interceptor';
 import { PoliciesGuard } from '../../../common/auth/policies.guard';
 import { CheckPolicies } from '../../../common/auth/check-policies.decorator';
+import { Audit } from '../../../common/audit/audit.decorator';
 import { WapiBotService } from './wapi-bot.service';
 import { WapiBotSandboxService } from './wapi-bot-sandbox.service';
 import { SandboxStepDto, SaveBotDraftDto, UpdateBotConfigDto } from './wapi-bot.dto';
@@ -48,6 +49,7 @@ export class WapiBotController {
 
   @Patch()
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
+  @Audit({ action: 'wapi.bot.updated', resourceType: 'WapiConfig', resourceIdFrom: 'param:id', includeBody: false })
   update(@Param('id') id: string, @Body() dto: UpdateBotConfigDto) {
     return this.service.update(id, dto);
   }
@@ -60,6 +62,7 @@ export class WapiBotController {
   @HttpCode(HttpStatus.CREATED)
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: BOT_MEDIA_MAX_BYTES } }))
+  @Audit({ action: 'wapi.bot.mediaUploaded', resourceType: 'WapiConfig', resourceIdFrom: 'param:id', includeBody: false })
   uploadMedia(@Param('id') id: string, @UploadedFile() file: Express.Multer.File | undefined) {
     if (!file) {
       throw new BadRequestException('Falta el archivo (campo "file" multipart)');
@@ -79,6 +82,7 @@ export class WapiBotController {
    */
   @Patch('draft')
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
+  @Audit({ action: 'wapi.bot.draftSaved', resourceType: 'WapiConfig', resourceIdFrom: 'param:id', includeBody: false })
   saveDraft(@Param('id') id: string, @Body() dto: SaveBotDraftDto) {
     return this.service.saveDraft(id, dto);
   }
@@ -90,6 +94,7 @@ export class WapiBotController {
   @Post('publish')
   @HttpCode(HttpStatus.OK)
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
+  @Audit({ action: 'wapi.bot.published', resourceType: 'WapiConfig', resourceIdFrom: 'param:id' })
   publish(@Param('id') id: string) {
     return this.service.publish(id);
   }
@@ -100,6 +105,7 @@ export class WapiBotController {
   @Post('discard-draft')
   @HttpCode(HttpStatus.OK)
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
+  @Audit({ action: 'wapi.bot.draftDiscarded', resourceType: 'WapiConfig', resourceIdFrom: 'param:id' })
   discardDraft(@Param('id') id: string) {
     return this.service.discardDraft(id);
   }

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
+import { AuditLogService } from '../../../common/audit/audit-log.service';
 import { EmailCampaignsService } from './email-campaigns.service';
 
 const TICK_MS = 60_000;
@@ -18,6 +19,7 @@ export class EmailCampaignSchedulerService implements OnModuleInit, OnModuleDest
   constructor(
     private readonly prisma: PrismaService,
     private readonly campaigns: EmailCampaignsService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   onModuleInit() {
@@ -64,7 +66,16 @@ export class EmailCampaignSchedulerService implements OnModuleInit, OnModuleDest
             orgRole: 'OWNER',
             teamRole: 'ADMIN',
           },
-          () => this.campaigns.send(row.id),
+          async () => {
+            await this.campaigns.send(row.id);
+            await this.auditLog.log({
+              action: 'email.campaign.sent',
+              resourceType: 'EmailCampaign',
+              resourceId: row.id,
+              actorUserId: null,
+              metadata: { source: 'scheduler', name: row.name },
+            });
+          },
         );
         fired++;
         this.logger.log(
