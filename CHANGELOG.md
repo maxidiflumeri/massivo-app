@@ -21,6 +21,48 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 5.A.3 — CSV import wizard inline + merge suggestions ✅
+
+#### Added
+- **`apps/backend/src/modules/contacts/contact-imports.service.ts`** — procesador in-process de imports.
+  - `create(dto)` crea `ContactImportJob` (status `PROCESSING`, `total = rows.length`, `startedAt = now`), llama a `processRows()` y al cerrar pasa a `DONE` con `processed/created/updated/suggested/errors`. Si throw inesperado → `FAILED` con `errors:[{message}]`.
+  - `processRows()`: bucle per-row con `try { … } catch { errors.push(...) } finally { processed++ }` — single source of truth para `processed` (no doble cuenta).
+  - `applyRow()` cascada:
+    1. **Strong match** (`externalId`/`dni`/`cuit`, en ese orden): `updateContact(skipStrongConflicts:true)` (P2002 → reintenta el update sin las strong keys del row, no rompe la fila) + `maybeSuggestWeakConflict` (si row trae email/phone distinto al del contact existente y ese valor lo tiene otro contact en la org → suggestion `EMAIL`/`PHONE`). Counter `updated`.
+    2. **Weak match** (`email`/`phoneE164`): si row no trae strong key → `update` directo (`updated`); si trae strong key → `tryUpdateContact` (catch P2002 → `false`); si OK `updated`, si choca → `createContact` + `upsertSuggestion(weakMatch, newContact)` (`suggested`).
+    3. Sin match → `createContact` (`created`).
+  - `upsertSuggestion()` ordena `(left.id < right.id)` para que la unique `(left, right, matchType)` sea estable; swallowea P2002 (otra fila ya creó la suggestion).
+  - `normalizeRow()` reusa `identity.ts` y throwea `'DNI inválido'`/`'CUIT inválido'` (la fila falla pero el job sigue, queda en `errors[]`).
+  - `hasAnyIdentifier()`: row sin `externalId/dni/cuit/email/phoneE164` → push a `errors[]` con `'Fila sin identificadores válidos'` (no toca DB).
+  - `list()` cursor-paginado (default 25, max 100). `findOne()` con `NotFoundException`.
+  - Return types explícitos `ContactImportJobDto` y `ContactImportJobPage` para evitar leak de `Prisma.JsonValue` (TS2742).
+- **`contact-imports.controller.ts`** — endpoints REST:
+  - `GET /api/contacts/imports` (gate `read ContactImportJob`).
+  - `GET /api/contacts/imports/:id` (gate `read ContactImportJob`).
+  - `POST /api/contacts/imports` (gate `create ContactImportJob`) con `@Audit({ action:'contact.import.created', resourceIdFrom:'response:id', includeBody:false })`.
+- **`contact-imports.dto.ts`** — `CreateContactImportDto` (`fileName`, `fileSize` max 100MB, `mapping` JSON, `options?` JSON, `rows[]` 1-10000 filas con `ImportContactRowDto` validado por class-validator); `ListContactImportsQueryDto`.
+- **`contacts.module.ts`** — `ContactImportsController` registrado **antes** de `ContactsController` para que `/contacts/imports` matchee antes que `/contacts/:id`.
+
+#### Changed
+- **Estrategia V1**: import inline síncrono — el frontend parsea el CSV y aplica el mapping client-side y postea JSON con `rows[]`. Sin multer, sin BullMQ, sin worker. (V2 podría mover a queue cuando aparezca un cliente con CSVs grandes.)
+
+#### Tests
+- **`contact-imports.service.spec.ts`** — 8 specs nuevos (mocks de `prisma.scoped.{contact,contactImportJob,contactMergeSuggestion}`):
+  - "crea contact nuevo cuando no hay match (counters.created)"
+  - "strong match (externalId) → update sin crear, counters.updated"
+  - "weak match (email) sin strong key en row → update"
+  - "weak match + row trae strong key con conflicto P2002 → crea contact + suggestion (counters.suggested)"
+  - "row sin identificadores válidos → error en errors[], no crea/actualiza"
+  - "DNI inválido en row → error pero sigue procesando otras filas"
+  - "list con cursor pagination devuelve nextCursor cuando rows > limit"
+  - "findOne inexistente → NotFound"
+- **570/570 backend tests verde** (+8 vs 562). Backend typecheck ✅.
+
+#### Fixed
+- Bug encontrado al correr el spec: `processed++` antes del `continue` (rama "row sin identificadores") doblaba el contador porque el `finally` ya lo incrementa. Removido — ahora `finally { processed++ }` es la única fuente.
+
+---
+
 ### 5.A.2 — ContactsService org-scope + cascada de identidad + validators AR ✅
 
 #### Added
