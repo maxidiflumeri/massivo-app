@@ -21,6 +21,43 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 5.B — Timeline aggregator cross-canal ✅
+
+#### Added
+- **`apps/backend/src/modules/contacts/contact-timeline.service.ts`** — agregador de eventos cross-canal sobre un Contact. Lee 5 fuentes y devuelve una lista unificada ordenada por timestamp desc:
+  - **EmailReport**: 1 item por report @ `sentAt ?? createdAt` con `kind = email.{status.lowerCase}` (queued/sent/failed/bounced/complained/suppressed/canceled). Filtrado por `EmailContact.contactId IN [...]` precalculado en una query previa.
+  - **EmailEvent**: 1 item por evento @ `occurredAt` con `kind = email.opened | email.clicked`. Filtrado por los `reportId` retornados en el paso anterior.
+  - **WapiReport**: hasta **4 items por report**, uno por cada timestamp no-null entre `failedAt/readAt/deliveredAt/sentAt`. ID compuesto `wapi.report.{rid}.{event}` para evitar colisiones en el sort.
+  - **WapiMessage**: resuelve los phones desde `contact.phoneE164` + `wapiContact.phone`, busca conversaciones con `phone IN [...]` y emite 1 item por mensaje con `kind = wapi.message.{in|out}` según `fromMe`.
+  - **AuditLog**: filtrado por `resourceType='Contact' AND resourceId=contactId`. Emite `kind = audit` con `metadata.action`.
+- **`contact-timeline.dto.ts`** — `GetTimelineQueryDto` con `cursor (IsISO8601)`, `limit IsInt [1,100]`, `channel IsIn ['email','wapi','audit']`.
+- **Endpoint** `GET /api/contacts/:id/timeline` agregado a `ContactsController` (gate `read Contact`).
+- **`ContactTimelineService` + `getTimeline()`** wired en `contacts.module.ts`.
+
+#### Implementación
+- **Cursor**: ISO timestamp string. Cada fuente filtra `at <= cursorDate`; para `EmailReport` el filtro es composto (`OR sentAt<=cursor / sentAt=null+createdAt<=cursor`).
+- **Pagination**: cada fuente usa `take: PER_SOURCE_BUFFER (=200)` como heurística para evitar round-trips adicionales cuando un contact tiene miles de eventos en una sola fuente. Merge in-memory, sort desc por `at` con tiebreak por `id` (string desc), slice `limit` (default 50, max 100), `nextCursor = sliced.last.at.toISOString()` si `items.length > limit`.
+- **`channel`** filter (`email | wapi | audit`): cuando está presente, las queries de las otras fuentes no se ejecutan.
+- **NotFound** si el Contact no existe en la org del caller (lookup vía `prisma.scoped` ya aplica el org-scope). **BadRequest** si el cursor no parsea como Date.
+
+#### Tests
+- **`contact-timeline.service.spec.ts`** — 7 specs:
+  - "contacto inexistente → NotFound"
+  - "cursor inválido → BadRequest"
+  - "agrega email reports + events ordenados desc"
+  - "expande WapiReport en hasta 4 entries por status timestamps" (verifica que `failedAt=null` no emite item, y que `wapi.message.in` queda al frente)
+  - "canal=audit limita la query a AuditLog" (verifica que `emailContact.findMany` y `wapiContact.findMany` no se llaman)
+  - "limit + nextCursor cuando hay más items que el límite"
+  - "cursor descarta items posteriores al cursor"
+- **585/585 backend tests verde** (+7 vs 578). Backend typecheck ✅.
+
+#### Limitaciones V1 conocidas (mejoras V2)
+- Cursor por timestamp ISO **solo** — pierde precisión cuando varios items comparten el mismo `at`. Mejorable a `(at, id)` composito.
+- `WapiMessage` matchea sólo por `phone` literal — si el contact tiene phoneE164 `+5491111` y la conversación quedó con `5491111` (sin `+`), no matchea. Normalización deferida a 5.B.2.
+- Los modelos WAPI/Email son tenant-scoped — la timeline ve solo eventos del team del usuario actual. Cross-team (visible para OWNER/ADMIN) requeriría bypass del prisma extension. Deferido.
+
+---
+
 ### 5.A.4 — Merge backend (accept/reject + relink) ✅
 
 #### Added

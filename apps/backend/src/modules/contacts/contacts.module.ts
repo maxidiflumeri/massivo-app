@@ -3,6 +3,7 @@ import { ContactImportsController } from './contact-imports.controller';
 import { ContactImportsService } from './contact-imports.service';
 import { ContactMergeController } from './contact-merge.controller';
 import { ContactMergeService } from './contact-merge.service';
+import { ContactTimelineService } from './contact-timeline.service';
 import { ContactsController } from './contacts.controller';
 import { ContactsService } from './contacts.service';
 import { TagsController } from './tags.controller';
@@ -15,6 +16,12 @@ import { TagsService } from './tags.service';
     ContactsController,
     TagsController,
   ],
-  providers: [ContactImportsService, ContactMergeService, ContactsService, TagsService],
+  providers: [
+    ContactImportsService,
+    ContactMergeService,
+    ContactTimelineService,
+    ContactsService,
+    TagsService,
+  ],
 })
 export class ContactsModule {}

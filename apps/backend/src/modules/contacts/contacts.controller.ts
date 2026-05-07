@@ -19,19 +19,24 @@ import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { Audit } from '../../common/audit/audit.decorator';
 import { ContactsService } from './contacts.service';
+import { ContactTimelineService } from './contact-timeline.service';
 import {
   CreateContactDto,
   FindByIdentityQueryDto,
   ListContactsQueryDto,
   UpdateContactDto,
 } from './contacts.dto';
+import { GetTimelineQueryDto } from './contact-timeline.dto';
 import type { AppAbility } from '@massivo/permissions';
 
 @Controller('contacts')
 @UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
 export class ContactsController {
-  constructor(private readonly service: ContactsService) {}
+  constructor(
+    private readonly service: ContactsService,
+    private readonly timeline: ContactTimelineService,
+  ) {}
 
   @Get()
   @CheckPolicies((ability: AppAbility) => ability.can('read', 'Contact'))
@@ -49,6 +54,12 @@ export class ContactsController {
   @CheckPolicies((ability: AppAbility) => ability.can('read', 'Contact'))
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
+  }
+
+  @Get(':id/timeline')
+  @CheckPolicies((ability: AppAbility) => ability.can('read', 'Contact'))
+  getTimeline(@Param('id') id: string, @Query() query: GetTimelineQueryDto) {
+    return this.timeline.getTimeline(id, query);
   }
 
   @Post()
