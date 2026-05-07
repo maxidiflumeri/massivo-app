@@ -6,7 +6,7 @@ describe('EmailCampaignsService', () => {
   let prisma: {
     scoped: {
       emailCampaign: { create: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock; delete: jest.Mock };
-      emailContact: { createMany: jest.Mock };
+      emailContact: { create: jest.Mock };
       emailReport: { groupBy: jest.Mock; count: jest.Mock; findMany: jest.Mock; updateMany: jest.Mock };
       emailEvent: { count: jest.Mock };
     };
@@ -15,6 +15,7 @@ describe('EmailCampaignsService', () => {
   };
   let queue: { enqueue: jest.Mock };
   let events: { emitToTeamDebounced: jest.Mock };
+  let contactUpsert: { upsert: jest.Mock };
   let svc: EmailCampaignsService;
 
   beforeEach(() => {
@@ -27,7 +28,7 @@ describe('EmailCampaignsService', () => {
           update: jest.fn().mockResolvedValue({}),
           delete: jest.fn().mockResolvedValue({}),
         },
-        emailContact: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        emailContact: { create: jest.fn().mockResolvedValue({ id: 'ec1' }) },
         emailReport: {
           groupBy: jest.fn().mockResolvedValue([]),
           count: jest.fn().mockResolvedValue(0),
@@ -41,7 +42,15 @@ describe('EmailCampaignsService', () => {
     };
     queue = { enqueue: jest.fn().mockResolvedValue('job-id') };
     events = { emitToTeamDebounced: jest.fn() };
-    svc = new EmailCampaignsService(prisma as never, queue as never, events as never);
+    contactUpsert = {
+      upsert: jest.fn().mockResolvedValue({ contactId: 'k1', outcome: 'created' }),
+    };
+    svc = new EmailCampaignsService(
+      prisma as never,
+      queue as never,
+      events as never,
+      contactUpsert as never,
+    );
   });
 
   function withCtx<T>(fn: () => Promise<T>) {
@@ -116,13 +125,53 @@ describe('EmailCampaignsService', () => {
   });
 
   describe('addContacts', () => {
-    it('DRAFT permite + retorna count', async () => {
+    it('DRAFT permite + upserta Contact + crea EmailContact con contactId', async () => {
       prisma.scoped.emailCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
-      prisma.scoped.emailContact.createMany.mockResolvedValueOnce({ count: 2 });
-      const r = await svc.addContacts('c1', { contacts: [{ email: 'A@b.com' }, { email: 'c@d.com' }] });
-      expect(r).toEqual({ created: 2 });
-      const args = prisma.scoped.emailContact.createMany.mock.calls[0]![0];
-      expect(args.data[0].email).toBe('a@b.com');
+      contactUpsert.upsert
+        .mockResolvedValueOnce({ contactId: 'k1', outcome: 'created' })
+        .mockResolvedValueOnce({ contactId: 'k2', outcome: 'updated' });
+
+      const r = await svc.addContacts('c1', {
+        contacts: [
+          { email: 'A@b.com', externalId: 'ext-1' },
+          { email: 'c@d.com', dni: '12345678', name: 'Juan Perez' },
+        ],
+      });
+
+      expect(r).toEqual({
+        created: 2,
+        contactsCreated: 1,
+        contactsUpdated: 1,
+        suggestionsCreated: 0,
+      });
+      expect(contactUpsert.upsert).toHaveBeenCalledTimes(2);
+      expect(contactUpsert.upsert.mock.calls[1]![0]).toMatchObject({
+        dni: '12345678',
+        firstName: 'Juan',
+        lastName: 'Perez',
+      });
+      expect(prisma.scoped.emailContact.create).toHaveBeenCalledTimes(2);
+      const firstCreate = prisma.scoped.emailContact.create.mock.calls[0]![0];
+      expect(firstCreate.data.email).toBe('a@b.com');
+      expect(firstCreate.data.contactId).toBe('k1');
+    });
+
+    it('fila sin externalId/dni → BadRequest y no crea nada', async () => {
+      prisma.scoped.emailCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      await expect(
+        svc.addContacts('c1', {
+          contacts: [{ email: 'a@b.com', externalId: 'ext-1' }, { email: 'c@d.com' }],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(contactUpsert.upsert).not.toHaveBeenCalled();
+      expect(prisma.scoped.emailContact.create).not.toHaveBeenCalled();
+    });
+
+    it('PROCESSING NO permite addContacts → Conflict', async () => {
+      prisma.scoped.emailCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'PROCESSING' });
+      await expect(
+        svc.addContacts('c1', { contacts: [{ email: 'a@b.com', externalId: 'ext-1' }] }),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

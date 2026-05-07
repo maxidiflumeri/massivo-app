@@ -55,6 +55,33 @@ const STATUS_COLOR: Record<CampaignStatus, 'default' | 'info' | 'warning' | 'suc
 
 const EDITABLE: ReadonlySet<CampaignStatus> = new Set<CampaignStatus>(['DRAFT', 'SCHEDULED', 'PAUSED']);
 
+const STRONG_KEY_HEADERS = new Set([
+  'externalid',
+  'external_id',
+  'idexterno',
+  'id_externo',
+  'dni',
+  'documento',
+  'cuit',
+]);
+const RESERVED_HEADERS = new Set([
+  'email',
+  'externalid',
+  'external_id',
+  'idexterno',
+  'id_externo',
+  'dni',
+  'documento',
+  'cuit',
+  'firstname',
+  'first_name',
+  'nombre',
+  'lastname',
+  'last_name',
+  'apellido',
+  'name',
+]);
+
 function parseContactsCsv(text: string): { contacts: CampaignContactInput[]; errors: string[] } {
   const lines = text
     .split(/\r?\n/)
@@ -62,13 +89,19 @@ function parseContactsCsv(text: string): { contacts: CampaignContactInput[]; err
     .filter((l) => l.length > 0);
   if (lines.length === 0) return { contacts: [], errors: ['Vacío'] };
 
-  // detectar header
   const first = lines[0].toLowerCase();
   let headers: string[] | null = null;
   let dataLines = lines;
-  if (first.includes('email')) {
+  if (first.includes('email') || [...STRONG_KEY_HEADERS].some((h) => first.includes(h))) {
     headers = lines[0].split(/[,;\t]/).map((h) => h.trim().toLowerCase());
     dataLines = lines.slice(1);
+  }
+
+  if (headers && !headers.some((h) => STRONG_KEY_HEADERS.has(h))) {
+    return {
+      contacts: [],
+      errors: ['Falta una columna externalId o dni (al menos una es obligatoria por fila).'],
+    };
   }
 
   const contacts: CampaignContactInput[] = [];
@@ -76,25 +109,47 @@ function parseContactsCsv(text: string): { contacts: CampaignContactInput[]; err
   dataLines.forEach((line, idx) => {
     const cols = line.split(/[,;\t]/).map((c) => c.trim());
     let email: string | undefined;
+    let externalId: string | undefined;
+    let dni: string | undefined;
+    let cuit: string | undefined;
+    let firstName: string | undefined;
+    let lastName: string | undefined;
     let name: string | undefined;
     const data: Record<string, unknown> = {};
+
     if (headers) {
       headers.forEach((h, i) => {
         const v = cols[i] ?? '';
+        if (!v) return;
         if (h === 'email') email = v;
-        else if (h === 'name' || h === 'nombre') name = v;
-        else if (v) data[h] = v;
+        else if (h === 'externalid' || h === 'external_id' || h === 'idexterno' || h === 'id_externo') externalId = v;
+        else if (h === 'dni' || h === 'documento') dni = v;
+        else if (h === 'cuit') cuit = v;
+        else if (h === 'firstname' || h === 'first_name' || h === 'nombre') firstName = v;
+        else if (h === 'lastname' || h === 'last_name' || h === 'apellido') lastName = v;
+        else if (h === 'name') name = v;
+        else if (!RESERVED_HEADERS.has(h)) data[h] = v;
       });
     } else {
       email = cols[0];
       if (cols[1]) name = cols[1];
     }
+
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       errors.push(`Línea ${idx + 1}: email inválido`);
       return;
     }
+    if (!externalId && !dni) {
+      errors.push(`Línea ${idx + 1}: falta externalId o dni`);
+      return;
+    }
     contacts.push({
       email,
+      externalId,
+      dni,
+      cuit,
+      firstName,
+      lastName,
       name: name || undefined,
       data: Object.keys(data).length ? data : undefined,
     });
@@ -512,16 +567,18 @@ export function CampaignDetailPage() {
         {editable ? (
           <Stack spacing={2}>
             <Typography variant="body2" color="text.secondary">
-              Pegá CSV o líneas con <code>email[,name]</code>. Si la primera fila contiene{' '}
-              <code>email</code>, se trata como header (acepta columnas extra como{' '}
-              <code>data</code>).
+              Pegá CSV con header. Cada fila debe traer <code>email</code> y al menos{' '}
+              <code>externalId</code> o <code>dni</code> (clave fuerte para unificar el
+              contacto cross-canal). Columnas extra se guardan como <code>data</code>.
             </Typography>
             <TextField
               multiline
               minRows={6}
               maxRows={16}
               fullWidth
-              placeholder={'email,name\njuan@ejemplo.com,Juan\nana@ejemplo.com,Ana'}
+              placeholder={
+                'externalId,email,nombre,apellido\nC-001,juan@ejemplo.com,Juan,Perez\nC-002,ana@ejemplo.com,Ana,Lopez'
+              }
               value={contactsText}
               onChange={(e) => setContactsText(e.target.value)}
             />

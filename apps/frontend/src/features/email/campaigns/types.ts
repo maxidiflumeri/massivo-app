@@ -59,6 +59,11 @@ export interface UpdateCampaignPayload {
 
 export interface CampaignContactInput {
   email: string;
+  externalId?: string;
+  dni?: string;
+  cuit?: string;
+  firstName?: string;
+  lastName?: string;
   name?: string;
   data?: Record<string, unknown>;
 }

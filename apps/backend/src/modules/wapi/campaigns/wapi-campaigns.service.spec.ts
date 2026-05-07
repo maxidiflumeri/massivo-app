@@ -11,7 +11,7 @@ describe('WapiCampaignsService', () => {
   let prisma: {
     scoped: {
       wapiCampaign: { create: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock; delete: jest.Mock };
-      wapiContact: { createMany: jest.Mock };
+      wapiContact: { create: jest.Mock };
       wapiReport: { groupBy: jest.Mock; count: jest.Mock; findMany: jest.Mock; updateMany: jest.Mock };
     };
     wapiReport: { create: jest.Mock };
@@ -19,6 +19,7 @@ describe('WapiCampaignsService', () => {
   };
   let queue: { enqueue: jest.Mock };
   let events: { emitToTeamDebounced: jest.Mock };
+  let contactUpsert: { upsert: jest.Mock };
   let svc: WapiCampaignsService;
 
   beforeEach(() => {
@@ -31,7 +32,7 @@ describe('WapiCampaignsService', () => {
           update: jest.fn().mockResolvedValue({}),
           delete: jest.fn().mockResolvedValue({}),
         },
-        wapiContact: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        wapiContact: { create: jest.fn().mockResolvedValue({ id: 'wc1' }) },
         wapiReport: {
           groupBy: jest.fn().mockResolvedValue([]),
           count: jest.fn().mockResolvedValue(0),
@@ -44,7 +45,15 @@ describe('WapiCampaignsService', () => {
     };
     queue = { enqueue: jest.fn().mockResolvedValue('job-id') };
     events = { emitToTeamDebounced: jest.fn() };
-    svc = new WapiCampaignsService(prisma as never, queue as never, events as never);
+    contactUpsert = {
+      upsert: jest.fn().mockResolvedValue({ contactId: 'k1', outcome: 'created' }),
+    };
+    svc = new WapiCampaignsService(
+      prisma as never,
+      queue as never,
+      events as never,
+      contactUpsert as never,
+    );
   });
 
   function withCtx<T>(fn: () => Promise<T>) {
@@ -157,22 +166,56 @@ describe('WapiCampaignsService', () => {
   });
 
   describe('addContacts', () => {
-    it('DRAFT permite + retorna count + trim', async () => {
+    it('DRAFT permite + upserta Contact + crea WapiContact con contactId + trim', async () => {
       prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
-      prisma.scoped.wapiContact.createMany.mockResolvedValueOnce({ count: 2 });
+      contactUpsert.upsert
+        .mockResolvedValueOnce({ contactId: 'k1', outcome: 'created' })
+        .mockResolvedValueOnce({ contactId: 'k2', outcome: 'updated' });
+
       const r = await svc.addContacts('c1', {
-        contacts: [{ phone: '  +5491100  ' }, { phone: '5492200', name: 'Ana' }],
+        contacts: [
+          { phone: '  +5491100  ', externalId: 'ext-1' },
+          { phone: '5492200', name: 'Ana Lopez', dni: '12345678' },
+        ],
       });
-      expect(r).toEqual({ created: 2 });
-      const args = prisma.scoped.wapiContact.createMany.mock.calls[0]![0];
-      expect(args.data[0].phone).toBe('+5491100');
-      expect(args.data[1].phone).toBe('5492200');
+
+      expect(r).toEqual({
+        created: 2,
+        contactsCreated: 1,
+        contactsUpdated: 1,
+        suggestionsCreated: 0,
+      });
+      expect(contactUpsert.upsert).toHaveBeenCalledTimes(2);
+      expect(contactUpsert.upsert.mock.calls[0]![0]).toMatchObject({
+        externalId: 'ext-1',
+        phone: '+5491100',
+      });
+      expect(contactUpsert.upsert.mock.calls[1]![0]).toMatchObject({
+        dni: '12345678',
+        firstName: 'Ana',
+        lastName: 'Lopez',
+      });
+      expect(prisma.scoped.wapiContact.create).toHaveBeenCalledTimes(2);
+      const firstCreate = prisma.scoped.wapiContact.create.mock.calls[0]![0];
+      expect(firstCreate.data.phone).toBe('+5491100');
+      expect(firstCreate.data.contactId).toBe('k1');
+    });
+
+    it('fila sin externalId/dni → BadRequest y no crea nada', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      await expect(
+        svc.addContacts('c1', {
+          contacts: [{ phone: '5491100', externalId: 'ext-1' }, { phone: '5492200' }],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(contactUpsert.upsert).not.toHaveBeenCalled();
+      expect(prisma.scoped.wapiContact.create).not.toHaveBeenCalled();
     });
 
     it('PROCESSING NO permite agregar → Conflict', async () => {
       prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'PROCESSING' });
       await expect(
-        svc.addContacts('c1', { contacts: [{ phone: '5491100' }] }),
+        svc.addContacts('c1', { contacts: [{ phone: '5491100', externalId: 'ext-1' }] }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
   });

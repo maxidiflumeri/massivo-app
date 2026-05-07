@@ -8,12 +8,14 @@ import {
 import type { WapiCampaign } from '@massivo/prisma';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
+import { ContactUpsertService } from '../../contacts/contact-upsert.service';
 import { EventsService } from '../../events/events.service';
 import { WapiQueueService } from '../queue/wapi-queue.service';
 import {
   AddWapiCampaignContactsDto,
   CreateWapiCampaignDto,
   UpdateWapiCampaignDto,
+  WapiCampaignContactDto,
 } from './wapi-campaigns.dto';
 
 const EDITABLE_STATUSES = new Set(['DRAFT', 'SCHEDULED', 'PAUSED']);
@@ -56,6 +58,7 @@ export class WapiCampaignsService {
     private readonly prisma: PrismaService,
     private readonly queue: WapiQueueService,
     private readonly events: EventsService,
+    private readonly contactUpsert: ContactUpsertService,
   ) {}
 
   private notifyCampaignUpdated(teamId: string, campaignId: string): void {
@@ -158,22 +161,68 @@ export class WapiCampaignsService {
   async addContacts(
     id: string,
     dto: AddWapiCampaignContactsDto,
-  ): Promise<{ created: number }> {
+  ): Promise<{
+    created: number;
+    contactsCreated: number;
+    contactsUpdated: number;
+    suggestionsCreated: number;
+  }> {
     const campaign = await this.findOne(id);
     if (!EDITABLE_STATUSES.has(campaign.status)) {
       throw new ConflictException(
         `No se pueden agregar contactos en estado ${campaign.status}`,
       );
     }
-    const result = await this.prisma.scoped.wapiContact.createMany({
-      data: dto.contacts.map((c) => ({
-        campaignId: id,
-        phone: c.phone.trim(),
-        name: c.name,
-        data: c.data,
-      })) as never,
+
+    const missing: number[] = [];
+    dto.contacts.forEach((c, i) => {
+      if (!hasStrongKey(c)) missing.push(i + 1);
     });
-    return { created: result.count };
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `Cada fila debe traer externalId o dni. Filas inválidas: ${missing.slice(0, 20).join(', ')}${missing.length > 20 ? '…' : ''}`,
+      );
+    }
+
+    let contactsCreated = 0;
+    let contactsUpdated = 0;
+    let suggestionsCreated = 0;
+    let wapiContactsCreated = 0;
+
+    for (const c of dto.contacts) {
+      const { firstName, lastName } = splitName(c);
+      const phone = c.phone.trim();
+      const upsert = await this.contactUpsert.upsert({
+        externalId: c.externalId ?? null,
+        dni: c.dni ?? null,
+        cuit: c.cuit ?? null,
+        phone,
+        firstName,
+        lastName,
+        attributes: c.data ?? null,
+      });
+      if (upsert.outcome === 'created') contactsCreated++;
+      else if (upsert.outcome === 'updated') contactsUpdated++;
+      else if (upsert.outcome === 'suggested') suggestionsCreated++;
+
+      await this.prisma.scoped.wapiContact.create({
+        data: {
+          campaignId: id,
+          phone,
+          name: c.name,
+          data: c.data,
+          contactId: upsert.contactId,
+        } as never,
+      });
+      wapiContactsCreated++;
+    }
+
+    return {
+      created: wapiContactsCreated,
+      contactsCreated,
+      contactsUpdated,
+      suggestionsCreated,
+    };
   }
 
   /**
@@ -421,4 +470,23 @@ export class WapiCampaignsService {
       funnel: { sent, delivered, read, failed },
     };
   }
+}
+
+function hasStrongKey(c: WapiCampaignContactDto): boolean {
+  return !!(c.externalId?.trim() || c.dni?.trim());
+}
+
+function splitName(c: WapiCampaignContactDto): {
+  firstName: string | null;
+  lastName: string | null;
+} {
+  if (c.firstName || c.lastName) {
+    return { firstName: c.firstName ?? null, lastName: c.lastName ?? null };
+  }
+  if (!c.name) return { firstName: null, lastName: null };
+  const trimmed = c.name.trim();
+  if (!trimmed) return { firstName: null, lastName: null };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0]!, lastName: null };
+  return { firstName: parts[0]!, lastName: parts.slice(1).join(' ') };
 }

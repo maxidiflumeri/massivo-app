@@ -98,6 +98,11 @@ export interface WapiTemplateDetailFull {
 
 export interface WapiCampaignContactInput {
   phone: string;
+  externalId?: string;
+  dni?: string;
+  cuit?: string;
+  firstName?: string;
+  lastName?: string;
   name?: string;
   data?: Record<string, unknown>;
 }

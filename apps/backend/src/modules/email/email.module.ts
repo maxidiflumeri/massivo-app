@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ContactsModule } from '../contacts/contacts.module';
 import { EventsModule } from '../events/events.module';
 import { SmtpAccountsController } from './smtp-accounts.controller';
 import { SmtpAccountsService } from './smtp-accounts.service';
@@ -25,7 +26,7 @@ import { ReportsController } from './reports/reports.controller';
 import { ReportGeneratorService } from './reports/report-generator.service';
 
 @Module({
-  imports: [EventsModule],
+  imports: [EventsModule, ContactsModule],
   controllers: [
     SmtpAccountsController,
     EmailTemplatesController,

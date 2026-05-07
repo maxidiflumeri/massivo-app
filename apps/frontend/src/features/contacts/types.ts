@@ -96,34 +96,3 @@ export interface TimelinePage {
   nextCursor: string | null;
 }
 
-export interface ContactImportJob {
-  id: string;
-  organizationId: string;
-  teamId: string | null;
-  fileName: string | null;
-  fileSize: number | null;
-  status: 'PENDING' | 'PROCESSING' | 'DONE' | 'FAILED' | 'CANCELLED';
-  mapping: Record<string, string>;
-  options: Record<string, unknown> | null;
-  total: number;
-  processed: number;
-  created: number;
-  updated: number;
-  suggested: number;
-  errors: Array<{ index: number; message: string; row?: Record<string, unknown> }> | null;
-  startedAt: string | null;
-  finishedAt: string | null;
-  createdAt: string;
-}
-
-export interface ContactImportJobPage {
-  items: ContactImportJob[];
-  nextCursor: string | null;
-}
-
-export interface CreateImportRequest {
-  fileName: string;
-  fileSize: number;
-  mapping: Record<string, string>;
-  rows: Array<Record<string, string>>;
-}

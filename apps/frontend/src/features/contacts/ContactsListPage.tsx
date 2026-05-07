@@ -25,7 +25,6 @@ import {
   Typography,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import MergeTypeIcon from '@mui/icons-material/MergeType';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { useApi } from '../../api/client';
@@ -143,14 +142,6 @@ export function ContactsListPage() {
             variant="outlined"
           >
             Sugerencias de merge
-          </Button>
-          <Button
-            component={RouterLink}
-            to="/dashboard/contacts/import"
-            startIcon={<UploadFileIcon />}
-            variant="contained"
-          >
-            Importar CSV
           </Button>
         </Stack>
       </Stack>

@@ -69,6 +69,31 @@ export class WapiCampaignContactDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(120)
+  externalId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  dni?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  cuit?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(160)
   name?: string;
 

@@ -10,8 +10,10 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EmailQueueService } from '../queue/email-queue.service';
 import { EventsService } from '../../events/events.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
+import { ContactUpsertService } from '../../contacts/contact-upsert.service';
 import {
   AddCampaignContactsDto,
+  CampaignContactDto,
   CreateEmailCampaignDto,
   UpdateEmailCampaignDto,
 } from './email-campaigns.dto';
@@ -27,6 +29,7 @@ export class EmailCampaignsService {
     private readonly prisma: PrismaService,
     private readonly queue: EmailQueueService,
     private readonly events: EventsService,
+    private readonly contactUpsert: ContactUpsertService,
   ) {}
 
   private notifyCampaignUpdated(teamId: string, campaignId: string): void {
@@ -103,20 +106,68 @@ export class EmailCampaignsService {
     await this.prisma.scoped.emailCampaign.delete({ where: { id } });
   }
 
-  async addContacts(id: string, dto: AddCampaignContactsDto): Promise<{ created: number }> {
+  async addContacts(
+    id: string,
+    dto: AddCampaignContactsDto,
+  ): Promise<{
+    created: number;
+    contactsCreated: number;
+    contactsUpdated: number;
+    suggestionsCreated: number;
+  }> {
     const campaign = await this.findOne(id);
     if (!EDITABLE_STATUSES.has(campaign.status)) {
       throw new ConflictException(`No se pueden agregar contactos en estado ${campaign.status}`);
     }
-    const result = await this.prisma.scoped.emailContact.createMany({
-      data: dto.contacts.map((c) => ({
-        campaignId: id,
-        email: c.email.trim().toLowerCase(),
-        name: c.name,
-        data: c.data,
-      })) as never,
+
+    const missing: number[] = [];
+    dto.contacts.forEach((c, i) => {
+      if (!hasStrongKey(c)) missing.push(i + 1);
     });
-    return { created: result.count };
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `Cada fila debe traer externalId o dni. Filas inválidas: ${missing.slice(0, 20).join(', ')}${missing.length > 20 ? '…' : ''}`,
+      );
+    }
+
+    let contactsCreated = 0;
+    let contactsUpdated = 0;
+    let suggestionsCreated = 0;
+    let emailContactsCreated = 0;
+
+    for (const c of dto.contacts) {
+      const { firstName, lastName } = splitName(c);
+      const upsert = await this.contactUpsert.upsert({
+        externalId: c.externalId ?? null,
+        dni: c.dni ?? null,
+        cuit: c.cuit ?? null,
+        email: c.email,
+        firstName,
+        lastName,
+        attributes: c.data ?? null,
+      });
+      if (upsert.outcome === 'created') contactsCreated++;
+      else if (upsert.outcome === 'updated') contactsUpdated++;
+      else if (upsert.outcome === 'suggested') suggestionsCreated++;
+
+      await this.prisma.scoped.emailContact.create({
+        data: {
+          campaignId: id,
+          email: c.email.trim().toLowerCase(),
+          name: c.name,
+          data: c.data,
+          contactId: upsert.contactId,
+        } as never,
+      });
+      emailContactsCreated++;
+    }
+
+    return {
+      created: emailContactsCreated,
+      contactsCreated,
+      contactsUpdated,
+      suggestionsCreated,
+    };
   }
 
   /**
@@ -398,4 +449,20 @@ export class EmailCampaignsService {
       events: { opens, clicks, uniqueOpens, uniqueClicks },
     };
   }
+}
+
+function hasStrongKey(c: CampaignContactDto): boolean {
+  return !!(c.externalId?.trim() || c.dni?.trim());
+}
+
+function splitName(c: CampaignContactDto): { firstName: string | null; lastName: string | null } {
+  if (c.firstName || c.lastName) {
+    return { firstName: c.firstName ?? null, lastName: c.lastName ?? null };
+  }
+  if (!c.name) return { firstName: null, lastName: null };
+  const trimmed = c.name.trim();
+  if (!trimmed) return { firstName: null, lastName: null };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0]!, lastName: null };
+  return { firstName: parts[0]!, lastName: parts.slice(1).join(' ') };
 }

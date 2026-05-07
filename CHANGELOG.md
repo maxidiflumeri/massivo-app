@@ -21,6 +21,84 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 5.D.1 — Carga de contactos vía campañas (strong key obligatorio + Contact upsert) ✅
+
+Cambio de modelo de carga: el import standalone de Contacts se elimina; la única vía de carga es **vía creación de campaña** (Email o WAPI). Cada fila del CSV debe traer al menos uno de `externalId` o `dni`, lo que permite que el `Contact` unificado se cree o se mergee correctamente cross-canal y que `EmailContact`/`WapiContact` queden linkeados al mismo Contact (vía `contactId`).
+
+#### Added
+
+##### `apps/backend/src/modules/contacts/contact-upsert.service.ts`
+Nuevo servicio reusable. Extrae la lógica de matching/merge que vivía en `ContactImportsService` a un único método público:
+
+```ts
+async upsert(input: ContactUpsertInput): Promise<{ contactId: string; outcome: 'created' | 'updated' | 'suggested' }>
+```
+
+Cascada interna:
+1. `findByStrongKey` (externalId → dni → cuit) → `updateContact` con catch `P2002` (skip strong key conflicts) + `maybeSuggestWeakConflict` (si hay email/phone divergente, crea `ContactMergeSuggestion`).
+2. Sino `findByWeakKey` (email → phoneE164) → si row no trae strong key, update directo; si trae strong key, intenta update y si choca P2002 cae a `createContact` + suggestion.
+3. Sino `createContact`.
+
+Reusa normalizers de `identity.ts` (`normalizeDni`, `normalizeCuit`, `normalizePhoneE164`, `normalizeEmail`, `normalizeExternalId`). Call inicial a `requireContext()` para enforce `TenantContext`.
+
+`ContactsModule` exporta `ContactUpsertService` para inyección cross-module via `imports: [ContactsModule]`.
+
+##### Strong-key fields en DTOs de campaña
+- `apps/backend/src/modules/email/campaigns/email-campaigns.dto.ts` — `CampaignContactDto` gana `externalId/dni/cuit/firstName/lastName` opcionales (`@IsOptional @IsString @MaxLength` 120/20/20/120/120).
+- `apps/backend/src/modules/wapi/campaigns/wapi-campaigns.dto.ts` — `WapiCampaignContactDto` mirror.
+
+##### Frontend types
+- `apps/frontend/src/features/email/campaigns/types.ts` — `CampaignContactInput` con `externalId/dni/cuit/firstName/lastName` opcionales.
+- `apps/frontend/src/features/wapi/campaigns/types.ts` — `WapiCampaignContactInput` mirror.
+
+#### Changed
+
+##### `EmailCampaignsService.addContacts()` y `WapiCampaignsService.addContacts()`
+- **Validación fail-fast**: recolecta los índices de filas sin `externalId|dni` y throw `BadRequestException` con el listado (`"Cada fila debe traer externalId o dni. Filas inválidas: 1, 3, 7..."`) **antes de tocar DB**.
+- **Per-row sequential** (en lugar del `createMany` previo): por cada fila, `contactUpsert.upsert(...)` para resolver/crear el Contact unificado, después `prisma.scoped.{email|wapi}Contact.create({ contactId, ...})`. El `createMany` no permitía attachear `contactId` distinto por fila.
+- Helper local `splitName('Juan Perez')` → `{firstName, lastName}` para retro-compat con CSVs que solo traen `name`.
+- **Response shape extendido** (backwards-compat):
+  ```ts
+  { created: number, contactsCreated: number, contactsUpdated: number, suggestionsCreated: number }
+  ```
+  `created` sigue siendo el conteo de `EmailContact`/`WapiContact` rows creadas (compat con UI vieja); los 3 nuevos cuentan acciones sobre `Contact` unificado.
+
+##### Frontend de creación de campaña
+- `apps/frontend/src/features/email/campaigns/CampaignDetailPage.tsx` — `parseContactsCsv()` reescrito:
+  - Reconoce headers `externalId | external_id | idexterno | id_externo | dni | documento | cuit` además de `email/phone/name/firstName/lastName`.
+  - Rechaza CSV que no incluya **alguna** strong-key column en el header.
+  - Per-row valida que tenga al menos `externalId` o `dni`; si no, error con índice de fila.
+- Placeholder de textarea actualizado a `'externalId,email,nombre,apellido\nC-001,juan@ejemplo.com,Juan,Perez\n...'` y copy explicando la regla.
+- `apps/frontend/src/features/wapi/campaigns/WapiCampaignDetailPage.tsx` — mismo patrón con `phone` en vez de `email`.
+
+##### Tests de campaña
+- `email-campaigns.service.spec.ts` y `wapi-campaigns.service.spec.ts`:
+  - Mock `emailContact.create` / `wapiContact.create` (antes `createMany`).
+  - Nuevo mock `contactUpsert: { upsert: jest.fn().mockResolvedValue({ contactId: 'k1', outcome: 'created' }) }` como 4to constructor arg.
+  - Test rewrite "addContacts requiere strong key + verifica counters `contactsCreated/updated/suggestionsCreated`".
+  - Test nuevo "fila sin externalId/dni → BadRequest y no crea nada".
+  - Test nuevo "PROCESSING NO permite addContacts → Conflict".
+
+**593/593 backend tests verde**. Backend + frontend typecheck ✅.
+
+#### Removed
+
+- `apps/frontend/src/features/contacts/ContactsImportPage.tsx` — página standalone eliminada.
+- Ruta `/dashboard/contacts/import` y botón "Importar CSV" en `ContactsListPage.tsx`.
+- Types `ContactImportJob`, `ContactImportJobPage`, `CreateImportRequest` en `apps/frontend/src/features/contacts/types.ts`.
+- `apps/backend/src/modules/contacts/contact-imports.{service,controller,dto,service.spec}.ts` — endpoints `GET/POST /api/contacts/imports` ya no existen.
+
+#### Deferred (housekeeping)
+
+Quedan huérfanos sin impacto funcional ni de tests:
+- Modelo Prisma `ContactImportJob` (`packages/prisma/prisma/schema.prisma`).
+- Subject CASL `'ContactImportJob'` (`packages/permissions/src/ability.ts`).
+- Entry `'ContactImportJob'` en `apps/backend/src/common/prisma/tenant-models.ts`.
+
+No se migra el schema (additive previo, sin riesgo); cleanup diferido a un housekeeping pass futuro junto con otras drops controladas.
+
+---
+
 ### 5.D — Frontend Contacts (lista + ficha + timeline + merge UI + CSV import) ✅
 
 Cierra la parte UI de Fase 5. Cuatro páginas nuevas montadas sobre los endpoints de 5.A.2/5.A.3/5.A.4/5.B/5.C.

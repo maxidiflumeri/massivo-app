@@ -81,6 +81,35 @@ function normalizePhone(raw: string): string {
   return lead + trimmed.replace(/[^0-9]/g, '');
 }
 
+const STRONG_KEY_HEADERS = new Set([
+  'externalid',
+  'external_id',
+  'idexterno',
+  'id_externo',
+  'dni',
+  'documento',
+  'cuit',
+]);
+const RESERVED_HEADERS = new Set([
+  'phone',
+  'telefono',
+  'teléfono',
+  'externalid',
+  'external_id',
+  'idexterno',
+  'id_externo',
+  'dni',
+  'documento',
+  'cuit',
+  'firstname',
+  'first_name',
+  'nombre',
+  'lastname',
+  'last_name',
+  'apellido',
+  'name',
+]);
+
 function parseContactsCsv(text: string): {
   contacts: WapiCampaignContactInput[];
   errors: string[];
@@ -94,9 +123,17 @@ function parseContactsCsv(text: string): {
   const first = lines[0]!.toLowerCase();
   let headers: string[] | null = null;
   let dataLines = lines;
-  if (first.includes('phone') || first.includes('telefono') || first.includes('teléfono')) {
+  const headerSignals = ['phone', 'telefono', 'teléfono', ...STRONG_KEY_HEADERS];
+  if (headerSignals.some((s) => first.includes(s))) {
     headers = lines[0]!.split(/[,;\t]/).map((h) => h.trim().toLowerCase());
     dataLines = lines.slice(1);
+  }
+
+  if (headers && !headers.some((h) => STRONG_KEY_HEADERS.has(h))) {
+    return {
+      contacts: [],
+      errors: ['Falta una columna externalId o dni (al menos una es obligatoria por fila).'],
+    };
   }
 
   const contacts: WapiCampaignContactInput[] = [];
@@ -104,29 +141,48 @@ function parseContactsCsv(text: string): {
   dataLines.forEach((line, idx) => {
     const cols = line.split(/[,;\t]/).map((c) => c.trim());
     let phone: string | undefined;
+    let externalId: string | undefined;
+    let dni: string | undefined;
+    let cuit: string | undefined;
+    let firstName: string | undefined;
+    let lastName: string | undefined;
     let name: string | undefined;
     const data: Record<string, unknown> = {};
+
     if (headers) {
       headers.forEach((h, i) => {
         const v = cols[i] ?? '';
-        if (h === 'phone' || h === 'telefono' || h === 'teléfono') {
-          phone = v;
-          return;
-        }
-        if (h === 'name' || h === 'nombre') name = v;
-        if (v) data[h] = v;
+        if (!v) return;
+        if (h === 'phone' || h === 'telefono' || h === 'teléfono') phone = v;
+        else if (h === 'externalid' || h === 'external_id' || h === 'idexterno' || h === 'id_externo') externalId = v;
+        else if (h === 'dni' || h === 'documento') dni = v;
+        else if (h === 'cuit') cuit = v;
+        else if (h === 'firstname' || h === 'first_name' || h === 'nombre') firstName = v;
+        else if (h === 'lastname' || h === 'last_name' || h === 'apellido') lastName = v;
+        else if (h === 'name') name = v;
+        else if (!RESERVED_HEADERS.has(h)) data[h] = v;
       });
     } else {
       phone = cols[0];
       if (cols[1]) name = cols[1];
     }
+
     const normalized = normalizePhone(phone ?? '');
     if (!PHONE_REGEX.test(normalized)) {
       errors.push(`Línea ${idx + 1}: teléfono inválido`);
       return;
     }
+    if (!externalId && !dni) {
+      errors.push(`Línea ${idx + 1}: falta externalId o dni`);
+      return;
+    }
     contacts.push({
       phone: normalized,
+      externalId,
+      dni,
+      cuit,
+      firstName,
+      lastName,
       name: name || undefined,
       data: Object.keys(data).length ? data : undefined,
     });
@@ -812,17 +868,19 @@ export function WapiCampaignDetailPage() {
         {editable ? (
           <Stack spacing={2}>
             <Typography variant="body2" color="text.secondary">
-              Pegá CSV o líneas con <code>phone[,name]</code>. Si la primera fila contiene{' '}
-              <code>phone</code>, se trata como header (acepta columnas extra como variables del
-              template — ej: <code>firstName</code>). Los teléfonos se normalizan automáticamente
-              (espacios y guiones se descartan).
+              Pegá CSV con header. Cada fila debe traer <code>phone</code> y al menos{' '}
+              <code>externalId</code> o <code>dni</code> (clave fuerte para unificar el contacto
+              cross-canal). Columnas extra quedan disponibles como variables del template. Los
+              teléfonos se normalizan automáticamente (espacios y guiones se descartan).
             </Typography>
             <TextField
               multiline
               minRows={6}
               maxRows={16}
               fullWidth
-              placeholder={'phone,name,firstName\n+5491100000001,Juan Pérez,Juan\n+5491100000002,Ana Gómez,Ana'}
+              placeholder={
+                'externalId,phone,nombre,apellido\nC-001,+5491100000001,Juan,Perez\nC-002,+5491100000002,Ana,Lopez'
+              }
               value={contactsText}
               onChange={(e) => setContactsText(e.target.value)}
             />

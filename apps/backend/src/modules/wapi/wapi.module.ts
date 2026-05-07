@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ContactsModule } from '../contacts/contacts.module';
 import { EventsModule } from '../events/events.module';
 import { WapiConfigsController } from './wapi-configs.controller';
 import { WapiConfigsService } from './wapi-configs.service';
@@ -35,7 +36,7 @@ import { WapiLiveController } from './live/wapi-live.controller';
 import { WapiLiveService } from './live/wapi-live.service';
 
 @Module({
-  imports: [EventsModule],
+  imports: [EventsModule, ContactsModule],
   controllers: [
     WapiConfigsController,
     WapiTemplatesController,

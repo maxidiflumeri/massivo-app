@@ -1,27 +1,22 @@
 import { Module } from '@nestjs/common';
-import { ContactImportsController } from './contact-imports.controller';
-import { ContactImportsService } from './contact-imports.service';
 import { ContactMergeController } from './contact-merge.controller';
 import { ContactMergeService } from './contact-merge.service';
 import { ContactTimelineService } from './contact-timeline.service';
+import { ContactUpsertService } from './contact-upsert.service';
 import { ContactsController } from './contacts.controller';
 import { ContactsService } from './contacts.service';
 import { TagsController } from './tags.controller';
 import { TagsService } from './tags.service';
 
 @Module({
-  controllers: [
-    ContactImportsController,
-    ContactMergeController,
-    ContactsController,
-    TagsController,
-  ],
+  controllers: [ContactMergeController, ContactsController, TagsController],
   providers: [
-    ContactImportsService,
     ContactMergeService,
     ContactTimelineService,
+    ContactUpsertService,
     ContactsService,
     TagsService,
   ],
+  exports: [ContactUpsertService],
 })
 export class ContactsModule {}
