@@ -26,6 +26,11 @@ export function collectImplicitVariableNames(
         for (const b of node.branches) {
           if (b.when?.kind === 'var' && b.when.var) out.add(b.when.var);
         }
+      } else if (node.kind === 'SET_VAR' && node.varName) out.add(node.varName);
+      else if (node.kind === 'HTTP' && node.saveAs) out.add(node.saveAs);
+      else if (node.kind === 'FOREACH') {
+        if (node.itemVar) out.add(node.itemVar);
+        if (node.indexVar) out.add(node.indexVar);
       }
     }
   }

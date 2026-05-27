@@ -83,7 +83,7 @@ describe('WapiBotSandboxService', () => {
       botTopicsDraft: [draftTopic],
       botRouterDraft: { rules: [], defaultTopicId: 'greet' },
     });
-    const svc = new WapiBotSandboxService(prisma, router);
+    const svc = new WapiBotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
 
     await TenantContext.run(ctxA(), async () => {
       const r = await svc.step('cfg-1', { phone: '5491100', inbound: { kind: 'text', body: 'hola' } });
@@ -104,7 +104,7 @@ describe('WapiBotSandboxService', () => {
       botTopicsDraft: [draftTopic],
       botRouterDraft: { rules: [], defaultTopicId: 'greet' },
     });
-    const svc = new WapiBotSandboxService(prisma, router);
+    const svc = new WapiBotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
 
     await TenantContext.run(ctxA(), async () => {
       const r = await svc.step('cfg-1', {
@@ -131,7 +131,7 @@ describe('WapiBotSandboxService', () => {
       botTopicsDraft: null,
       botRouterDraft: null,
     });
-    const svc = new WapiBotSandboxService(prisma, router);
+    const svc = new WapiBotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
 
     await TenantContext.run(ctxA(), async () => {
       // 1) Texto entra → MESSAGE + MENU.
@@ -169,7 +169,7 @@ describe('WapiBotSandboxService', () => {
       botTopicsDraft: null,
       botRouterDraft: null,
     });
-    const svc = new WapiBotSandboxService(prisma, router);
+    const svc = new WapiBotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
 
     await TenantContext.run(ctxA(), async () => {
       await svc.step('cfg-1', { phone: '5491100', inbound: { kind: 'text', body: 'hola' } });
@@ -194,7 +194,7 @@ describe('WapiBotSandboxService', () => {
       botTopicsDraft: null,
       botRouterDraft: null,
     });
-    const svc = new WapiBotSandboxService(prismaA, router);
+    const svc = new WapiBotSandboxService(prismaA, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
 
     await TenantContext.run(ctxA(), async () => {
       await svc.step('cfg-1', { phone: '5491100', inbound: { kind: 'text', body: 'hola' } });
@@ -218,7 +218,7 @@ describe('WapiBotSandboxService', () => {
       botTopicsDraft: null,
       botRouterDraft: null,
     });
-    const svc = new WapiBotSandboxService(prisma, router);
+    const svc = new WapiBotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
 
     await TenantContext.run(ctxA(), async () => {
       const r = await svc.step('cfg-1', { phone: '5491100', inbound: { kind: 'text', body: 'x' } });

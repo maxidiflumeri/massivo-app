@@ -6,24 +6,31 @@ import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
 import { WapiSendException } from '../sender/wapi-sender.types';
-import { interpolate } from './interpolate';
+import { interpolate, interpolateAsync } from './interpolate';
+import { evaluateExpression } from './expression-engine';
 import {
   BOT_MAX_AUTO_CHAIN,
+  BOT_MAX_HTTP_PER_CHAIN,
   BOT_OPTION_PREFIX,
   type BotFlow,
   type BotMediaNode,
   type BotNode,
 } from './wapi-bot.types';
 import {
+  applyForeach,
+  applyHttpResult,
   applySetVar,
   DEFAULT_TOPIC_ID,
   handleCapture,
+  nextLoopReturnNode,
   pickConditionBranch,
   resolveTopics as resolveTopicsRuntime,
   type BotData,
   type ResolvedFlow,
 } from './bot-flow-runtime';
 import { WapiBotFeatureService } from './wapi-bot-feature.service';
+import { WapiBotHttpExecutor } from './wapi-bot-http-executor.service';
+import { WapiBotMediaFetchService } from './wapi-bot-media-fetch.service';
 import { WapiBotRouterService, type BotRouterInput } from './wapi-bot-router.service';
 
 /**
@@ -89,6 +96,8 @@ export class WapiBotEngineService {
     private readonly encryption: EncryptionService,
     private readonly feature: WapiBotFeatureService,
     private readonly router: WapiBotRouterService,
+    private readonly httpExecutor: WapiBotHttpExecutor,
+    private readonly mediaFetch: WapiBotMediaFetchService,
   ) {}
 
   isBotButtonId(buttonId: string | null | undefined): boolean {
@@ -320,8 +329,19 @@ export class WapiBotEngineService {
     let finalNode: BotNode | null = null;
     let finalId: string | null = null;
     let finalTopicId: string = topicId;
+    let httpCallsInChain = 0;
+    const ctx = TenantContext.current();
     for (let i = 0; i < BOT_MAX_AUTO_CHAIN; i++) {
-      if (!currentId) break;
+      if (!currentId) {
+        // 4.P.2 — Si caímos a un terminal sin next y hay un FOREACH activo,
+        // saltar de vuelta al FOREACH para procesar el próximo item.
+        const loopReturn = nextLoopReturnNode(data);
+        if (loopReturn) {
+          currentId = loopReturn;
+        } else {
+          break;
+        }
+      }
       const node: BotNode | undefined = topic.flow.nodes[currentId];
       if (!node) {
         this.logger.warn(`Bot nextNodeId no existe: ${currentId} (configId=${cfg.id} topic=${topicId})`);
@@ -338,11 +358,10 @@ export class WapiBotEngineService {
           continue;
         }
         currentId = target?.nextNodeId ?? null;
-        if (!currentId) break;
         continue;
       }
       if (node.kind === 'SET_VAR') {
-        data = applySetVar(node, data, resolved.variableTypes);
+        data = await applySetVar(node, data, resolved.variableTypes);
         if (node.gotoTopic) {
           const next = resolved.topics.get(node.gotoTopic);
           if (!next) break;
@@ -352,7 +371,135 @@ export class WapiBotEngineService {
           continue;
         }
         currentId = node.nextNodeId ?? null;
-        if (!currentId) break;
+        continue;
+      }
+      if (node.kind === 'HTTP') {
+        httpCallsInChain += 1;
+        if (httpCallsInChain > BOT_MAX_HTTP_PER_CHAIN) {
+          this.logger.warn(
+            `Bot chain excedió BOT_MAX_HTTP_PER_CHAIN=${BOT_MAX_HTTP_PER_CHAIN} configId=${cfg.id}`,
+          );
+          break;
+        }
+        const result = await this.httpExecutor.execute(node, data, {
+          mode: 'real', // engine de prod: siempre real.
+          configId: cfg.id,
+          nodeId: currentId,
+          organizationId: ctx?.organizationId ?? '',
+        });
+        data = applyHttpResult(node, data, result);
+        if (result.ok) {
+          if (node.gotoTopic) {
+            const next = resolved.topics.get(node.gotoTopic);
+            if (!next) break;
+            topic = next;
+            topicId = next.id;
+            currentId = next.flow.startNodeId;
+            continue;
+          }
+          currentId = node.nextNodeId ?? null;
+        } else {
+          if (node.errorGotoTopic) {
+            const next = resolved.topics.get(node.errorGotoTopic);
+            if (!next) break;
+            topic = next;
+            topicId = next.id;
+            currentId = next.flow.startNodeId;
+            continue;
+          }
+          currentId = node.errorNodeId ?? null;
+        }
+        continue;
+      }
+      if (node.kind === 'MEDIA_FROM_URL') {
+        // Reusa el cap de HTTP por chain (el fetch es HTTP igualmente).
+        httpCallsInChain += 1;
+        if (httpCallsInChain > BOT_MAX_HTTP_PER_CHAIN) {
+          this.logger.warn(
+            `Bot chain excedió BOT_MAX_HTTP_PER_CHAIN=${BOT_MAX_HTTP_PER_CHAIN} (MEDIA_FROM_URL) configId=${cfg.id}`,
+          );
+          break;
+        }
+        const fetchResult = await this.mediaFetch.execute(node, data, {
+          mode: 'real',
+          configId: cfg.id,
+          nodeId: currentId,
+          organizationId: ctx?.organizationId ?? '',
+        });
+        if (!fetchResult.ok) {
+          this.logger.warn(
+            `MEDIA_FROM_URL ${currentId} configId=${cfg.id} falló: ${fetchResult.error}`,
+          );
+          if (node.errorGotoTopic) {
+            const next = resolved.topics.get(node.errorGotoTopic);
+            if (!next) break;
+            topic = next;
+            topicId = next.id;
+            currentId = next.flow.startNodeId;
+            continue;
+          }
+          currentId = node.errorNodeId ?? null;
+          continue;
+        }
+        // Construye un BotMediaNode sintético con el mediaId del fetch y delega
+        // el envío al pipeline normal de deliverNode (que persiste el WapiMessage
+        // y emite el evento de inbox).
+        const syntheticMedia: BotMediaNode = {
+          kind: 'MEDIA',
+          mediaType: node.mediaType,
+          mediaId: fetchResult.mediaId!,
+          caption: node.caption,
+          filename: fetchResult.filename ?? node.filename,
+          mediaMime: fetchResult.mime,
+          mediaSha256: fetchResult.sha256,
+          mediaSize: fetchResult.size,
+          mediaLocalPath: fetchResult.localPath,
+          nextNodeId: node.nextNodeId,
+          gotoTopic: node.gotoTopic,
+        };
+        await this.deliverNode(
+          cfg,
+          conversationId,
+          phone,
+          currentId,
+          topic.flow,
+          data,
+          syntheticMedia,
+        );
+        finalNode = node;
+        finalId = currentId;
+        finalTopicId = topicId;
+        if (node.gotoTopic) {
+          const next = resolved.topics.get(node.gotoTopic);
+          if (!next) break;
+          topic = next;
+          topicId = next.id;
+          currentId = next.flow.startNodeId;
+          continue;
+        }
+        currentId = node.nextNodeId ?? null;
+        continue;
+      }
+      if (node.kind === 'FOREACH') {
+        const step = await applyForeach(node, currentId, data, (expr, d) =>
+          evaluateExpression(expr, d),
+        );
+        if (step.error) {
+          this.logger.warn(
+            `FOREACH ${currentId} configId=${cfg.id} error=${step.error}`,
+          );
+          break;
+        }
+        data = step.data;
+        if (step.nextTopicId) {
+          const next = resolved.topics.get(step.nextTopicId);
+          if (!next) break;
+          topic = next;
+          topicId = next.id;
+          currentId = next.flow.startNodeId;
+          continue;
+        }
+        currentId = step.nextNodeId;
         continue;
       }
       await this.deliverNode(cfg, conversationId, phone, currentId, topic.flow, data);
@@ -369,6 +516,12 @@ export class WapiBotEngineService {
           continue;
         }
         currentId = node.nextNodeId ?? null;
+        continue;
+      }
+      // Terminal sin next: si hay loop activo, volver al FOREACH; si no, salir.
+      const loopReturn = nextLoopReturnNode(data);
+      if (loopReturn) {
+        currentId = loopReturn;
         continue;
       }
       break;
@@ -552,10 +705,30 @@ export class WapiBotEngineService {
     nodeId: string,
     flow: BotFlow,
     data: BotData,
+    /**
+     * 4.P.3 — Override opcional del nodo. Si está, se usa en lugar del nodo
+     * persistido en `flow.nodes[nodeId]`. El caso de uso es MEDIA_FROM_URL,
+     * que en runtime construye un BotMediaNode "sintético" con el mediaId
+     * resultante del fetch+upload y delega el envío acá.
+     */
+    nodeOverride?: BotNode,
   ): Promise<void> {
-    const node = flow.nodes[nodeId];
+    const node = nodeOverride ?? flow.nodes[nodeId];
     if (!node) return;
-    if (node.kind === 'CONDITION' || node.kind === 'SET_VAR') return;
+    // Nodos "internos" (no entregan mensaje al usuario): CONDITION, SET_VAR, HTTP,
+    // FOREACH, MEDIA_FROM_URL. El runChain los maneja con ramas dedicadas y los
+    // que necesitan enviar mensaje (MEDIA_FROM_URL) llaman a deliverNode con
+    // un override de tipo MEDIA. Guard defensivo por si un cambio futuro los
+    // enrutase a deliverNode por accidente.
+    if (
+      node.kind === 'CONDITION' ||
+      node.kind === 'SET_VAR' ||
+      node.kind === 'HTTP' ||
+      node.kind === 'FOREACH' ||
+      node.kind === 'MEDIA_FROM_URL'
+    ) {
+      return;
+    }
     try {
       const senderCfg = {
         phoneNumberId: cfg.phoneNumberId,
@@ -568,9 +741,9 @@ export class WapiBotEngineService {
         wapiType = 'interactive';
         result = await this.sender.sendInteractiveButtons(senderCfg, {
           to: phone,
-          body: interpolate(node.text, data),
-          header: node.header ? interpolate(node.header, data) : undefined,
-          footer: node.footer ? interpolate(node.footer, data) : undefined,
+          body: await interpolateAsync(node.text, data),
+          header: node.header ? await interpolateAsync(node.header, data) : undefined,
+          footer: node.footer ? await interpolateAsync(node.footer, data) : undefined,
           buttons: node.options.slice(0, 3).map((o) => ({
             id: `${BOT_OPTION_PREFIX}${o.id}`,
             title: o.label,
@@ -582,20 +755,27 @@ export class WapiBotEngineService {
           to: phone,
           type: node.mediaType,
           mediaId: node.mediaId,
-          caption: node.caption ? interpolate(node.caption, data) : undefined,
+          caption: node.caption ? await interpolateAsync(node.caption, data) : undefined,
           filename: node.filename,
         });
-      } else {
-        // MESSAGE | CAPTURE | HANDOFF — texto plano interpolado.
+      } else if (
+        node.kind === 'MESSAGE' ||
+        node.kind === 'CAPTURE' ||
+        node.kind === 'HANDOFF'
+      ) {
+        // Texto plano interpolado (soporta {{var}} + {{= expr }}).
         wapiType = 'text';
         result = await this.sender.sendText(senderCfg, {
           to: phone,
-          body: interpolate(node.text, data),
+          body: await interpolateAsync(node.text, data),
           previewUrl: false,
         });
+      } else {
+        // CONDITION/SET_VAR/HTTP/FOREACH: filtrados arriba por el guard. Defensivo.
+        return;
       }
       const ts = new Date();
-      const content = buildPersistedContent(node, data);
+      const content = await buildPersistedContent(node, data);
       const mediaCols =
         node.kind === 'MEDIA'
           ? {
@@ -604,7 +784,7 @@ export class WapiBotEngineService {
               mediaSha256: node.mediaSha256 ?? null,
               mediaSize: node.mediaSize ?? null,
               mediaFilename: node.filename ?? null,
-              mediaCaption: node.caption ? interpolate(node.caption, data) : null,
+              mediaCaption: node.caption ? await interpolateAsync(node.caption, data) : null,
               mediaLocalPath: node.mediaLocalPath ?? null,
             }
           : {};
@@ -656,12 +836,15 @@ function sessionData(session: SessionRow | null): BotData {
   return { ...(session.data as BotData) };
 }
 
-function buildPersistedContent(node: BotNode, data: BotData): Record<string, unknown> {
+async function buildPersistedContent(
+  node: BotNode,
+  data: BotData,
+): Promise<Record<string, unknown>> {
   if (node.kind === 'MENU') {
     return {
       interactive: {
         type: 'button',
-        body: { text: interpolate(node.text, data) },
+        body: { text: await interpolateAsync(node.text, data) },
         action: {
           buttons: node.options.map((o) => ({
             type: 'reply',
@@ -674,13 +857,13 @@ function buildPersistedContent(node: BotNode, data: BotData): Record<string, unk
   }
   if (node.kind === 'MESSAGE') {
     return {
-      text: { body: interpolate(node.text, data) },
+      text: { body: await interpolateAsync(node.text, data) },
       system: { kind: 'bot-message' },
     };
   }
   if (node.kind === 'CAPTURE') {
     return {
-      text: { body: interpolate(node.text, data) },
+      text: { body: await interpolateAsync(node.text, data) },
       system: { kind: 'bot-capture', saveAs: node.saveAs },
     };
   }
@@ -689,15 +872,18 @@ function buildPersistedContent(node: BotNode, data: BotData): Record<string, unk
   }
   if (node.kind === 'HANDOFF') {
     return {
-      text: { body: interpolate(node.text, data) },
+      text: { body: await interpolateAsync(node.text, data) },
       system: { kind: 'bot-handoff', escalate: !!node.escalate },
     };
   }
   return {};
 }
 
-function buildMediaContent(node: BotMediaNode, data: BotData): Record<string, unknown> {
-  const caption = node.caption ? interpolate(node.caption, data) : undefined;
+async function buildMediaContent(
+  node: BotMediaNode,
+  data: BotData,
+): Promise<Record<string, unknown>> {
+  const caption = node.caption ? await interpolateAsync(node.caption, data) : undefined;
   const inner: Record<string, unknown> = { id: node.mediaId };
   if (caption) inner.caption = caption;
   if (node.mediaType === 'document' && node.filename) inner.filename = node.filename;

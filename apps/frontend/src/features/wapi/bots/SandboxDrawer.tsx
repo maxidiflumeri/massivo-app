@@ -29,8 +29,9 @@ import ScienceIcon from '@mui/icons-material/Science';
 import TouchAppIcon from '@mui/icons-material/TouchApp';
 import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
+import { useConfirm } from '../../../feedback/ConfirmProvider';
 import { botApi } from './api';
-import type { SandboxOutMessage, SandboxSource } from './types';
+import type { SandboxHttpCallSummary, SandboxOutMessage, SandboxSource } from './types';
 
 interface Props {
   open: boolean;
@@ -55,6 +56,7 @@ interface ChatItem {
 }
 
 const STORAGE_PHONE_KEY = 'massivo:bot-sandbox:phone';
+const STORAGE_HTTP_REAL_ACCEPTED = 'massivo:bot-sandbox:http-real-accepted';
 
 function defaultPhone(): string {
   try {
@@ -66,11 +68,21 @@ function defaultPhone(): string {
   return '5491100000000';
 }
 
+function hasAcceptedRealMode(): boolean {
+  try {
+    return window.localStorage.getItem(STORAGE_HTTP_REAL_ACCEPTED) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished }: Props) {
   const api = useApi();
   const notify = useNotify();
+  const confirm = useConfirm();
   const [phone, setPhone] = useState<string>(defaultPhone);
   const [source, setSource] = useState<SandboxSource>(hasDraft ? 'draft' : 'published');
+  const [httpMode, setHttpMode] = useState<'mock' | 'real'>('mock');
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -80,6 +92,7 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
   const [payloadInput, setPayloadInput] = useState('');
   const [sourceUsed, setSourceUsed] = useState<'draft' | 'published' | 'none' | null>(null);
   const [sessionInfo, setSessionInfo] = useState<{ topicId: string; nodeId: string } | null>(null);
+  const [recentHttpCalls, setRecentHttpCalls] = useState<SandboxHttpCallSummary[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const seqRef = useRef(0);
 
@@ -91,6 +104,8 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
     setUnavailable(false);
     setSourceUsed(null);
     setSessionInfo(null);
+    setRecentHttpCalls([]);
+    setHttpMode('mock'); // Cada apertura empieza en Mock por seguridad.
     seqRef.current = 0;
     // Default source: draft si existe, sino published.
     setSource(hasDraft ? 'draft' : 'published');
@@ -123,6 +138,7 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
         const r = await botApi.sandboxStep(api, configId, {
           phone,
           source,
+          httpMode,
           reset: opts.reset,
           resetOnly: opts.resetOnly,
           inbound,
@@ -130,6 +146,7 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
         setSourceUsed(r.sourceUsed);
         setUnavailable(!!r.unavailable);
         setSessionInfo(r.session ? { topicId: r.session.topicId, nodeId: r.session.nodeId } : null);
+        setRecentHttpCalls(r.httpCalls ?? []);
         if (r.unavailable) {
           setError('No hay flow para correr en esta fuente.');
           return;
@@ -151,7 +168,31 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
         setBusy(false);
       }
     },
-    [api, configId, notify, phone, source],
+    [api, configId, notify, phone, source, httpMode],
+  );
+
+  const handleHttpModeChange = useCallback(
+    async (next: 'mock' | 'real') => {
+      if (next === 'real' && !hasAcceptedRealMode()) {
+        const ok = await confirm({
+          title: 'Activar modo HTTP Real',
+          message:
+            'En modo Real, los nodos HTTP del bot ejecutarán requests reales contra las URLs configuradas — ' +
+            'pueden consumir cuota de APIs externas, mutar datos, disparar webhooks remotos. ' +
+            'Estás en sandbox así que NO se envía nada a WhatsApp/Meta, pero las APIs externas SÍ reciben tráfico. ¿Continuar?',
+          destructive: true,
+          confirmText: 'Activar HTTP Real',
+        });
+        if (!ok) return;
+        try {
+          window.localStorage.setItem(STORAGE_HTTP_REAL_ACCEPTED, 'true');
+        } catch {
+          /* ignore */
+        }
+      }
+      setHttpMode(next);
+    },
+    [confirm],
   );
 
   const handleSendText = useCallback(async () => {
@@ -238,15 +279,15 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
           </IconButton>
         </Stack>
 
-        <Stack direction="row" gap={1} sx={{ p: 1.25, alignItems: 'center' }}>
+        <Stack direction="row" gap={1} sx={{ p: 1.25, alignItems: 'center', flexWrap: 'wrap' }}>
           <TextField
             label="Teléfono simulado"
             size="small"
             value={phone}
             onChange={(e) => setPhone(e.target.value.replace(/[^\d+]/g, '').slice(0, 40))}
-            sx={{ flex: 1 }}
+            sx={{ flex: '1 1 180px', minWidth: 140 }}
           />
-          <FormControl size="small" sx={{ minWidth: 140 }}>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel id="sandbox-source-label">Fuente</InputLabel>
             <Select
               labelId="sandbox-source-label"
@@ -261,7 +302,24 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
               ))}
             </Select>
           </FormControl>
+          <FormControl size="small" sx={{ minWidth: 110 }}>
+            <InputLabel id="sandbox-httpmode-label">HTTP</InputLabel>
+            <Select
+              labelId="sandbox-httpmode-label"
+              label="HTTP"
+              value={httpMode}
+              onChange={(e) => void handleHttpModeChange(e.target.value as 'mock' | 'real')}
+            >
+              <MenuItem value="mock">Mock</MenuItem>
+              <MenuItem value="real">Real</MenuItem>
+            </Select>
+          </FormControl>
         </Stack>
+        {httpMode === 'real' && (
+          <Alert severity="warning" sx={{ mx: 1.25, mb: 0.5 }}>
+            HTTP Real activo: los nodos HTTP harán requests contra las URLs configuradas.
+          </Alert>
+        )}
 
         {(sourceUsed || sessionInfo) && (
           <Stack direction="row" gap={0.75} sx={{ px: 1.25, pb: 0.5, flexWrap: 'wrap' }}>
@@ -282,6 +340,32 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
             )}
             {!sessionInfo && sourceUsed && sourceUsed !== 'none' && (
               <Chip size="small" label="sin sesión" variant="outlined" />
+            )}
+          </Stack>
+        )}
+
+        {recentHttpCalls.length > 0 && (
+          <Stack gap={0.25} sx={{ px: 1.25, pb: 0.5 }}>
+            <Typography variant="caption" color="text.secondary">
+              HTTP en este step ({recentHttpCalls.length}):
+            </Typography>
+            {recentHttpCalls.map((c) => (
+              <Chip
+                key={`${c.nodeId}-${c.durationMs}`}
+                size="small"
+                variant="outlined"
+                color={c.ok ? 'success' : 'error'}
+                label={`${c.mode} · ${c.method} ${c.urlHost} → ${c.status || c.error || '0'} · ${c.durationMs}ms`}
+                sx={{ fontSize: 10, justifyContent: 'flex-start' }}
+              />
+            ))}
+            {recentHttpCalls.some((c) => c.error === 'mock-undefined') && httpMode === 'mock' && (
+              <Alert severity="info" sx={{ mt: 0.5, py: 0, fontSize: 11 }}>
+                <code>mock-undefined</code>: el nodo HTTP no tiene{' '}
+                <strong>Respuesta simulada</strong> configurada. Activala en el editor del
+                nodo, o cambiá <strong>HTTP</strong> a <strong>Real</strong> para pegar a
+                la API real.
+              </Alert>
             )}
           </Stack>
         )}

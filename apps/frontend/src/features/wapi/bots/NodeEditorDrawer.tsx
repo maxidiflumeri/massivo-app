@@ -32,7 +32,10 @@ import type {
   BotConditionNode,
   BotConditionWhen,
   BotFlow,
+  BotForeachNode,
   BotHandoffNode,
+  BotHttpMethod,
+  BotHttpNode,
   BotMediaKind,
   BotMediaNode,
   BotMenuNode,
@@ -97,7 +100,12 @@ export function NodeEditorDrawer({
   const allIds = Object.keys(flow.nodes);
   const isStart = selectedId === flow.startNodeId;
   const showText =
-    node && node.kind !== 'MEDIA' && node.kind !== 'CONDITION' && node.kind !== 'SET_VAR';
+    node &&
+    node.kind !== 'MEDIA' &&
+    node.kind !== 'CONDITION' &&
+    node.kind !== 'SET_VAR' &&
+    node.kind !== 'HTTP' &&
+    node.kind !== 'FOREACH';
 
   return (
     <Drawer
@@ -174,8 +182,10 @@ export function NodeEditorDrawer({
                   maxRows={8}
                   size="small"
                   inputProps={{ maxLength: 1024 }}
-                  helperText={`${(node as { text: string }).text.length} / 1024 — usá {{var}} para interpolar`}
+                  helperText={`${(node as { text: string }).text.length} / 1024 — {{var}} plano o {{= expr }} JSONata`}
                   variables={variables}
+                  flow={flow}
+                  currentNodeId={selectedId}
                 />
               )}
 
@@ -220,6 +230,8 @@ export function NodeEditorDrawer({
                   topics={availableTopics}
                   variables={variables}
                   onPatch={onPatch}
+                  flow={flow}
+                  currentNodeId={selectedId}
                 />
               )}
 
@@ -232,6 +244,8 @@ export function NodeEditorDrawer({
                   topics={availableTopics}
                   variables={variables}
                   onPatch={onPatch}
+                  flow={flow}
+                  currentNodeId={selectedId}
                 />
               )}
 
@@ -243,6 +257,8 @@ export function NodeEditorDrawer({
                   topics={availableTopics}
                   variables={variables}
                   onPatch={onPatch}
+                  flow={flow}
+                  currentNodeId={selectedId}
                 />
               )}
 
@@ -254,6 +270,34 @@ export function NodeEditorDrawer({
                   topics={availableTopics}
                   variables={variables}
                   onPatch={onPatch}
+                  flow={flow}
+                  currentNodeId={selectedId}
+                />
+              )}
+
+              {node.kind === 'HTTP' && (
+                <HttpEditor
+                  node={node}
+                  allIds={allIds}
+                  selfId={selectedId}
+                  topics={availableTopics}
+                  variables={variables}
+                  onPatch={onPatch}
+                  flow={flow}
+                  currentNodeId={selectedId}
+                />
+              )}
+
+              {node.kind === 'FOREACH' && (
+                <ForeachEditor
+                  node={node}
+                  allIds={allIds}
+                  selfId={selectedId}
+                  topics={availableTopics}
+                  variables={variables}
+                  onPatch={onPatch}
+                  flow={flow}
+                  currentNodeId={selectedId}
                 />
               )}
             </Stack>
@@ -402,6 +446,8 @@ function CaptureEditor({
   topics: TopicOption[];
   variables: BotVariable[];
   onPatch: (patch: Partial<BotNode>) => void;
+  flow?: BotFlow;
+  currentNodeId?: string | null;
 }) {
   const presetValue =
     node.validate?.kind === 'preset' ? node.validate.preset : node.validate?.kind === 'regex' ? '__regex__' : '';
@@ -488,6 +534,8 @@ function MediaEditor({
   topics,
   variables,
   onPatch,
+  flow,
+  currentNodeId,
 }: {
   node: BotMediaNode;
   allIds: string[];
@@ -496,6 +544,8 @@ function MediaEditor({
   topics: TopicOption[];
   variables: BotVariable[];
   onPatch: (patch: Partial<BotNode>) => void;
+  flow?: BotFlow;
+  currentNodeId?: string | null;
 }) {
   const api = useApi();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -581,7 +631,9 @@ function MediaEditor({
           minRows={2}
           maxRows={6}
           inputProps={{ maxLength: 1024 }}
-          helperText="Soporta {{var}}"
+          helperText="Soporta {{var}} y {{= expr }}"
+          flow={flow}
+          currentNodeId={currentNodeId}
           variables={variables}
         />
       )}
@@ -628,6 +680,10 @@ function ConditionEditor({
   topics: TopicOption[];
   variables: BotVariable[];
   onPatch: (patch: Partial<BotNode>) => void;
+  // 4.P — aceptados desde padre para compat; ConditionEditor no usa VarPickerTextField
+  // directamente (sólo selects nativos), pero futuras mejoras pueden agregarlo.
+  flow?: BotFlow;
+  currentNodeId?: string | null;
 }) {
   function patchBranch(idx: number, patch: Partial<BotConditionBranch>) {
     const next = node.branches.map((b, i) => (i === idx ? { ...b, ...patch } : b));
@@ -1051,6 +1107,8 @@ function SetVarEditor({
   topics,
   variables,
   onPatch,
+  flow,
+  currentNodeId,
 }: {
   node: BotSetVarNode;
   allIds: string[];
@@ -1058,6 +1116,8 @@ function SetVarEditor({
   topics: TopicOption[];
   variables: BotVariable[];
   onPatch: (patch: Partial<BotNode>) => void;
+  flow?: BotFlow;
+  currentNodeId?: string | null;
 }) {
   const declared = variables.find((v) => v.name === node.varName);
   const declaredType = declared?.type ?? 'string';
@@ -1125,10 +1185,12 @@ function SetVarEditor({
           inputProps={{ maxLength: 1024 }}
           helperText={
             declared
-              ? 'Soporta {{var}} para interpolar otras variables.'
-              : 'Variable no declarada → se guarda como string. Soporta {{var}}.'
+              ? 'Soporta {{var}} y {{= expr }} JSONata.'
+              : 'Variable no declarada → se guarda como string. Soporta {{var}} y {{= expr }}.'
           }
           variables={variables}
+          flow={flow}
+          currentNodeId={currentNodeId}
         />
       )}
 
@@ -1145,6 +1207,406 @@ function SetVarEditor({
         }
         error={noNext || (!!node.nextNodeId && !node.gotoTopic && !allIds.includes(node.nextNodeId))}
         label="Siguiente nodo"
+      />
+    </>
+  );
+}
+
+// 4.N.3 — Editor del nodo HTTP
+function HttpEditor({
+  node,
+  allIds,
+  selfId,
+  topics,
+  variables,
+  onPatch,
+  flow,
+  currentNodeId,
+}: {
+  node: BotHttpNode;
+  allIds: string[];
+  selfId: string;
+  topics: TopicOption[];
+  variables: BotVariable[];
+  onPatch: (patch: Partial<BotNode>) => void;
+  flow?: BotFlow;
+  currentNodeId?: string | null;
+}) {
+  const [headersDraft, setHeadersDraft] = useState<Array<{ k: string; v: string }>>(() =>
+    Object.entries(node.headers ?? {}).map(([k, v]) => ({ k, v })),
+  );
+  const [bodyText, setBodyText] = useState<string>(() =>
+    node.body !== undefined ? JSON.stringify(node.body, null, 2) : '',
+  );
+  const [bodyError, setBodyError] = useState<string | null>(null);
+  const [mockBodyText, setMockBodyText] = useState<string>(() =>
+    node.mockResponse?.body !== undefined ? JSON.stringify(node.mockResponse.body, null, 2) : '',
+  );
+  const [mockBodyError, setMockBodyError] = useState<string | null>(null);
+  const [mockOpen, setMockOpen] = useState<boolean>(!!node.mockResponse);
+
+  function commitHeaders(next: Array<{ k: string; v: string }>) {
+    setHeadersDraft(next);
+    const obj: Record<string, string> = {};
+    for (const row of next) {
+      if (row.k.trim()) obj[row.k.trim()] = row.v;
+    }
+    onPatch({ headers: Object.keys(obj).length ? obj : undefined } as Partial<BotHttpNode>);
+  }
+
+  function commitBody(text: string) {
+    setBodyText(text);
+    const t = text.trim();
+    if (!t) {
+      setBodyError(null);
+      onPatch({ body: undefined } as Partial<BotHttpNode>);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(t);
+      setBodyError(null);
+      onPatch({ body: parsed } as Partial<BotHttpNode>);
+    } catch (e) {
+      setBodyError((e as Error).message);
+    }
+  }
+
+  function commitMockBody(text: string) {
+    setMockBodyText(text);
+    const t = text.trim();
+    if (!t) {
+      setMockBodyError(null);
+      onPatch({
+        mockResponse: node.mockResponse
+          ? { status: node.mockResponse.status, body: null }
+          : { status: 200, body: null },
+      } as Partial<BotHttpNode>);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(t);
+      setMockBodyError(null);
+      onPatch({
+        mockResponse: {
+          status: node.mockResponse?.status ?? 200,
+          body: parsed,
+        },
+      } as Partial<BotHttpNode>);
+    } catch (e) {
+      setMockBodyError((e as Error).message);
+    }
+  }
+
+  const noOkPath = !node.nextNodeId && !node.gotoTopic;
+
+  return (
+    <>
+      <Stack direction="row" gap={1} alignItems="center">
+        <FormControl size="small" sx={{ minWidth: 110 }}>
+          <InputLabel id="http-method">Método</InputLabel>
+          <Select
+            labelId="http-method"
+            label="Método"
+            value={node.method}
+            onChange={(e) =>
+              onPatch({ method: e.target.value as BotHttpMethod } as Partial<BotHttpNode>)
+            }
+          >
+            <MenuItem value="GET">GET</MenuItem>
+            <MenuItem value="POST">POST</MenuItem>
+            <MenuItem value="PUT">PUT</MenuItem>
+            <MenuItem value="PATCH">PATCH</MenuItem>
+            <MenuItem value="DELETE">DELETE</MenuItem>
+          </Select>
+        </FormControl>
+        <VarPickerTextField
+          label="URL"
+          size="small"
+          value={node.url}
+          onChange={(v) => onPatch({ url: v } as Partial<BotHttpNode>)}
+          fullWidth
+          inputProps={{ maxLength: 2048 }}
+          flow={flow}
+          currentNodeId={currentNodeId}
+          variables={variables}
+          helperText="Soporta {{var}} y {{= expr }} JSONata. Sólo http(s)://."
+        />
+      </Stack>
+
+      <Typography variant="caption" color="text.secondary">
+        Headers
+      </Typography>
+      <Stack gap={0.5}>
+        {headersDraft.map((row, idx) => {
+          const sensitive = /^(authorization|cookie|x-api-key|proxy-authorization)$/i.test(
+            row.k.trim(),
+          );
+          return (
+            <Stack key={idx} direction="row" gap={0.5} alignItems="center">
+              <TextField
+                size="small"
+                value={row.k}
+                placeholder="Header"
+                onChange={(e) => {
+                  const next = [...headersDraft];
+                  next[idx] = { ...row, k: e.target.value };
+                  commitHeaders(next);
+                }}
+                sx={{ flex: 1 }}
+                error={sensitive}
+                helperText={sensitive ? 'sensible — no logueado' : undefined}
+              />
+              <TextField
+                size="small"
+                value={row.v}
+                placeholder="valor (soporta {{var}})"
+                onChange={(e) => {
+                  const next = [...headersDraft];
+                  next[idx] = { ...row, v: e.target.value };
+                  commitHeaders(next);
+                }}
+                sx={{ flex: 2 }}
+              />
+              <IconButton
+                size="small"
+                onClick={() => commitHeaders(headersDraft.filter((_, i) => i !== idx))}
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+          );
+        })}
+        <Button
+          size="small"
+          startIcon={<AddIcon />}
+          variant="outlined"
+          onClick={() => commitHeaders([...headersDraft, { k: '', v: '' }])}
+        >
+          Agregar header
+        </Button>
+      </Stack>
+
+      {(node.method === 'POST' || node.method === 'PUT' || node.method === 'PATCH') && (
+        <TextField
+          label="Body (JSON)"
+          size="small"
+          multiline
+          minRows={4}
+          maxRows={12}
+          value={bodyText}
+          onChange={(e) => commitBody(e.target.value)}
+          inputProps={{ style: { fontFamily: 'monospace', fontSize: 12 } }}
+          error={!!bodyError}
+          helperText={
+            bodyError
+              ? `JSON inválido: ${bodyError}`
+              : 'JSON. Cada string puede usar {{var}} y {{= expr }} sin romper sintaxis.'
+          }
+          fullWidth
+        />
+      )}
+
+      <Stack direction="row" gap={1}>
+        <TextField
+          label="Timeout (ms)"
+          size="small"
+          type="number"
+          value={node.timeoutMs ?? 5000}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            onPatch({
+              timeoutMs: Number.isFinite(n) ? Math.max(100, Math.min(10_000, n)) : 5000,
+            } as Partial<BotHttpNode>);
+          }}
+          inputProps={{ min: 100, max: 10_000 }}
+          sx={{ width: 140 }}
+        />
+        <VariableNameField
+          label="Guardar en (saveAs)"
+          value={node.saveAs}
+          onChange={(v) => onPatch({ saveAs: v } as Partial<BotHttpNode>)}
+          variables={variables}
+          helperText="Se escribe { ok, status, body, ... }. Usá saveAs.body.path con JSONata."
+        />
+      </Stack>
+
+      <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 1 }}>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={mockOpen}
+              onChange={(e) => {
+                setMockOpen(e.target.checked);
+                if (!e.target.checked) {
+                  setMockBodyText('');
+                  setMockBodyError(null);
+                  onPatch({ mockResponse: undefined } as Partial<BotHttpNode>);
+                } else if (!node.mockResponse) {
+                  onPatch({
+                    mockResponse: { status: 200, body: null },
+                  } as Partial<BotHttpNode>);
+                }
+              }}
+            />
+          }
+          label="Respuesta simulada (sandbox modo Mock)"
+        />
+        {!mockOpen && (
+          <Typography
+            variant="caption"
+            color="warning.main"
+            sx={{ display: 'block', mt: 0.5, mb: 0.5 }}
+          >
+            Sin mock configurado: en el sandbox con HTTP=Mock este nodo va a fallar con
+            error <code>mock-undefined</code>. Para pegar a la API real, cambiá el Select
+            HTTP del sandbox a "Real" (en producción siempre se hace la request real).
+          </Typography>
+        )}
+        {mockOpen && (
+          <Stack gap={1}>
+            <TextField
+              label="Status (100-599)"
+              size="small"
+              type="number"
+              value={node.mockResponse?.status ?? 200}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                onPatch({
+                  mockResponse: {
+                    status: Number.isFinite(n) ? Math.max(100, Math.min(599, n)) : 200,
+                    body: node.mockResponse?.body ?? null,
+                  },
+                } as Partial<BotHttpNode>);
+              }}
+              inputProps={{ min: 100, max: 599 }}
+              sx={{ width: 160 }}
+            />
+            <TextField
+              label="Body JSON (mock)"
+              size="small"
+              multiline
+              minRows={3}
+              maxRows={10}
+              value={mockBodyText}
+              onChange={(e) => commitMockBody(e.target.value)}
+              inputProps={{ style: { fontFamily: 'monospace', fontSize: 12 } }}
+              error={!!mockBodyError}
+              helperText={
+                mockBodyError
+                  ? `JSON inválido: ${mockBodyError}`
+                  : 'Se usa cuando el sandbox está en modo Mock. En prod siempre se hace la request real.'
+              }
+              fullWidth
+            />
+          </Stack>
+        )}
+      </Box>
+
+      <NextOrTopicSelect
+        nextNodeId={node.nextNodeId}
+        gotoTopic={node.gotoTopic}
+        allIds={allIds.filter((id) => id !== selfId)}
+        topics={topics}
+        onChange={(p) =>
+          onPatch({ nextNodeId: p.nextNodeId, gotoTopic: p.gotoTopic } as Partial<BotHttpNode>)
+        }
+        error={noOkPath}
+        label="Si ok → siguiente"
+      />
+      <NextOrTopicSelect
+        nextNodeId={node.errorNodeId}
+        gotoTopic={node.errorGotoTopic}
+        allIds={allIds.filter((id) => id !== selfId)}
+        topics={topics}
+        onChange={(p) =>
+          onPatch({
+            errorNodeId: p.nextNodeId,
+            errorGotoTopic: p.gotoTopic,
+          } as Partial<BotHttpNode>)
+        }
+        label="Si error → siguiente"
+      />
+    </>
+  );
+}
+
+// 4.P.2 — Editor del nodo FOREACH
+function ForeachEditor({
+  node,
+  allIds,
+  selfId,
+  topics,
+  variables,
+  onPatch,
+  flow,
+  currentNodeId,
+}: {
+  node: BotForeachNode;
+  allIds: string[];
+  selfId: string;
+  topics: TopicOption[];
+  variables: BotVariable[];
+  onPatch: (patch: Partial<BotNode>) => void;
+  flow?: BotFlow;
+  currentNodeId?: string | null;
+}) {
+  return (
+    <>
+      <VarPickerTextField
+        label="items (expresión JSONata que devuelva un array)"
+        size="small"
+        value={node.items}
+        onChange={(v) => onPatch({ items: v } as Partial<BotForeachNode>)}
+        inputProps={{ maxLength: 1024, style: { fontFamily: 'monospace', fontSize: 12 } }}
+        fullWidth
+        helperText="Tipeá un path (ej: respuesta.body.pedidos) o usá el picker para insertar variables y funciones."
+        variables={variables}
+        flow={flow}
+        currentNodeId={currentNodeId}
+        rawExpression
+      />
+      <Stack direction="row" gap={1}>
+        <TextField
+          label="itemVar"
+          size="small"
+          value={node.itemVar}
+          onChange={(e) =>
+            onPatch({ itemVar: e.target.value.trim() } as Partial<BotForeachNode>)
+          }
+          fullWidth
+          helperText="Nombre de variable para el item actual."
+        />
+        <TextField
+          label="indexVar (opcional)"
+          size="small"
+          value={node.indexVar ?? ''}
+          onChange={(e) => {
+            const v = e.target.value.trim();
+            onPatch({ indexVar: v || undefined } as Partial<BotForeachNode>);
+          }}
+          fullWidth
+          helperText="0-based."
+        />
+      </Stack>
+      <NextNodeSelect
+        nextNodeId={node.bodyNodeId}
+        allIds={allIds.filter((id) => id !== selfId)}
+        onChange={(v) => onPatch({ bodyNodeId: v ?? '' } as Partial<BotForeachNode>)}
+        label="Body (nodo a ejecutar por cada item)"
+        error={!node.bodyNodeId}
+      />
+      <NextOrTopicSelect
+        nextNodeId={node.doneNodeId}
+        gotoTopic={node.gotoTopic}
+        allIds={allIds.filter((id) => id !== selfId)}
+        topics={topics}
+        onChange={(p) =>
+          onPatch({
+            doneNodeId: p.nextNodeId,
+            gotoTopic: p.gotoTopic,
+          } as Partial<BotForeachNode>)
+        }
+        label="Done (cuando termina el loop)"
       />
     </>
   );

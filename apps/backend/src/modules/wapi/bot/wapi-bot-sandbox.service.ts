@@ -1,22 +1,29 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
-import { interpolate } from './interpolate';
+import { interpolate, interpolateAsync } from './interpolate';
+import { evaluateExpression } from './expression-engine';
 import {
   BOT_MAX_AUTO_CHAIN,
+  BOT_MAX_HTTP_PER_CHAIN,
   BOT_OPTION_PREFIX,
   type BotMediaNode,
   type BotNode,
 } from './wapi-bot.types';
 import {
+  applyForeach,
+  applyHttpResult,
   applySetVar,
   DEFAULT_TOPIC_ID,
   handleCapture,
+  nextLoopReturnNode,
   pickConditionBranch,
   resolveTopics,
   type BotData,
   type ResolvedFlow,
 } from './bot-flow-runtime';
+import { WapiBotHttpExecutor } from './wapi-bot-http-executor.service';
+import { WapiBotMediaFetchService } from './wapi-bot-media-fetch.service';
 import { WapiBotRouterService } from './wapi-bot-router.service';
 
 /**
@@ -62,6 +69,15 @@ export interface SandboxStepInput {
    * `published` = `botTopics`. Default: `draft`.
    */
   source?: 'draft' | 'published';
+  /**
+   * 4.N.3 — Modo de ejecución del executor HTTP en este step.
+   *  - `mock` (default): los nodos HTTP devuelven `node.mockResponse` sin tocar la red.
+   *  - `real`: los nodos HTTP hacen la request real (con SSRF guard + rate limit).
+   *
+   * Default `mock` para que el sandbox NO dispare requests reales por accidente.
+   * El frontend pide confirmación explícita al elegir `real`.
+   */
+  httpMode?: 'mock' | 'real';
   inbound?:
     | { kind: 'text'; body: string }
     | { kind: 'button'; buttonId: string }
@@ -99,6 +115,24 @@ export interface SandboxOutMessage {
   handoff?: { escalate: boolean };
 }
 
+/**
+ * 4.N.3 — Resumen de las llamadas HTTP que se ejecutaron en este step (mock o real).
+ * Se devuelve junto con `messages` para que el SandboxDrawer pueda mostrar un
+ * mini-tray con qué requests pasaron, status y duración. NO incluye body de
+ * response (puede ser grande / sensible).
+ */
+export interface SandboxHttpCallSummary {
+  nodeId: string;
+  topicId: string;
+  urlHost: string;
+  method: string;
+  status: number;
+  ok: boolean;
+  mode: 'mock' | 'real';
+  durationMs: number;
+  error?: string;
+}
+
 export interface SandboxStepResult {
   messages: SandboxOutMessage[];
   session: {
@@ -112,6 +146,8 @@ export interface SandboxStepResult {
   errors?: { scope: string; path: string; message: string }[];
   /** Qué fuente se usó realmente (puede caer a published si no hay draft). */
   sourceUsed: 'draft' | 'published' | 'none';
+  /** 4.N.3 — Llamadas HTTP ejecutadas en este step (mock/real). Vacío si no hubo HTTP. */
+  httpCalls?: SandboxHttpCallSummary[];
 }
 
 interface CfgSnapshot {
@@ -134,6 +170,8 @@ export class WapiBotSandboxService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly router: WapiBotRouterService,
+    private readonly httpExecutor: WapiBotHttpExecutor,
+    private readonly mediaFetch: WapiBotMediaFetchService,
   ) {}
 
   /**
@@ -194,8 +232,8 @@ export class WapiBotSandboxService {
 
     const outgoing: SandboxOutMessage[] = [];
     let outSeq = 0;
-    const emit = (node: BotNode, nodeId: string, topicId: string, data: BotData) => {
-      const msg = buildOutMessage(`${Date.now()}-${outSeq++}`, node, nodeId, topicId, data);
+    const emit = async (node: BotNode, nodeId: string, topicId: string, data: BotData) => {
+      const msg = await buildOutMessage(`${Date.now()}-${outSeq++}`, node, nodeId, topicId, data);
       if (msg) outgoing.push(msg);
     };
 
@@ -292,7 +330,7 @@ export class WapiBotSandboxService {
       const opt = node.options.find((o) => o.id === optionId);
       if (!opt) {
         // Re-emit the menu (option desconocida).
-        emit(node, session.currentNodeId, currentTopicId, data);
+        await emit(node, session.currentNodeId, currentTopicId, data);
         return { messages: outgoing, session: this.snapshotSession(session), sourceUsed };
       }
       const target = followGoto(opt.gotoTopic, opt.nextNodeId, currentTopicId, r.resolved);
@@ -320,11 +358,11 @@ export class WapiBotSandboxService {
           } else if (node.retryNodeId) {
             nextNodeId = node.retryNodeId;
           } else {
-            emit(node, session.currentNodeId, currentTopicId, data);
+            await emit(node, session.currentNodeId, currentTopicId, data);
             return { messages: outgoing, session: this.snapshotSession(session), sourceUsed };
           }
         } else if (node && node.kind === 'MENU') {
-          emit(node, session.currentNodeId, currentTopicId, data);
+          await emit(node, session.currentNodeId, currentTopicId, data);
           return { messages: outgoing, session: this.snapshotSession(session), sourceUsed };
         } else {
           // Sesión inválida — descartar y caer al ruteo de "sin sesión".
@@ -374,12 +412,23 @@ export class WapiBotSandboxService {
     if (!topic) {
       return { messages: outgoing, session: this.snapshotSession(session), sourceUsed };
     }
+    const httpMode: 'mock' | 'real' = input.httpMode ?? 'mock';
+    const httpCalls: SandboxHttpCallSummary[] = [];
+    let httpCallsInChain = 0;
     let currentId: string | null = nextNodeId;
     let finalNode: BotNode | null = null;
     let finalId: string | null = null;
     let finalTopicId: string = topicId;
     for (let i = 0; i < BOT_MAX_AUTO_CHAIN; i++) {
-      if (!currentId) break;
+      if (!currentId) {
+        // 4.P.2 — autoreturn al FOREACH si hay loop activo.
+        const loopReturn = nextLoopReturnNode(data);
+        if (loopReturn) {
+          currentId = loopReturn;
+        } else {
+          break;
+        }
+      }
       const node: BotNode | undefined = topic.flow.nodes[currentId];
       if (!node) break;
       if (node.kind === 'CONDITION') {
@@ -393,11 +442,10 @@ export class WapiBotSandboxService {
           continue;
         }
         currentId = target?.nextNodeId ?? null;
-        if (!currentId) break;
         continue;
       }
       if (node.kind === 'SET_VAR') {
-        data = applySetVar(node, data, r.resolved.variableTypes);
+        data = await applySetVar(node, data, r.resolved.variableTypes);
         if (node.gotoTopic) {
           const next = r.resolved.topics.get(node.gotoTopic);
           if (!next) break;
@@ -407,10 +455,161 @@ export class WapiBotSandboxService {
           continue;
         }
         currentId = node.nextNodeId ?? null;
-        if (!currentId) break;
         continue;
       }
-      emit(node, currentId, topicId, data);
+      if (node.kind === 'HTTP') {
+        httpCallsInChain += 1;
+        if (httpCallsInChain > BOT_MAX_HTTP_PER_CHAIN) {
+          this.logger.warn(
+            `Sandbox chain excedió BOT_MAX_HTTP_PER_CHAIN=${BOT_MAX_HTTP_PER_CHAIN} configId=${configId}`,
+          );
+          break;
+        }
+        const result = await this.httpExecutor.execute(node, data, {
+          mode: httpMode,
+          configId,
+          nodeId: currentId,
+          organizationId: ctx.organizationId,
+        });
+        data = applyHttpResult(node, data, result);
+        // Resumen para que el frontend muestre las requests ejecutadas.
+        let urlHostForLog = node.url;
+        try {
+          urlHostForLog = new URL(node.url).host;
+        } catch {
+          /* keep raw url */
+        }
+        httpCalls.push({
+          nodeId: currentId,
+          topicId,
+          urlHost: urlHostForLog,
+          method: node.method,
+          status: result.status,
+          ok: result.ok,
+          mode: httpMode,
+          durationMs: result.durationMs,
+          ...(result.error ? { error: result.error } : {}),
+        });
+        if (result.ok) {
+          if (node.gotoTopic) {
+            const next = r.resolved.topics.get(node.gotoTopic);
+            if (!next) break;
+            topic = next;
+            topicId = next.id;
+            currentId = next.flow.startNodeId;
+            continue;
+          }
+          currentId = node.nextNodeId ?? null;
+        } else {
+          if (node.errorGotoTopic) {
+            const next = r.resolved.topics.get(node.errorGotoTopic);
+            if (!next) break;
+            topic = next;
+            topicId = next.id;
+            currentId = next.flow.startNodeId;
+            continue;
+          }
+          currentId = node.errorNodeId ?? null;
+        }
+        continue;
+      }
+      if (node.kind === 'MEDIA_FROM_URL') {
+        // Reusa el cap de HTTP por chain (el fetch es HTTP igualmente).
+        httpCallsInChain += 1;
+        if (httpCallsInChain > BOT_MAX_HTTP_PER_CHAIN) {
+          this.logger.warn(
+            `Sandbox chain excedió BOT_MAX_HTTP_PER_CHAIN=${BOT_MAX_HTTP_PER_CHAIN} (MEDIA_FROM_URL) configId=${configId}`,
+          );
+          break;
+        }
+        const fetchResult = await this.mediaFetch.execute(node, data, {
+          mode: httpMode,
+          configId,
+          nodeId: currentId,
+          organizationId: ctx.organizationId,
+        });
+        let urlHostForLog = node.url;
+        try {
+          urlHostForLog = new URL(node.url).host;
+        } catch {
+          /* keep raw url */
+        }
+        httpCalls.push({
+          nodeId: currentId,
+          topicId,
+          urlHost: urlHostForLog,
+          method: 'GET',
+          status: fetchResult.status ?? 0,
+          ok: fetchResult.ok,
+          mode: httpMode,
+          durationMs: fetchResult.durationMs,
+          ...(fetchResult.error ? { error: fetchResult.error } : {}),
+        });
+        if (!fetchResult.ok) {
+          if (node.errorGotoTopic) {
+            const next = r.resolved.topics.get(node.errorGotoTopic);
+            if (!next) break;
+            topic = next;
+            topicId = next.id;
+            currentId = next.flow.startNodeId;
+            continue;
+          }
+          currentId = node.errorNodeId ?? null;
+          continue;
+        }
+        // Syntheticly emit como MEDIA: el frontend renderiza la preview con
+        // el mediaId resultante del fetch+upload. Útil para validar en el
+        // bot designer que el archivo llega bien.
+        const syntheticMedia: BotMediaNode = {
+          kind: 'MEDIA',
+          mediaType: node.mediaType,
+          mediaId: fetchResult.mediaId!,
+          caption: node.caption,
+          filename: fetchResult.filename ?? node.filename,
+          mediaMime: fetchResult.mime,
+          mediaSha256: fetchResult.sha256,
+          mediaSize: fetchResult.size,
+          mediaLocalPath: fetchResult.localPath,
+          nextNodeId: node.nextNodeId,
+          gotoTopic: node.gotoTopic,
+        };
+        await emit(syntheticMedia, currentId, topicId, data);
+        finalNode = node;
+        finalId = currentId;
+        finalTopicId = topicId;
+        if (node.gotoTopic) {
+          const next = r.resolved.topics.get(node.gotoTopic);
+          if (!next) break;
+          topic = next;
+          topicId = next.id;
+          currentId = next.flow.startNodeId;
+          continue;
+        }
+        currentId = node.nextNodeId ?? null;
+        continue;
+      }
+      if (node.kind === 'FOREACH') {
+        const step = await applyForeach(node, currentId, data, (expr, d) =>
+          evaluateExpression(expr, d),
+        );
+        if (step.error) {
+          this.logger.warn(`Sandbox FOREACH ${currentId} configId=${configId} error=${step.error}`);
+          break;
+        }
+        data = step.data;
+        if (step.nextTopicId) {
+          const next = r.resolved.topics.get(step.nextTopicId);
+          if (!next) break;
+          topic = next;
+          topicId = next.id;
+          currentId = next.flow.startNodeId;
+          continue;
+        }
+        currentId = step.nextNodeId;
+        continue;
+      }
+      // Nodos deliverables (MENU/MESSAGE/MEDIA/CAPTURE/HANDOFF).
+      await emit(node, currentId, topicId, data);
       finalNode = node;
       finalId = currentId;
       finalTopicId = topicId;
@@ -426,17 +625,33 @@ export class WapiBotSandboxService {
         currentId = node.nextNodeId ?? null;
         continue;
       }
+      // Terminal sin next: si hay loop activo, volver al FOREACH; si no, salir.
+      const loopReturn = nextLoopReturnNode(data);
+      if (loopReturn) {
+        currentId = loopReturn;
+        continue;
+      }
       break;
     }
 
     if (!finalNode || !finalId) {
-      return { messages: outgoing, session: this.snapshotSession(session), sourceUsed };
+      return {
+        messages: outgoing,
+        session: this.snapshotSession(session),
+        sourceUsed,
+        ...(httpCalls.length ? { httpCalls } : {}),
+      };
     }
 
     if (finalNode.kind === 'HANDOFF') {
       // Fin de la simulación. Borrar sesión.
       store.sessions.delete(key);
-      return { messages: outgoing, session: null, sourceUsed };
+      return {
+        messages: outgoing,
+        session: null,
+        sourceUsed,
+        ...(httpCalls.length ? { httpCalls } : {}),
+      };
     }
 
     // Persistir nueva sesión (MENU o CAPTURE — esperando próximo input).
@@ -447,7 +662,12 @@ export class WapiBotSandboxService {
       lastUsedAt: Date.now(),
     };
     store.sessions.set(key, nextSession);
-    return { messages: outgoing, session: this.snapshotSession(nextSession), sourceUsed };
+    return {
+      messages: outgoing,
+      session: this.snapshotSession(nextSession),
+      sourceUsed,
+      ...(httpCalls.length ? { httpCalls } : {}),
+    };
   }
 
   /** Borra la sesión sandbox para (configId, userId, phone). */
@@ -554,21 +774,32 @@ function followGoto(
   return null;
 }
 
-function buildOutMessage(
+async function buildOutMessage(
   id: string,
   node: BotNode,
   nodeId: string,
   topicId: string,
   data: BotData,
-): SandboxOutMessage | null {
-  if (node.kind === 'CONDITION' || node.kind === 'SET_VAR') return null;
+): Promise<SandboxOutMessage | null> {
+  // Nodos internos sin output al usuario. MEDIA_FROM_URL nunca llega acá porque
+  // el runChain del sandbox lo "promueve" a un BotMediaNode sintético antes de
+  // llamar a emit (paralelo a lo que hace el engine de prod en deliverNode).
+  if (
+    node.kind === 'CONDITION' ||
+    node.kind === 'SET_VAR' ||
+    node.kind === 'HTTP' ||
+    node.kind === 'FOREACH' ||
+    node.kind === 'MEDIA_FROM_URL'
+  ) {
+    return null;
+  }
   if (node.kind === 'MENU') {
     return {
       id,
       nodeId,
       topicId,
       type: 'interactive',
-      body: interpolate(node.text, data),
+      body: await interpolateAsync(node.text, data),
       buttons: node.options
         .slice(0, 3)
         .map((o) => ({ id: `${BOT_OPTION_PREFIX}${o.id}`, title: o.label })),
@@ -583,28 +814,30 @@ function buildOutMessage(
       nodeId,
       topicId,
       type: 'text',
-      body: interpolate(node.text, data),
+      body: await interpolateAsync(node.text, data),
       handoff: { escalate: !!node.escalate },
     };
   }
-  // MESSAGE | CAPTURE — texto plano interpolado.
-  return {
-    id,
-    nodeId,
-    topicId,
-    type: 'text',
-    body: interpolate(node.text, data),
-  };
+  if (node.kind === 'MESSAGE' || node.kind === 'CAPTURE') {
+    return {
+      id,
+      nodeId,
+      topicId,
+      type: 'text',
+      body: await interpolateAsync(node.text, data),
+    };
+  }
+  return null;
 }
 
-function buildMediaOut(
+async function buildMediaOut(
   id: string,
   node: BotMediaNode,
   nodeId: string,
   topicId: string,
   data: BotData,
-): SandboxOutMessage {
-  const caption = node.caption ? interpolate(node.caption, data) : '';
+): Promise<SandboxOutMessage> {
+  const caption = node.caption ? await interpolateAsync(node.caption, data) : '';
   return {
     id,
     nodeId,

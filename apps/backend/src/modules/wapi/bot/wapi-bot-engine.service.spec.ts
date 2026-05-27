@@ -102,6 +102,14 @@ describe('WapiBotEngineService', () => {
       assertEnabled: jest.fn().mockResolvedValue(undefined),
     };
     const router = { resolve: jest.fn().mockReturnValue(null) };
+    const httpExecutor = {
+      execute: jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: null,
+        durationMs: 0,
+      }),
+    };
     svc = new WapiBotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
@@ -109,6 +117,8 @@ describe('WapiBotEngineService', () => {
       encryption as never,
       feature as never,
       router as never,
+      httpExecutor as never,
+      { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
     );
   });
 
@@ -891,6 +901,15 @@ describe('WapiBotEngineService', () => {
       encryption as never,
       feature as never,
       routerMock as never,
+      {
+        execute: jest.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          body: null,
+          durationMs: 0,
+        }),
+      } as never,
+      { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
     );
     const cfgMulti = {
       ...cfg,
@@ -973,6 +992,15 @@ describe('WapiBotEngineService', () => {
       encryption as never,
       feature as never,
       routerMock as never,
+      {
+        execute: jest.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          body: null,
+          durationMs: 0,
+        }),
+      } as never,
+      { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
     );
     const out = await withTenant(() =>
       localSvc.handle(cfg, {

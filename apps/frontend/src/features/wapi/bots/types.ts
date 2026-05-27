@@ -10,8 +10,11 @@ export type BotNodeKind =
   | 'HANDOFF'
   | 'CAPTURE'
   | 'MEDIA'
+  | 'MEDIA_FROM_URL'
   | 'CONDITION'
-  | 'SET_VAR';
+  | 'SET_VAR'
+  | 'HTTP'
+  | 'FOREACH';
 
 export interface BotNodePosition {
   x: number;
@@ -131,14 +134,72 @@ export interface BotSetVarNode {
   position?: BotNodePosition;
 }
 
+// 4.N.3 — HTTP
+export type BotHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export interface BotHttpMockResponse {
+  status: number;
+  body: unknown;
+}
+
+export interface BotHttpNode {
+  kind: 'HTTP';
+  method: BotHttpMethod;
+  url: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+  timeoutMs?: number;
+  saveAs: string;
+  mockResponse?: BotHttpMockResponse;
+  nextNodeId?: string;
+  errorNodeId?: string;
+  gotoTopic?: string;
+  errorGotoTopic?: string;
+  position?: BotNodePosition;
+}
+
+// 4.P.3 — MEDIA_FROM_URL: descarga binario externo + upload a Meta + envía como MEDIA.
+// Editor visual: por ahora se administra solo desde seed/API. El editor lo carga
+// pero no muestra panel de configuración propio (lo trata como nodo "opaco").
+export interface BotMediaFromUrlNode {
+  kind: 'MEDIA_FROM_URL';
+  mediaType: BotMediaKind;
+  url: string;
+  headers?: Record<string, string>;
+  caption?: string;
+  filename?: string;
+  timeoutMs?: number;
+  mockMediaId?: string;
+  nextNodeId?: string;
+  errorNodeId?: string;
+  gotoTopic?: string;
+  errorGotoTopic?: string;
+  position?: BotNodePosition;
+}
+
+// 4.P.2 — FOREACH
+export interface BotForeachNode {
+  kind: 'FOREACH';
+  items: string;
+  itemVar: string;
+  indexVar?: string;
+  bodyNodeId: string;
+  doneNodeId?: string;
+  gotoTopic?: string;
+  position?: BotNodePosition;
+}
+
 export type BotNode =
   | BotMenuNode
   | BotMessageNode
   | BotHandoffNode
   | BotCaptureNode
   | BotMediaNode
+  | BotMediaFromUrlNode
   | BotConditionNode
-  | BotSetVarNode;
+  | BotSetVarNode
+  | BotHttpNode
+  | BotForeachNode;
 
 export interface BotFlow {
   startNodeId: string;
@@ -238,7 +299,22 @@ export interface SandboxStepRequest {
   reset?: boolean;
   resetOnly?: boolean;
   source?: SandboxSource;
+  /** 4.N.3 — Modo del executor HTTP. Default 'mock' en frontend. */
+  httpMode?: 'mock' | 'real';
   inbound?: SandboxInbound;
+}
+
+// 4.N.3 — Resumen de llamadas HTTP ejecutadas en el step (sandbox).
+export interface SandboxHttpCallSummary {
+  nodeId: string;
+  topicId: string;
+  urlHost: string;
+  method: string;
+  status: number;
+  ok: boolean;
+  mode: 'mock' | 'real';
+  durationMs: number;
+  error?: string;
 }
 
 export interface SandboxOutMessage {
@@ -268,6 +344,8 @@ export interface SandboxStepResponse {
   unavailable?: boolean;
   errors?: { scope: string; path: string; message: string }[];
   sourceUsed: 'draft' | 'published' | 'none';
+  /** 4.N.3 — Llamadas HTTP ejecutadas en este step (mock/real). */
+  httpCalls?: SandboxHttpCallSummary[];
 }
 
 export interface BotMediaUploadResult {

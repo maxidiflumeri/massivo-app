@@ -21,6 +21,122 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 4.N.3 + 4.P — Nodo HTTP del bot, motor de expresiones JSONata y nodo FOREACH ✅
+
+Cierra el módulo "consultas externas" del bot designer. El flow ahora puede consultar APIs externas (con SSRF guard + rate limit + audit), navegar respuestas complejas con expresiones JSONata, e iterar arrays con un nodo FOREACH dedicado. El sandbox tiene un toggle Mock/Real para que el operador pueda probar primero con respuestas hardcoded en el nodo y después activar requests reales sin tener que cablear una WapiConfig de test.
+
+#### Added
+
+##### `apps/backend/src/modules/wapi/bot/expression-engine.ts` (+ spec)
+Motor de expresiones JSONata 2.x sandbox (sin eval, sin acceso a globals, ~100 funciones built-in). Tres funciones públicas:
+- `compile(expr)` — devuelve `Expression` cacheada (cap 500, vacía al llenarse).
+- `evaluateExpression(expr, data)` — async, devuelve el valor crudo (boolean/array/object/etc).
+- `interpolateExpressionTokens(template, data)` — reemplaza `{{= expr }}` con representación string, evalúa todos los tokens en paralelo.
+
+Sintaxis opt-in: `{{= expr }}` activa el evaluator; `{{var}}` plano sigue funcionando como antes (retro-compat total con flows ya guardados). Objetos/arrays se serializan a JSON al stringificar; expresiones que tiran en runtime → string vacío (alineado con el comportamiento de `{{var}}` ausente). 24 specs.
+
+##### `apps/backend/src/modules/wapi/bot/wapi-bot-http-ssrf.ts` (+ spec)
+SSRF guard puro: blocklist IPv4 (loopback, 10/8, 100.64/10 CGNAT, 127/8, 169.254/16 IMDS, 172.16/12, 192.168/16, 192.0/24, 198.18/15, 224/4 multicast, 240/4 reserved, broadcast) + IPv6 (::1, fc00::/7 ULA, fe80::/10 link-local, ff00::/8 multicast, 2001:db8::/32 doc, 64:ff9b::/96 NAT64, IPv4-mapped ::ffff:* delegado al validator IPv4). `resolveAndValidate(hostname, allowPrivate)` hace DNS lookup propio, valida la IP resuelta y la devuelve; el caller (executor) la usa como `connect.lookup` del undici Agent → **protección anti DNS rebinding** (el Agent no re-resuelve, usa la IP ya validada). 48 specs.
+
+##### `apps/backend/src/modules/wapi/bot/wapi-bot-http-rate-limiter.service.ts`
+Token bucket por org en memoria. Lazy refill proporcional al tiempo transcurrido. Capacity configurable vía env `WAPI_BOT_HTTP_PER_ORG_PER_MINUTE` (default 60). Orgs distintas tienen buckets separados.
+
+##### `apps/backend/src/modules/wapi/bot/wapi-bot-http-executor.service.ts` (+ spec)
+Servicio Nest que ejecuta nodos HTTP. Dos modos:
+- `mock`: devuelve `node.mockResponse` o `{ ok:false, error:'mock-undefined' }`. No toca la red, no toca el rate limiter, no audita.
+- `real`: rate-limit per-org → interpolación url/headers/body con `interpolateAsync` (soporta `{{var}}` + `{{= expr }}` JSONata; el body se interpola por leaf string preservando estructura JSON sintácticamente) → URL parse (scheme http/https, http bloqueado en `NODE_ENV=production`) → `resolveAndValidate` (anti-rebinding) → undici fetch con dispatcher custom (la IP resuelta se pasa al `connect.lookup` del Agent) → timeout AbortController clamp [100, 10_000] ms → lectura streaming con cap 1 MB → `redirect: 'manual'` (302 devuelve `redirect-not-followed`) → audit log `wapi.bot.http.executed` con `urlHost`/`method`/`status`/`ok`/`mode`/`durationMs` (NUNCA url completa con querystring ni headers sensibles).
+
+Códigos de error sintéticos (todos como response, nunca exception al caller): `mock-undefined`, `feature-disabled`, `rate-limited`, `interpolation-failed`, `invalid-url`, `invalid-scheme`, `http-not-allowed-in-prod`, `ssrf-blocked`, `redirect-not-followed`, `response-too-large`, `timeout`, `network-error`.
+
+Tests con `http.createServer` real en localhost (no nock): GET/POST con response JSON/text/binario, interpolación url/headers/body JSON-safe (incluso con `"` en valores), todos los errores sintéticos, audit log solo en modo real. 19 specs.
+
+##### Tipo `BotHttpNode` y `BotForeachNode` en `wapi-bot.types.ts` + frontend `types.ts`
+- `BotHttpNode`: `kind: 'HTTP'`, `method`, `url`, `headers?`, `body?` (objeto JSON, no string), `timeoutMs?` (clamp 100..10000), `saveAs`, `mockResponse?` (`{status:100..599, body}`), `nextNodeId?`/`errorNodeId?`, `gotoTopic?`/`errorGotoTopic?`. La response se guarda en `session.data[saveAs]` como `{ ok, status, body, error?, durationMs }` + flatten `${saveAs}_ok` / `${saveAs}_status` / `${saveAs}_error` (compat con CONDITION que sólo lee tipos primitivos).
+- `BotForeachNode`: `kind: 'FOREACH'`, `items` (expresión JSONata), `itemVar`, `indexVar?`, `bodyNodeId`, `doneNodeId?`/`gotoTopic?`.
+
+Validators backend + cliente espejado en `validateClient.ts` (cliente importa `jsonata` para validar sintaxis de `items` antes de roundtrip al server). Cross-topic check para `gotoTopic`/`errorGotoTopic`. Auto-import en `inferImplicitVariables` de `saveAs` (HTTP) y `itemVar`/`indexVar` (FOREACH).
+
+##### `applyHttpResult` y `applyForeach` en `bot-flow-runtime.ts` (+ spec)
+Helpers puros compartidos por engine y sandbox. `applyForeach` administra un stack `data._loops` con frames `{ foreachNodeId, index, items, itemVar, indexVar, prevItem, prevIndex }`: primera entrada evalúa items con JSONata, asigna primer item, pushea frame; re-entradas avanzan índice; al terminar pop frame y restaura valores previos LIFO. Caps `WAPI_BOT_FOREACH_MAX_ITERATIONS` (default 100) y `WAPI_BOT_FOREACH_MAX_NESTED` (default 3). `nextLoopReturnNode(data)` devuelve el `foreachNodeId` topmost del stack — el engine lo usa para "autoreturn implícito": cuando un sub-flow del FOREACH cae a un terminal sin nextNodeId, el chain salta de vuelta al FOREACH para la siguiente iteración sin que el usuario tenga que cablear la edge de retorno. 17 specs.
+
+##### Constantes `BOT_MAX_HTTP_PER_CHAIN=3` y `BOT_MAX_AUTO_CHAIN` subido de 8 → 32
+El cap general crece porque FOREACH con 10 items y body de 1 nodo ya consume 21 steps. `BOT_MAX_HTTP_PER_CHAIN` es defensa extra contra runaway (webhook de Meta corta a ~20s; 3 HTTPs × 5s = 15s + I/O DB ya está al borde).
+
+##### UI — `apps/frontend/src/features/wapi/bots/`
+- `nodeViews.tsx` — `HttpNodeView` (header `info.dark` + `HttpIcon`, chips method/saveAs/mock-ready, 2 handles source `next`/`error`) + `ForeachNodeView` (header `grey.700` + `LoopIcon` con borde dashed, chip `items` + `item`/`idx`, 2 handles `body`/`done`).
+- `NodeEditorDrawer.tsx` — `HttpEditor` (Select method + URL con `VarPickerTextField` y soporte `{{= expr }}` en helper, lista key/value de headers con warning visual en headers sensibles, body como `TextField multiline` con validación JSON on-blur, `timeoutMs` con clamp, switch toggleable "Respuesta simulada" con status + body JSON validados, `NextOrTopicSelect` para ramas ok/error). `ForeachEditor` (TextField `items` con helper de ejemplos JSONata, `itemVar`/`indexVar`, `NextNodeSelect` para `bodyNodeId`, `NextOrTopicSelect` para `doneNodeId`).
+- `WapiBotsPage.tsx` — `defaultNodeFor` extendido, `nodeIdPrefix` (`http`/`loop`), botones toolbar HTTP/FOREACH con `HttpIcon`/`LoopIcon`, `rfNodes` mapea `HTTP→http` y `FOREACH→foreach`, `rfEdges` agrega aristas `next` (verde) + `error` (rojo) para HTTP y `body` (azul) + `done` (gris dashed) para FOREACH, `applyConnection` y `disconnectEdges` con casos nuevos, cleanup de refs en delete cubre `nextNodeId`/`errorNodeId`/`bodyNodeId`/`doneNodeId`, `rewriteGotoTopic` cubre `gotoTopic`/`errorGotoTopic`.
+- `SandboxDrawer.tsx` — Select **HTTP: Mock | Real** al lado del Select Fuente; primera elección de Real abre confirm dialog destructive "ejecuta requests reales, pueden consumir cuota / mutar datos" y persiste aceptación en `localStorage` (`massivo:bot-sandbox:http-real-accepted`); chip warning persistente cuando Real está activo; cada step muestra una mini-bandeja con `recentHttpCalls` (chips color-coded ok/error con `mode · METHOD host → status · durationMs`). Default Mock en cada apertura por seguridad.
+- `flowLayout.ts` — `nodeHeight` y edges para HTTP/FOREACH en dagre.
+- `implicitVars.ts` — recolecta `saveAs` (HTTP) y `itemVar`/`indexVar` (FOREACH).
+
+##### `SandboxStepDto.httpMode` + `SandboxStepResult.httpCalls`
+Backend DTO valida `httpMode: 'mock'|'real'` (default mock). Response devuelve `httpCalls: SandboxHttpCallSummary[]` cuando hubo HTTPs en el step (vacío si no, omitido para mantener compat de payload chico). El controller `POST /api/wapi/configs/:id/bot/sandbox/step` pasa el flag al service.
+
+#### Changed
+
+##### `interpolate.ts` — async opt-in
+`interpolate(template, vars)` se mantiene sync para retro-compat. Nueva `interpolateAsync(template, vars)` detecta `{{=` y delega a `interpolateExpressionTokens` antes de aplicar el `{{var}}` plano. Si el template no contiene `{{=`, fast-path sync sin promise overhead. 17 specs.
+
+##### `WapiBotEngineService.runChain` y `WapiBotSandboxService.step` — ejecutan HTTP/FOREACH
+Ambos casos nuevos:
+- HTTP: contador `httpCallsInChain` con cap, llama `httpExecutor.execute(node, data, { mode: 'real'|httpMode, configId, nodeId, organizationId })`, aplica `applyHttpResult`, branch por `result.ok` → `nextNodeId|errorNodeId|gotoTopic|errorGotoTopic`. Engine real **siempre** usa `mode: 'real'` (NO se respeta `cfg.isTestMode` para HTTP — `isTestMode` significa "no toques Meta", no "no toques otras APIs"). Sandbox respeta `input.httpMode ?? 'mock'`.
+- FOREACH: llama `applyForeach(node, currentId, data, evaluator)` con `evaluator` que es `evaluateExpression` (JSONata). Maneja `nextTopicId` (cross-topic al terminar) y `error` (`items-expr-failed`/`too-many-items`/`max-nested-loops`).
+
+Loop autoreturn implícito: al final de cada iteración del `for`, si `currentId == null` o un nodo terminal sin next se topó, `nextLoopReturnNode(data)` se consulta y, si hay loop activo, `currentId` se setea al `foreachNodeId` topmost para continuar el ciclo.
+
+##### `WapiBotEngineService.deliverNode` y `buildPersistedContent` — async + `interpolateAsync`
+Todas las llamadas a `interpolate(node.text, data)` para MESSAGE/MENU/CAPTURE/MEDIA caption/HANDOFF pasaron a `await interpolateAsync(...)`. `buildPersistedContent` y `buildMediaContent` ahora son async. Permite usar `{{= cliente.body.nombre }}` en cualquier campo de texto del flow.
+
+Mismo cambio en `WapiBotSandboxService.buildOutMessage` + `buildMediaOut` + `emit`.
+
+##### `WapiBotEngineService` constructor — `+1 arg (httpExecutor)`
+Nuevo parámetro `WapiBotHttpExecutor`. Mocks de specs actualizados (3 instancias en `wapi-bot-engine.service.spec.ts`).
+
+##### `WapiBotSandboxService` constructor — `+1 arg (httpExecutor)`
+Idem. 6 instancias actualizadas en `wapi-bot-sandbox.service.spec.ts` con `sed`.
+
+##### `WapiModule` providers
+Suma `WapiBotHttpExecutor` y `WapiBotHttpRateLimiterService`. `AuditLogModule` es `@Global` así que `AuditLogService` se inyecta directo sin import explícito.
+
+#### Infra
+
+- Backend: `+jsonata@^2.2.1`, `+undici@^7.x`.
+- Frontend: `+jsonata@^2.2.1` (para validación de sintaxis en el editor).
+- Env vars nuevas (todas opcionales con defaults):
+  - `WAPI_BOT_HTTP_ENABLED=true` — gate del feature.
+  - `WAPI_BOT_HTTP_ALLOW_PRIVATE_IPS=false` — sólo dev local (permite apuntar a `localhost:4000` con mock-api).
+  - `WAPI_BOT_HTTP_PER_ORG_PER_MINUTE=60` — token bucket capacity.
+  - `WAPI_BOT_FOREACH_MAX_ITERATIONS=100` — cap items por loop.
+  - `WAPI_BOT_FOREACH_MAX_NESTED=3` — profundidad máxima de loops anidados.
+
+#### Tests
+
+**709/709 backend tests verde** (61 suites). Nuevos: expression-engine.spec (24), wapi-bot-http-ssrf.spec (48), wapi-bot-http-executor.service.spec (19), bot-flow-runtime.spec (17), interpolate.spec (+8 para async). Frontend typecheck verde.
+
+#### 4.P.3 — Nodo MEDIA_FROM_URL + SET_VAR async con JSONata
+
+##### `apps/backend/src/modules/wapi/bot/wapi-bot-media-fetch.service.ts` — MEDIA_FROM_URL (4.P.3)
+Nodo nuevo del bot que descarga un binario desde una URL externa (mismas defensas que HTTP node: SSRF guard + rate limit per-org + DNS anti-rebinding + timeout clamp [1000, 30000]ms), detecta MIME por magic bytes (PDF, JPEG, PNG, GIF, WEBP, MP4) con fallback al default del `mediaType` declarado, valida contra `ALLOWED_MIMES_BY_TYPE`, sube a Meta vía `WapiMediaService.uploadToMeta`, y delega el envío al pipeline normal de `deliverNode` construyendo un `BotMediaNode` sintético con el `mediaId` resultante. Audit log `wapi.bot.media-from-url.executed`.
+
+Diseñado para APIs que devuelven binarios sin `Content-Type` correcto (caso real: infraccionesba.gba.gob.ar entrega PDFs sin header → el browser no los renderiza si se manda como link). Códigos de error: `feature-disabled`, `rate-limited`, `interpolation-failed`, `invalid-url`, `invalid-scheme`, `http-not-allowed-in-prod`, `ssrf-blocked`, `timeout`, `network-error`, `response-too-large`, `response-empty`, `redirect-not-followed`, `http-error`, `mime-not-allowed`, `upload-failed`, `mock-undefined`.
+
+`deliverNode` acepta un `nodeOverride` opcional para reutilizar el flujo normal de envío + persistencia + emit. Sandbox respeta el toggle `httpMode` (mock devuelve `mockMediaId`).
+
+##### `apps/backend/src/modules/wapi/bot/bot-flow-runtime.ts` — applySetVar async + JSONata
+`applySetVar` pasa a ser async y usa `interpolateAsync`, soporta `{{= expr }}` JSONata además de `{{var}}` plano. Permite derivar variables desde paths anidados (ej. `value: '{{= lastHttp.body.totalRegistros }}'`) y usarlas en CONDITIONs de variable plana downstream. Sin esto, el seguimiento de respuestas HTTP requería un proxy mental.
+
+#### Deferred a 4.P.1
+
+- WHILE loop con cap.
+- TRY/CATCH genérico.
+- Auth secret manager (OAuth/API keys cifradas KMS) — hoy headers en plano.
+- Retries HTTP con backoff jittered.
+- Path nav implícito `{{var.path}}` sin `=`.
+- Persistencia del bucket rate limit en Redis (hoy in-memory por proceso → multi-instance no comparte cuota).
+
+---
+
 ### 5.D.1 — Carga de contactos vía campañas (strong key obligatorio + Contact upsert) ✅
 
 Cambio de modelo de carga: el import standalone de Contacts se elimina; la única vía de carga es **vía creación de campaña** (Email o WAPI). Cada fila del CSV debe traer al menos uno de `externalId` o `dni`, lo que permite que el `Contact` unificado se cree o se mergee correctamente cross-canal y que `EmailContact`/`WapiContact` queden linkeados al mismo Contact (vía `contactId`).

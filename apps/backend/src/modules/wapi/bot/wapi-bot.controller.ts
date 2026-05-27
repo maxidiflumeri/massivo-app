@@ -125,6 +125,7 @@ export class WapiBotController {
       reset: dto.reset,
       resetOnly: dto.resetOnly,
       source: dto.source,
+      httpMode: dto.httpMode,
       inbound: dto.inbound,
     });
   }

@@ -1,3 +1,4 @@
+import jsonata from 'jsonata';
 import type { BotFlow, BotRouter, BotTopic, BotVariable } from './types';
 
 export interface ValidationError {
@@ -63,8 +64,15 @@ export function validateClient(
     errors.push({ path: 'startNodeId', message: 'El nodo inicial no existe' });
   }
   for (const [id, node] of Object.entries(flow.nodes)) {
-    if (node.kind !== 'MEDIA' && node.kind !== 'CONDITION' && node.kind !== 'SET_VAR') {
-      if (!node.text || node.text.trim().length === 0) {
+    if (
+      node.kind !== 'MEDIA' &&
+      node.kind !== 'MEDIA_FROM_URL' &&
+      node.kind !== 'CONDITION' &&
+      node.kind !== 'SET_VAR' &&
+      node.kind !== 'HTTP' &&
+      node.kind !== 'FOREACH'
+    ) {
+      if (!(node as { text?: string }).text || (node as { text: string }).text.trim().length === 0) {
         errors.push({ path: `nodes.${id}.text`, message: 'Texto vacío' });
       }
     }
@@ -233,6 +241,86 @@ export function validateClient(
       });
       checkGoto(node.elseGotoTopic, topicIds, `nodes.${id}.elseGotoTopic`, errors);
       checkRef(flow, id, node.elseNextNodeId, `nodes.${id}.elseNextNodeId`, errors, false);
+    } else if (node.kind === 'HTTP') {
+      if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(node.method)) {
+        errors.push({ path: `nodes.${id}.method`, message: 'método inválido' });
+      }
+      if (!node.url || !node.url.trim()) {
+        errors.push({ path: `nodes.${id}.url`, message: 'requerido' });
+      } else {
+        const hasTokens = /\{\{/.test(node.url);
+        if (!hasTokens) {
+          try {
+            const u = new URL(node.url);
+            if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+              errors.push({ path: `nodes.${id}.url`, message: 'esperado http:// o https://' });
+            }
+          } catch {
+            errors.push({ path: `nodes.${id}.url`, message: 'URL absoluta inválida' });
+          }
+        }
+      }
+      if (!node.saveAs || !node.saveAs.trim()) {
+        errors.push({ path: `nodes.${id}.saveAs`, message: 'requerido' });
+      } else if (!VAR_NAME_RE.test(node.saveAs)) {
+        errors.push({ path: `nodes.${id}.saveAs`, message: 'nombre inválido' });
+      }
+      if (node.timeoutMs !== undefined && node.timeoutMs !== null) {
+        if (
+          typeof node.timeoutMs !== 'number' ||
+          !Number.isInteger(node.timeoutMs) ||
+          node.timeoutMs < 100 ||
+          node.timeoutMs > 10_000
+        ) {
+          errors.push({ path: `nodes.${id}.timeoutMs`, message: 'entero 100..10000 ms' });
+        }
+      }
+      if (node.mockResponse) {
+        const s = node.mockResponse.status;
+        if (!Number.isInteger(s) || s < 100 || s > 599) {
+          errors.push({
+            path: `nodes.${id}.mockResponse.status`,
+            message: 'entero 100..599',
+          });
+        }
+      }
+      checkRef(flow, id, node.nextNodeId, `nodes.${id}.nextNodeId`, errors, false);
+      checkRef(flow, id, node.errorNodeId, `nodes.${id}.errorNodeId`, errors, false);
+      checkGoto(node.gotoTopic, topicIds, `nodes.${id}.gotoTopic`, errors);
+      checkGoto(node.errorGotoTopic, topicIds, `nodes.${id}.errorGotoTopic`, errors);
+    } else if (node.kind === 'FOREACH') {
+      if (!node.items || !node.items.trim()) {
+        errors.push({ path: `nodes.${id}.items`, message: 'requerido (expresión JSONata)' });
+      } else {
+        try {
+          jsonata(node.items);
+        } catch (e) {
+          errors.push({
+            path: `nodes.${id}.items`,
+            message: `JSONata inválida: ${(e as Error).message.slice(0, 80)}`,
+          });
+        }
+      }
+      if (!node.itemVar || !node.itemVar.trim()) {
+        errors.push({ path: `nodes.${id}.itemVar`, message: 'requerido' });
+      } else if (!VAR_NAME_RE.test(node.itemVar)) {
+        errors.push({ path: `nodes.${id}.itemVar`, message: 'nombre inválido' });
+      }
+      if (node.indexVar && !VAR_NAME_RE.test(node.indexVar)) {
+        errors.push({ path: `nodes.${id}.indexVar`, message: 'nombre inválido' });
+      }
+      if (!node.bodyNodeId || !node.bodyNodeId.trim()) {
+        errors.push({ path: `nodes.${id}.bodyNodeId`, message: 'requerido' });
+      } else if (!flow.nodes[node.bodyNodeId]) {
+        errors.push({
+          path: `nodes.${id}.bodyNodeId`,
+          message: `node "${node.bodyNodeId}" no existe`,
+        });
+      } else if (node.bodyNodeId === id) {
+        errors.push({ path: `nodes.${id}.bodyNodeId`, message: 'auto-referencia (loop)' });
+      }
+      checkRef(flow, id, node.doneNodeId, `nodes.${id}.doneNodeId`, errors, false);
+      checkGoto(node.gotoTopic, topicIds, `nodes.${id}.gotoTopic`, errors);
     }
   }
   return { ok: errors.length === 0, errors };

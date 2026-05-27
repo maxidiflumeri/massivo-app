@@ -8,11 +8,15 @@ import KeyboardIcon from '@mui/icons-material/Keyboard';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import FunctionsIcon from '@mui/icons-material/Functions';
+import HttpIcon from '@mui/icons-material/Http';
+import LoopIcon from '@mui/icons-material/Loop';
 import type {
   BotCaptureNode,
   BotConditionNode,
   BotConditionWhen,
+  BotForeachNode,
   BotHandoffNode,
+  BotHttpNode,
   BotMediaNode,
   BotMenuNode,
   BotMessageNode,
@@ -375,6 +379,208 @@ export const SetVarNodeView = memo(function SetVarNodeView(
   );
 });
 
+// 4.N.3 — HTTP (interno, sin output al usuario)
+export const HttpNodeView = memo(function HttpNodeView(
+  props: NodeProps<{ id: string; node: BotHttpNode; isStart: boolean } & BaseNodeData> & {
+    selected?: boolean;
+  },
+) {
+  const { data, selected } = props;
+  const node = data.node;
+  return (
+    <Box
+      sx={{
+        ...wrapperSx,
+        borderColor: selected ? 'primary.main' : 'divider',
+        borderWidth: selected ? 2 : 1,
+      }}
+    >
+      <Handle type="target" position={Position.Left} style={handleSx} />
+      <Box sx={{ ...headerSx, bgcolor: 'info.dark', color: 'common.white' }}>
+        <HttpIcon fontSize="small" />
+        <Typography variant="caption" fontWeight={700}>
+          HTTP · {node.method}
+        </Typography>
+        <Box sx={{ flex: 1 }} />
+        <Chip
+          size="small"
+          label="interno"
+          sx={{ height: 18, bgcolor: 'rgba(255,255,255,0.25)', color: 'common.white', fontSize: 10 }}
+        />
+        {data.isStart && (
+          <Chip
+            size="small"
+            label="START"
+            sx={{ height: 18, bgcolor: 'success.main', color: 'common.white', fontSize: 10 }}
+          />
+        )}
+      </Box>
+      <Box sx={{ px: 1.25, py: 1 }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ fontFamily: 'monospace', display: 'block' }}
+        >
+          {data.id}
+        </Typography>
+        <Typography
+          variant="caption"
+          sx={{ mt: 0.5, display: 'block', fontFamily: 'monospace', wordBreak: 'break-all' }}
+        >
+          {truncate(node.url || 'sin URL', 60)}
+        </Typography>
+        <Stack direction="row" gap={0.5} sx={{ mt: 0.75, flexWrap: 'wrap' }}>
+          <Chip size="small" label={`→ {{${node.saveAs || '?'}}}`} sx={{ height: 20, fontSize: 10 }} />
+          {node.mockResponse && (
+            <Chip
+              size="small"
+              label="mock-ready"
+              variant="outlined"
+              color="warning"
+              sx={{ height: 20, fontSize: 10 }}
+            />
+          )}
+        </Stack>
+        <Box
+          sx={{
+            position: 'relative',
+            mt: 1,
+            py: 0.5,
+            px: 1,
+            bgcolor: 'success.light',
+            color: 'success.contrastText',
+            borderRadius: 1,
+            fontSize: 11,
+          }}
+        >
+          ✓ ok → next
+          <Handle type="source" position={Position.Right} id="next" style={{ ...handleSx, top: '50%' }} />
+        </Box>
+        <Box
+          sx={{
+            position: 'relative',
+            mt: 0.5,
+            py: 0.5,
+            px: 1,
+            bgcolor: 'error.light',
+            color: 'error.contrastText',
+            borderRadius: 1,
+            fontSize: 11,
+          }}
+        >
+          ✗ error → error
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="error"
+            style={{ ...handleSx, top: '50%' }}
+          />
+        </Box>
+      </Box>
+    </Box>
+  );
+});
+
+// 4.P.2 — FOREACH (interno, no entrega mensaje; itera array)
+export const ForeachNodeView = memo(function ForeachNodeView(
+  props: NodeProps<{ id: string; node: BotForeachNode; isStart: boolean } & BaseNodeData> & {
+    selected?: boolean;
+  },
+) {
+  const { data, selected } = props;
+  const node = data.node;
+  return (
+    <Box
+      sx={{
+        ...wrapperSx,
+        borderColor: selected ? 'primary.main' : 'divider',
+        borderWidth: selected ? 2 : 1,
+        borderStyle: 'dashed',
+      }}
+    >
+      <Handle type="target" position={Position.Left} style={handleSx} />
+      <Box sx={{ ...headerSx, bgcolor: 'grey.700', color: 'common.white' }}>
+        <LoopIcon fontSize="small" />
+        <Typography variant="caption" fontWeight={700}>
+          FOREACH
+        </Typography>
+        <Box sx={{ flex: 1 }} />
+        <Chip
+          size="small"
+          label="interno"
+          sx={{ height: 18, bgcolor: 'rgba(255,255,255,0.25)', color: 'common.white', fontSize: 10 }}
+        />
+        {data.isStart && (
+          <Chip
+            size="small"
+            label="START"
+            sx={{ height: 18, bgcolor: 'success.main', color: 'common.white', fontSize: 10 }}
+          />
+        )}
+      </Box>
+      <Box sx={{ px: 1.25, py: 1 }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ fontFamily: 'monospace', display: 'block' }}
+        >
+          {data.id}
+        </Typography>
+        <Typography
+          variant="caption"
+          sx={{ mt: 0.5, display: 'block', fontFamily: 'monospace', wordBreak: 'break-all' }}
+        >
+          items: {truncate(node.items || '?', 40)}
+        </Typography>
+        <Stack direction="row" gap={0.5} sx={{ mt: 0.75, flexWrap: 'wrap' }}>
+          <Chip
+            size="small"
+            label={`item → {{${node.itemVar || '?'}}}`}
+            sx={{ height: 20, fontSize: 10 }}
+          />
+          {node.indexVar && (
+            <Chip
+              size="small"
+              label={`idx → {{${node.indexVar}}}`}
+              sx={{ height: 20, fontSize: 10 }}
+            />
+          )}
+        </Stack>
+        <Box
+          sx={{
+            position: 'relative',
+            mt: 1,
+            py: 0.5,
+            px: 1,
+            bgcolor: 'primary.light',
+            color: 'primary.contrastText',
+            borderRadius: 1,
+            fontSize: 11,
+          }}
+        >
+          ↻ body (cada item)
+          <Handle type="source" position={Position.Right} id="body" style={{ ...handleSx, top: '50%' }} />
+        </Box>
+        <Box
+          sx={{
+            position: 'relative',
+            mt: 0.5,
+            py: 0.5,
+            px: 1,
+            bgcolor: 'action.selected',
+            borderRadius: 1,
+            fontSize: 11,
+            fontStyle: 'italic',
+          }}
+        >
+          done → fin del loop
+          <Handle type="source" position={Position.Right} id="done" style={{ ...handleSx, top: '50%' }} />
+        </Box>
+      </Box>
+    </Box>
+  );
+});
+
 export const nodeTypes = {
   menu: MenuNodeView,
   message: MessageNodeView,
@@ -383,4 +589,6 @@ export const nodeTypes = {
   media: MediaNodeView,
   condition: ConditionNodeView,
   setvar: SetVarNodeView,
+  http: HttpNodeView,
+  foreach: ForeachNodeView,
 };

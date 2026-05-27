@@ -27,6 +27,8 @@ import KeyboardIcon from '@mui/icons-material/Keyboard';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import FunctionsIcon from '@mui/icons-material/Functions';
+import HttpIcon from '@mui/icons-material/Http';
+import LoopIcon from '@mui/icons-material/Loop';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import EditIcon from '@mui/icons-material/Edit';
 import RouteIcon from '@mui/icons-material/Route';
@@ -109,6 +111,16 @@ function defaultNodeFor(kind: BotNodeKind): BotNode {
   if (kind === 'MEDIA') return { kind: 'MEDIA', mediaType: 'image', mediaId: '' };
   if (kind === 'CONDITION') return { kind: 'CONDITION', branches: [] };
   if (kind === 'SET_VAR') return { kind: 'SET_VAR', varName: '', value: '' };
+  if (kind === 'HTTP')
+    return {
+      kind: 'HTTP',
+      method: 'GET',
+      url: '',
+      saveAs: 'respuesta',
+      timeoutMs: 5000,
+    };
+  if (kind === 'FOREACH')
+    return { kind: 'FOREACH', items: '', itemVar: 'item', bodyNodeId: '' };
   return { kind: 'HANDOFF', text: 'Te derivamos.', escalate: true };
 }
 
@@ -119,6 +131,8 @@ function nodeIdPrefix(kind: BotNodeKind): string {
   if (kind === 'MEDIA') return 'media';
   if (kind === 'CONDITION') return 'cond';
   if (kind === 'SET_VAR') return 'set';
+  if (kind === 'HTTP') return 'http';
+  if (kind === 'FOREACH') return 'loop';
   return 'handoff';
 }
 
@@ -251,13 +265,20 @@ function BotsEditorInner() {
   );
 
   const rfNodes: Node[] = useMemo(() => {
-    return Object.entries(flow.nodes).map(([id, node]) => ({
-      id,
-      type: node.kind === 'SET_VAR' ? 'setvar' : node.kind.toLowerCase(),
-      position: node.position ?? { x: 0, y: 0 },
-      data: { id, node, isStart: id === flow.startNodeId },
-      selected: id === selectedNodeId,
-    }));
+    return Object.entries(flow.nodes).map(([id, node]) => {
+      // kind → react-flow `type` (key del map `nodeTypes`).
+      let rfType: string;
+      if (node.kind === 'SET_VAR') rfType = 'setvar';
+      else if (node.kind === 'FOREACH') rfType = 'foreach';
+      else rfType = node.kind.toLowerCase();
+      return {
+        id,
+        type: rfType,
+        position: node.position ?? { x: 0, y: 0 },
+        data: { id, node, isStart: id === flow.startNodeId },
+        selected: id === selectedNodeId,
+      };
+    });
   }, [flow, selectedNodeId]);
 
   const rfEdges: Edge[] = useMemo(() => {
@@ -373,6 +394,58 @@ function BotsEditorInner() {
             markerEnd: { type: MarkerType.ArrowClosed },
             style: { stroke: '#9e9e9e', strokeDasharray: '4 3' },
             labelStyle: { fontSize: 11, fontStyle: 'italic' },
+          });
+        }
+      } else if (node.kind === 'HTTP') {
+        // ok → next (verde), error → error (rojo).
+        if (node.nextNodeId && !node.gotoTopic && flow.nodes[node.nextNodeId]) {
+          out.push({
+            id: `${id}__next__${node.nextNodeId}`,
+            source: id,
+            sourceHandle: 'next',
+            target: node.nextNodeId,
+            label: 'ok',
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: '#2e7d32' },
+            labelStyle: { fontSize: 11 },
+          });
+        }
+        if (node.errorNodeId && !node.errorGotoTopic && flow.nodes[node.errorNodeId]) {
+          out.push({
+            id: `${id}__error__${node.errorNodeId}`,
+            source: id,
+            sourceHandle: 'error',
+            target: node.errorNodeId,
+            label: 'error',
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: '#d32f2f' },
+            labelStyle: { fontSize: 11 },
+          });
+        }
+      } else if (node.kind === 'FOREACH') {
+        // body (loop) → bodyNodeId (azul), done → doneNodeId (gris).
+        if (node.bodyNodeId && flow.nodes[node.bodyNodeId]) {
+          out.push({
+            id: `${id}__body__${node.bodyNodeId}`,
+            source: id,
+            sourceHandle: 'body',
+            target: node.bodyNodeId,
+            label: '↻ body',
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: '#1976d2' },
+            labelStyle: { fontSize: 11 },
+          });
+        }
+        if (node.doneNodeId && !node.gotoTopic && flow.nodes[node.doneNodeId]) {
+          out.push({
+            id: `${id}__done__${node.doneNodeId}`,
+            source: id,
+            sourceHandle: 'done',
+            target: node.doneNodeId,
+            label: 'done',
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: '#9e9e9e', strokeDasharray: '4 3' },
+            labelStyle: { fontSize: 11 },
           });
         }
       }
@@ -513,6 +586,18 @@ function BotsEditorInner() {
           } as BotConditionNode;
         } else if (node.kind === 'SET_VAR' && node.nextNodeId === selectedNodeId) {
           cleaned[id] = { ...node, nextNodeId: undefined };
+        } else if (node.kind === 'HTTP') {
+          const next = node.nextNodeId === selectedNodeId ? undefined : node.nextNodeId;
+          const err = node.errorNodeId === selectedNodeId ? undefined : node.errorNodeId;
+          if (next !== node.nextNodeId || err !== node.errorNodeId) {
+            cleaned[id] = { ...node, nextNodeId: next, errorNodeId: err };
+          } else cleaned[id] = node;
+        } else if (node.kind === 'FOREACH') {
+          const body = node.bodyNodeId === selectedNodeId ? '' : node.bodyNodeId;
+          const done = node.doneNodeId === selectedNodeId ? undefined : node.doneNodeId;
+          if (body !== node.bodyNodeId || done !== node.doneNodeId) {
+            cleaned[id] = { ...node, bodyNodeId: body, doneNodeId: done };
+          } else cleaned[id] = node;
         } else {
           cleaned[id] = node;
         }
@@ -1068,6 +1153,27 @@ function BotsEditorInner() {
               SET VAR
             </Button>
           </Tooltip>
+          <Tooltip title="Agregar HTTP (request a API externa)">
+            <Button
+              size="small"
+              startIcon={<HttpIcon />}
+              onClick={() => addNode('HTTP')}
+              variant="outlined"
+              color="info"
+            >
+              HTTP
+            </Button>
+          </Tooltip>
+          <Tooltip title="Agregar FOREACH (iterar un array)">
+            <Button
+              size="small"
+              startIcon={<LoopIcon />}
+              onClick={() => addNode('FOREACH')}
+              variant="outlined"
+            >
+              FOREACH
+            </Button>
+          </Tooltip>
           <Tooltip title="Agregar HANDOFF">
             <Button
               size="small"
@@ -1395,6 +1501,48 @@ function applyConnection(flow: BotFlow, conn: Connection): BotFlow {
       },
     };
   }
+  if (src.kind === 'HTTP') {
+    if (conn.target === conn.source) return flow;
+    if (conn.sourceHandle === 'next') {
+      return {
+        ...flow,
+        nodes: {
+          ...flow.nodes,
+          [conn.source]: { ...src, nextNodeId: conn.target, gotoTopic: undefined },
+        },
+      };
+    }
+    if (conn.sourceHandle === 'error') {
+      return {
+        ...flow,
+        nodes: {
+          ...flow.nodes,
+          [conn.source]: { ...src, errorNodeId: conn.target, errorGotoTopic: undefined },
+        },
+      };
+    }
+  }
+  if (src.kind === 'FOREACH') {
+    if (conn.target === conn.source) return flow;
+    if (conn.sourceHandle === 'body') {
+      return {
+        ...flow,
+        nodes: {
+          ...flow.nodes,
+          [conn.source]: { ...src, bodyNodeId: conn.target },
+        },
+      };
+    }
+    if (conn.sourceHandle === 'done') {
+      return {
+        ...flow,
+        nodes: {
+          ...flow.nodes,
+          [conn.source]: { ...src, doneNodeId: conn.target, gotoTopic: undefined },
+        },
+      };
+    }
+  }
   return flow;
 }
 
@@ -1445,6 +1593,22 @@ function disconnectEdges(flow: BotFlow, edgeIds: Set<string>): BotFlow {
     } else if (node.kind === 'SET_VAR' && handle === 'next') {
       nextNodes[source] = { ...node, nextNodeId: undefined };
       changed = true;
+    } else if (node.kind === 'HTTP') {
+      if (handle === 'next') {
+        nextNodes[source] = { ...node, nextNodeId: undefined };
+        changed = true;
+      } else if (handle === 'error') {
+        nextNodes[source] = { ...node, errorNodeId: undefined };
+        changed = true;
+      }
+    } else if (node.kind === 'FOREACH') {
+      if (handle === 'body') {
+        nextNodes[source] = { ...node, bodyNodeId: '' };
+        changed = true;
+      } else if (handle === 'done') {
+        nextNodes[source] = { ...node, doneNodeId: undefined };
+        changed = true;
+      }
     }
   }
   return changed ? { ...flow, nodes: nextNodes } : flow;
@@ -1464,11 +1628,19 @@ function rewriteGotoTopic(flow: BotFlow, oldId: string, newId: string): BotFlow 
       node.kind === 'MESSAGE' ||
       node.kind === 'CAPTURE' ||
       node.kind === 'MEDIA' ||
-      node.kind === 'SET_VAR'
+      node.kind === 'SET_VAR' ||
+      node.kind === 'FOREACH'
     ) {
       if (node.gotoTopic === oldId) {
         changed = true;
         nodes[id] = { ...node, gotoTopic: newId } as BotNode;
+      } else nodes[id] = node;
+    } else if (node.kind === 'HTTP') {
+      const newGoto = node.gotoTopic === oldId ? newId : node.gotoTopic;
+      const newErrGoto = node.errorGotoTopic === oldId ? newId : node.errorGotoTopic;
+      if (newGoto !== node.gotoTopic || newErrGoto !== node.errorGotoTopic) {
+        changed = true;
+        nodes[id] = { ...node, gotoTopic: newGoto, errorGotoTopic: newErrGoto };
       } else nodes[id] = node;
     } else if (node.kind === 'CONDITION') {
       const branches = node.branches.map((b) =>

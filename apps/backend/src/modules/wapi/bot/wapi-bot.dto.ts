@@ -89,6 +89,11 @@ export class SandboxStepDto {
   @IsIn(['draft', 'published'])
   source?: 'draft' | 'published';
 
+  /** 4.N.3 — Modo del executor HTTP para este step. Default 'mock'. */
+  @IsOptional()
+  @IsIn(['mock', 'real'])
+  httpMode?: 'mock' | 'real';
+
   @IsOptional()
   @IsObject()
   inbound?:

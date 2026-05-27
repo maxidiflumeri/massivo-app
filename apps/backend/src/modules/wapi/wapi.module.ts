@@ -32,6 +32,9 @@ import {
 import { WapiBotRouterService } from './bot/wapi-bot-router.service';
 import { WapiBotSandboxService } from './bot/wapi-bot-sandbox.service';
 import { WapiBotWaitingExpirerService } from './bot/wapi-bot-waiting-expirer.service';
+import { WapiBotHttpExecutor } from './bot/wapi-bot-http-executor.service';
+import { WapiBotHttpRateLimiterService } from './bot/wapi-bot-http-rate-limiter.service';
+import { WapiBotMediaFetchService } from './bot/wapi-bot-media-fetch.service';
 import { WapiLiveController } from './live/wapi-live.controller';
 import { WapiLiveService } from './live/wapi-live.service';
 
@@ -70,6 +73,9 @@ import { WapiLiveService } from './live/wapi-live.service';
     WapiBotRouterService,
     WapiBotSandboxService,
     WapiBotWaitingExpirerService,
+    WapiBotHttpRateLimiterService,
+    WapiBotHttpExecutor,
+    WapiBotMediaFetchService,
     WapiLiveService,
   ],
   exports: [

@@ -7,7 +7,7 @@
  * que prod (un bug en uno se reproduce en el otro). Sin logger, sin DB, sin
  * sender — sólo funciones puras sobre tipos del bot.
  */
-import { interpolate } from './interpolate';
+import { interpolateAsync } from './interpolate';
 import {
   validateBotFlow,
   validateBotRouter,
@@ -16,6 +16,8 @@ import {
   type BotCaptureNode,
   type BotConditionBranch,
   type BotConditionNode,
+  type BotForeachNode,
+  type BotHttpNode,
   type BotRouter,
   type BotSetVarNode,
   type BotTopic,
@@ -159,9 +161,14 @@ export function variableDefaultsFromDeclared(declared: BotVariable[] | null): Bo
  * `variableTypes`). Si la variable no está declarada, escribe el valor crudo
  * (con interpolación si era string).
  *
+ * Interpolación: si `node.value` es string, pasa por `interpolateAsync` →
+ * soporta tanto `{{var}}` plano como `{{= expr }}` JSONata. Esto permite
+ * derivar valores desde paths anidados (ej. body de un HTTP previo) y usarlos
+ * en CONDITIONs de variable plana downstream.
+ *
  * Coerción:
- * - string: si `node.value` es string, se interpola `{{otraVar}}`. Si es
- *   number/boolean, se castea con String().
+ * - string: si `node.value` es string, se interpola. Si es number/boolean,
+ *   se castea con String().
  * - number: si `node.value` es number, se asigna tal cual. Si es string, se
  *   interpola y se intenta `Number()`. NaN → se escribe el string crudo (la
  *   interpolación pudo no resolver una var).
@@ -169,16 +176,16 @@ export function variableDefaultsFromDeclared(declared: BotVariable[] | null): Bo
  *   interpola y se evalúa truthy: 'true' / '1' / 'yes' / 'si' / 'sí' = true,
  *   resto = false.
  */
-export function applySetVar(
+export async function applySetVar(
   node: BotSetVarNode,
   data: BotData,
   variableTypes: Map<string, BotVariableType>,
-): BotData {
+): Promise<BotData> {
   const declaredType = variableTypes.get(node.varName);
   const raw = node.value;
   let resolved: string | number | boolean;
   if (typeof raw === 'string') {
-    resolved = interpolate(raw, data);
+    resolved = await interpolateAsync(raw, data);
   } else {
     resolved = raw;
   }
@@ -255,6 +262,223 @@ export function handleCapture(
     }
   }
   return { ok: true, data: { ...current, [node.saveAs]: value } };
+}
+
+/**
+ * 4.N.3 — Resultado de ejecutar un nodo HTTP. Compartido por engine real (que hace
+ * la request) y sandbox modo Mock (que lo arma desde `node.mockResponse`).
+ */
+export interface HttpExecResult {
+  ok: boolean;
+  status: number;
+  body: unknown;
+  /** Presente cuando `ok = false`. Códigos posibles: 'mock-undefined', 'rate-limited',
+   *  'invalid-url', 'invalid-scheme', 'http-not-allowed-in-prod', 'ssrf-blocked',
+   *  'redirect-not-followed', 'timeout', 'network-error', 'response-too-large',
+   *  'interpolation-failed', 'feature-disabled'. */
+  error?: string;
+  durationMs: number;
+}
+
+/**
+ * 4.N.3 — Aplica el resultado de un nodo HTTP a `session.data`. El objeto crudo
+ * va a `data[saveAs]` (accesible vía `{{= saveAs.body.path }}` con JSONata).
+ *
+ * Para mantener compat con `{{var}}` plano y con `CONDITION.var` que sólo lee
+ * tipos primitivos, se flattean status/ok/error en claves derivadas. Si el caller
+ * quiere navegar `body`, debe usar la sintaxis de expresión.
+ */
+export function applyHttpResult(
+  node: BotHttpNode,
+  data: BotData,
+  result: HttpExecResult,
+): BotData {
+  const out: BotData = {
+    ...data,
+    [node.saveAs]: result,
+    [`${node.saveAs}_ok`]: result.ok,
+    [`${node.saveAs}_status`]: result.status,
+  };
+  if (result.error) out[`${node.saveAs}_error`] = result.error;
+  return out;
+}
+
+/**
+ * 4.P.2 — Estado de iteración de un FOREACH activo. Se persiste como item del
+ * stack `data._loops` (LIFO). Permite loops anidados.
+ */
+export interface LoopFrame {
+  /** ID del nodo FOREACH en el flow. Sirve para distinguir frames y como punto de retorno. */
+  foreachNodeId: string;
+  /** Índice del item actualmente asignado (0-based). */
+  index: number;
+  /** Snapshot del array materializado (evaluado una vez al entrar al loop). */
+  items: unknown[];
+  itemVar: string;
+  indexVar?: string;
+  /** Valor que tenía `itemVar` antes del loop, para restaurarlo al cerrar. */
+  prevItem?: unknown;
+  prevIndex?: unknown;
+}
+
+export interface ForeachStep {
+  /** Siguiente nodeId al que saltar (bodyNodeId o doneNodeId o startNodeId del gotoTopic). null si termina sin destino. */
+  nextNodeId: string | null;
+  /** Si cambió de topic (gotoTopic al terminar). */
+  nextTopicId?: string;
+  data: BotData;
+  /** Código de error si no se pudo procesar. Termina el chain. */
+  error?: string;
+}
+
+export const LOOPS_KEY = '_loops';
+const MAX_FOREACH_ITERATIONS_DEFAULT = 100;
+const MAX_NESTED_LOOPS_DEFAULT = 3;
+
+function readMaxIterations(): number {
+  const n = Number(process.env.WAPI_BOT_FOREACH_MAX_ITERATIONS);
+  return Number.isFinite(n) && n > 0 ? n : MAX_FOREACH_ITERATIONS_DEFAULT;
+}
+
+function readMaxNested(): number {
+  const n = Number(process.env.WAPI_BOT_FOREACH_MAX_NESTED);
+  return Number.isFinite(n) && n > 0 ? n : MAX_NESTED_LOOPS_DEFAULT;
+}
+
+/**
+ * Obtiene el stack de loops desde `data._loops`. Devuelve copia para mutación segura.
+ */
+export function getLoopStack(data: BotData): LoopFrame[] {
+  const raw = (data as Record<string, unknown>)[LOOPS_KEY];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((f) => ({ ...(f as LoopFrame) }));
+}
+
+export function setLoopStack(data: BotData, stack: LoopFrame[]): BotData {
+  return { ...data, [LOOPS_KEY]: stack };
+}
+
+/**
+ * 4.P.2 — Aplica un step de FOREACH. Idempotente sobre el stack de loops.
+ *
+ * Casos:
+ *  - **Primera entrada al nodo** (no hay frame para este foreachNodeId):
+ *    Evalúa `items`. Si array vacío, retorna `nextNodeId = doneNodeId` o gotoTopic.
+ *    Si supera `MAX_FOREACH_ITERATIONS`, retorna error `too-many-items`.
+ *    Si supera `MAX_NESTED_LOOPS` (depth del stack), retorna error `max-nested-loops`.
+ *    Si OK, pushea frame con index=0, asigna `itemVar`/`indexVar` en data, retorna `bodyNodeId`.
+ *
+ *  - **Re-entrada al mismo nodo** (frame existente):
+ *    Incrementa index. Si quedan items, reasigna `itemVar`/`indexVar`, retorna `bodyNodeId`.
+ *    Si no quedan, restaura valores previos, popea frame, retorna `doneNodeId`/gotoTopic.
+ *
+ * El evaluator se inyecta como callback para no acoplar el runtime puro a JSONata.
+ */
+export async function applyForeach(
+  node: BotForeachNode,
+  foreachNodeId: string,
+  data: BotData,
+  evaluator: (expr: string, d: BotData) => Promise<unknown>,
+): Promise<ForeachStep> {
+  const stack = getLoopStack(data);
+  const existingIdx = stack.findIndex((f) => f.foreachNodeId === foreachNodeId);
+
+  if (existingIdx === -1) {
+    // Primera entrada al loop.
+    if (stack.length >= readMaxNested()) {
+      return { nextNodeId: null, data, error: 'max-nested-loops' };
+    }
+    let evaluated: unknown;
+    try {
+      evaluated = await evaluator(node.items, data);
+    } catch {
+      return { nextNodeId: null, data, error: 'items-expr-failed' };
+    }
+    const arr: unknown[] = Array.isArray(evaluated)
+      ? evaluated
+      : evaluated === null || evaluated === undefined
+        ? []
+        : [evaluated];
+    if (arr.length === 0) {
+      // Loop vacío: avanzar al done sin tocar variables.
+      return {
+        nextNodeId: node.doneNodeId ?? null,
+        ...(node.gotoTopic ? { nextTopicId: node.gotoTopic, nextNodeId: null } : {}),
+        data,
+      };
+    }
+    if (arr.length > readMaxIterations()) {
+      return { nextNodeId: null, data, error: 'too-many-items' };
+    }
+    const prevItem = (data as Record<string, unknown>)[node.itemVar];
+    const prevIndex = node.indexVar
+      ? (data as Record<string, unknown>)[node.indexVar]
+      : undefined;
+    const frame: LoopFrame = {
+      foreachNodeId,
+      index: 0,
+      items: arr,
+      itemVar: node.itemVar,
+      indexVar: node.indexVar,
+      prevItem,
+      prevIndex,
+    };
+    const nextStack = [...stack, frame];
+    const nextData: BotData = { ...data, [LOOPS_KEY]: nextStack, [node.itemVar]: arr[0] };
+    if (node.indexVar) nextData[node.indexVar] = 0;
+    return { nextNodeId: node.bodyNodeId, data: nextData };
+  }
+
+  // Re-entrada: avanzar índice.
+  const frame = stack[existingIdx]!;
+  const nextIdx = frame.index + 1;
+  if (nextIdx < frame.items.length) {
+    const updatedFrame: LoopFrame = { ...frame, index: nextIdx };
+    const nextStack = [...stack];
+    nextStack[existingIdx] = updatedFrame;
+    const nextData: BotData = {
+      ...data,
+      [LOOPS_KEY]: nextStack,
+      [frame.itemVar]: frame.items[nextIdx],
+    };
+    if (frame.indexVar) nextData[frame.indexVar] = nextIdx;
+    return { nextNodeId: node.bodyNodeId, data: nextData };
+  }
+
+  // Fin del loop: pop frame, restaurar valores previos.
+  const remaining = stack.filter((_, i) => i !== existingIdx);
+  const restored: BotData = { ...data, [LOOPS_KEY]: remaining };
+  if (frame.prevItem === undefined) {
+    delete (restored as Record<string, unknown>)[frame.itemVar];
+  } else {
+    restored[frame.itemVar] = frame.prevItem;
+  }
+  if (frame.indexVar) {
+    if (frame.prevIndex === undefined) {
+      delete (restored as Record<string, unknown>)[frame.indexVar];
+    } else {
+      restored[frame.indexVar] = frame.prevIndex;
+    }
+  }
+  if (node.gotoTopic) {
+    return { nextNodeId: null, nextTopicId: node.gotoTopic, data: restored };
+  }
+  return { nextNodeId: node.doneNodeId ?? null, data: restored };
+}
+
+/**
+ * 4.P.2 — Cuando un chain cae a un nodo terminal sin next/goto y hay un loop
+ * activo en el stack, retorna el nodeId del FOREACH topmost para que el chain
+ * salte de vuelta y avance al siguiente item. Si no hay loops, retorna null.
+ *
+ * Usado por engine y sandbox para implementar el "autoreturn implícito" del body
+ * del FOREACH sin que el usuario tenga que cablear manualmente la edge de retorno.
+ */
+export function nextLoopReturnNode(data: BotData): string | null {
+  const stack = getLoopStack(data);
+  if (stack.length === 0) return null;
+  const top = stack[stack.length - 1]!;
+  return top.foreachNodeId;
 }
 
 /** Evalúa branches de un nodo CONDITION. Devuelve el destino o null si no hubo match ni else. */
