@@ -8,6 +8,9 @@ import {
   Divider,
   Grid,
   IconButton,
+  ListItemText,
+  Menu,
+  MenuItem,
   Paper,
   Stack,
   ToggleButton,
@@ -17,6 +20,7 @@ import {
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import DownloadIcon from '@mui/icons-material/Download';
 import EmailIcon from '@mui/icons-material/Email';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import HistoryIcon from '@mui/icons-material/History';
@@ -39,6 +43,7 @@ import type {
   TimelineKind,
   TimelinePage,
 } from './types';
+import { downloadContactActivityReport } from './api/contactReportsApi';
 
 const TIMELINE_PAGE_SIZE = 50;
 
@@ -56,6 +61,25 @@ export function ContactDetailPage() {
   const [loadingTimeline, setLoadingTimeline] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [channelFilter, setChannelFilter] = useState<TimelineChannel | ''>('');
+  const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport(format: 'csv' | 'xlsx') {
+    if (!id) return;
+    setExportAnchor(null);
+    setExporting(true);
+    try {
+      await downloadContactActivityReport(api, id, {
+        format,
+        channel: channelFilter || undefined,
+      });
+      notify.success(`Timeline ${format.toUpperCase()} descargado`);
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error al exportar');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -228,6 +252,29 @@ export function ContactDetailPage() {
                   <RefreshIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
+              <Tooltip title="Exportar timeline">
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={exporting || loadingTimeline}
+                    onClick={(e) => setExportAnchor(e.currentTarget)}
+                  >
+                    <DownloadIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Menu
+                anchorEl={exportAnchor}
+                open={!!exportAnchor}
+                onClose={() => setExportAnchor(null)}
+              >
+                <MenuItem onClick={() => void handleExport('csv')}>
+                  <ListItemText primary="CSV" secondary="Toda la actividad visible" />
+                </MenuItem>
+                <MenuItem onClick={() => void handleExport('xlsx')}>
+                  <ListItemText primary="Excel (.xlsx)" secondary="Con formato" />
+                </MenuItem>
+              </Menu>
             </Stack>
 
             {loadingTimeline ? (

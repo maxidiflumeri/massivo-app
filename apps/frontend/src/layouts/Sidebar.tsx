@@ -32,6 +32,7 @@ import ForumIcon from '@mui/icons-material/Forum';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import HistoryIcon from '@mui/icons-material/History';
+import AssessmentIcon from '@mui/icons-material/Assessment';
 import { OrganizationSwitcher } from '@clerk/clerk-react';
 
 const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
@@ -143,6 +144,11 @@ const NAV_GROUPS: NavGroupSpec[] = [
         to: '/dashboard/contacts',
         label: 'Contactos',
         icon: <ContactsIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/contacts/reports',
+        label: 'Reportes de contactos',
+        icon: <AssessmentIcon fontSize="small" />,
       },
     ],
   },

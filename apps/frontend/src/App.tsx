@@ -27,6 +27,7 @@ import { AuditLogPage } from './features/audit/AuditLogPage';
 import { ContactsListPage } from './features/contacts/ContactsListPage';
 import { ContactDetailPage } from './features/contacts/ContactDetailPage';
 import { MergeSuggestionsPage } from './features/contacts/MergeSuggestionsPage';
+import { ContactsReportsPage } from './features/contacts/ContactsReportsPage';
 
 const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
 
@@ -73,6 +74,7 @@ export function App() {
         <Route path="audit" element={<AuditLogPage />} />
         <Route path="contacts" element={<ContactsListPage />} />
         <Route path="contacts/merge" element={<MergeSuggestionsPage />} />
+        <Route path="contacts/reports" element={<ContactsReportsPage />} />
         <Route path="contacts/:id" element={<ContactDetailPage />} />
         {DEV_SIMULATOR_ENABLED && (
           <Route path="dev/wapi/simulator" element={<WapiSimulatorPage />} />

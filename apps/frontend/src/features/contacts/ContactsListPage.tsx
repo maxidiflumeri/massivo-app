@@ -9,6 +9,8 @@ import {
   Grid,
   IconButton,
   InputLabel,
+  ListItemText,
+  Menu,
   MenuItem,
   Paper,
   Select,
@@ -26,6 +28,8 @@ import {
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import MergeTypeIcon from '@mui/icons-material/MergeType';
+import DownloadIcon from '@mui/icons-material/Download';
+import AssessmentIcon from '@mui/icons-material/Assessment';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { useApi } from '../../api/client';
 import { useNotify } from '../../feedback/NotifyProvider';
@@ -35,6 +39,7 @@ import {
   type ContactPage,
   type SearchFilters,
 } from './types';
+import { downloadContactsListReport } from './api/contactReportsApi';
 
 const PAGE_SIZE = 50;
 
@@ -49,6 +54,8 @@ export function ContactsListPage() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const buildQs = useCallback(
     (nextCursor: string | null) => {
@@ -109,6 +116,30 @@ export function ContactsListPage() {
     setAppliedFilters(EMPTY_SEARCH_FILTERS);
   }
 
+  async function handleExport(format: 'csv' | 'xlsx') {
+    setExportAnchor(null);
+    setExporting(true);
+    try {
+      const f = appliedFilters;
+      await downloadContactsListReport(api, {
+        format,
+        q: f.q.trim() || undefined,
+        tags: f.tags.length > 0 ? f.tags : undefined,
+        channel: f.channel || undefined,
+        hasOpened: f.hasOpened || undefined,
+        hasClicked: f.hasClicked || undefined,
+        hasBounced: f.hasBounced || undefined,
+        sort: f.sort,
+        direction: f.direction,
+      });
+      notify.success(`Reporte ${format.toUpperCase()} descargado`);
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Error al exportar');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const hasActiveFilters = useMemo(() => {
     const f = appliedFilters;
     return (
@@ -135,6 +166,34 @@ export function ContactsListPage() {
           </Typography>
         </Box>
         <Stack direction="row" spacing={1}>
+          <Button
+            component={RouterLink}
+            to="/dashboard/contacts/reports"
+            startIcon={<AssessmentIcon />}
+            variant="outlined"
+          >
+            Reportes
+          </Button>
+          <Button
+            startIcon={<DownloadIcon />}
+            variant="outlined"
+            disabled={exporting}
+            onClick={(e) => setExportAnchor(e.currentTarget)}
+          >
+            {exporting ? 'Exportando…' : 'Exportar'}
+          </Button>
+          <Menu
+            anchorEl={exportAnchor}
+            open={!!exportAnchor}
+            onClose={() => setExportAnchor(null)}
+          >
+            <MenuItem onClick={() => void handleExport('csv')}>
+              <ListItemText primary="CSV" secondary="Compatible con Excel/Sheets" />
+            </MenuItem>
+            <MenuItem onClick={() => void handleExport('xlsx')}>
+              <ListItemText primary="Excel (.xlsx)" secondary="Con formato + freeze pane" />
+            </MenuItem>
+          </Menu>
           <Button
             component={RouterLink}
             to="/dashboard/contacts/merge"

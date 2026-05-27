@@ -21,6 +21,50 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 5.E — Reportes consolidados de contacts (lista + actividad + agregados) ✅
+
+Cierra la Fase 5 (Contacts unificados) con el módulo de reportes exportables a CSV/XLSX. Tres tipos de reporte cubren los casos definidos en el plan: lista filtrada de contactos (mismo set de filtros que `/contacts/search`), actividad cronológica por contact (export del timeline cross-canal), y agregaciones por tag / valor de atributo / prefijo de externalId. Todo sync con caps de memoria (50k filas lista, 10k filas actividad, 5k grupos agregados); datasets más grandes irán por el scheduler genérico de Fase 8.
+
+#### Added
+
+##### `apps/backend/src/modules/contacts/reports/contact-reports.service.ts` (+ spec)
+Service principal con 3 generadores que reusan `ContactsService.search` y `ContactTimelineService.getTimeline` con loops internos de cursor pagination. Helper `serialize()` factoriza CSV (`csv-stringify/sync`) vs XLSX (ExcelJS con freeze pane + header bold). Cada método llama `AuditLogService.log` con `action: 'contacts.report.generated'` + metadata `{ kind, format, rowCount, filterSummary }`. Caps exportados como constantes para tests.
+
+- `generateList(dto)`: enriquece cada contact con `tagsLabels` (joined names), `emailCount` y `wapiCount` vía `groupBy` (una sola query por aggregate). Columnas id/externalId/dni/cuit/email/phoneE164/firstName/lastName/tagsLabels/emailCount/wapiCount/createdAt/updatedAt.
+- `generateActivity(contactId, dto)`: valida que el Contact existe (NotFound si no), loop sobre timeline service, filtra dateFrom/dateTo en memoria post-fetch, mapea direction=in|out para `wapi.message.*`, dump metadata extra como JSON string.
+- `generateAggregated(dto)`: tres ramas según groupBy. Tag agrega `_count.contacts` por tag + emailContactCount/wapiContactCount vía `distinct: ['contactId']`. Attribute fetcha todos los contacts capeados y agrupa por valor JS post-fetch (Postgres JSONB no permite groupBy directo en Prisma). ExternalIdPattern usa `startsWith` y reporta una sola fila resumen.
+
+18 specs cubren: shape CSV/XLSX, cursor pagination + cap MAX_LIST_ROWS, contactos sin tags/identities, NotFound, filtro dateFrom/dateTo en memoria, channel forwarding, direction mapping wapi, validación BadRequest de attributeKey/externalIdPrefix faltantes, y assertions del audit log.
+
+##### `apps/backend/src/modules/contacts/reports/contact-reports.controller.ts`
+Tres endpoints `POST /api/contacts/reports/{list,activity/:contactId,aggregated}` que devuelven binario con headers `Content-Type`/`Content-Length`/`Content-Disposition: attachment; filename="…"`. Guards `ClerkAuthGuard + TenantContextGuard + PoliciesGuard` y `@CheckPolicies(a.can('read', 'Contact'))` en cada endpoint.
+
+##### `apps/backend/src/modules/contacts/reports/contact-reports.{dto,types}.ts`
+DTOs con `class-validator` (`@IsIn`, `@ValidateIf` para attributeKey/externalIdPrefix condicionales, `@Transform` para array y bool coercion en `tags`/`hasOpened|Clicked|Bounced`). Constantes exportadas: `CONTACT_REPORT_FORMATS`, `CONTACT_REPORT_KINDS`, `AGGREGATE_GROUP_BYS`, `ACTIVITY_CHANNELS`.
+
+##### `apps/frontend/src/features/contacts/api/contactReportsApi.ts`
+Wrapper sobre `api.download()` + `triggerBlobDownload()` con 3 funciones: `downloadContactsListReport`, `downloadContactActivityReport`, `downloadAggregatedReport`. Filename viene del header `Content-Disposition` (ya parseado por el cliente HTTP).
+
+##### `apps/frontend/src/features/contacts/ContactsReportsPage.tsx`
+Página `/dashboard/contacts/reports` con select de tipo de reporte (lista/actividad/agregado), formularios condicionales por tipo (lista con filtros tipo search; actividad con contactId + date range + channel; agregado con groupBy + attributeKey/externalIdPrefix condicionales), botones "Descargar CSV" y "Descargar Excel" con spinner durante la descarga, y un Alert informativo sobre los caps.
+
+#### Changed
+
+##### `apps/frontend/src/features/contacts/ContactsListPage.tsx`
+Toolbar gana botón "Exportar" (dropdown CSV/XLSX) que pasa los `appliedFilters` actuales al endpoint, y atajo "Reportes" que linkea a `/dashboard/contacts/reports`.
+
+##### `apps/frontend/src/features/contacts/ContactDetailPage.tsx`
+Header de la sección Timeline gana botón download (icono) con dropdown CSV/XLSX que descarga la actividad del contact respetando el `channelFilter` activo.
+
+##### `apps/frontend/src/App.tsx`
+Nueva ruta `contacts/reports` registrada **antes** que `contacts/:id` para evitar que `:id` capture el segmento `reports`.
+
+##### `apps/frontend/src/layouts/Sidebar.tsx`
+Entry "Reportes de contactos" (AssessmentIcon) agregada al grupo "Datos", debajo de "Contactos".
+
+##### `apps/backend/src/modules/contacts/contacts.module.ts`
+Wireado del nuevo `ContactReportsController` + `ContactReportsService`.
+
 ### 4.N.3 + 4.P — Nodo HTTP del bot, motor de expresiones JSONata y nodo FOREACH ✅
 
 Cierra el módulo "consultas externas" del bot designer. El flow ahora puede consultar APIs externas (con SSRF guard + rate limit + audit), navegar respuestas complejas con expresiones JSONata, e iterar arrays con un nodo FOREACH dedicado. El sandbox tiene un toggle Mock/Real para que el operador pueda probar primero con respuestas hardcoded en el nodo y después activar requests reales sin tener que cablear una WapiConfig de test.
