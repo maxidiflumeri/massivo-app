@@ -84,6 +84,7 @@ export class WapiMediaService {
     accessToken: string;
     organizationId: string;
     teamId: string;
+    isTestMode: boolean;
   }> {
     const ctx = TenantContext.current();
     if (!ctx) throw new WapiMediaException('Tenant context faltante', 'IO_ERROR');
@@ -95,15 +96,19 @@ export class WapiMediaService {
         organizationId: true,
         teamId: true,
         isActive: true,
+        isTestMode: true,
       },
     });
     if (!cfg) throw new WapiMediaException(`WapiConfig ${configId} no encontrado`, 'IO_ERROR');
     if (!cfg.isActive) throw new WapiMediaException('WapiConfig deshabilitada', 'IO_ERROR');
     return {
       phoneNumberId: cfg.phoneNumberId,
-      accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
+      // En test mode el accessToken puede ser un placeholder no encriptado (ej
+      // creado vía seed dev). Evitamos el decrypt para no romper resolveConfig.
+      accessToken: cfg.isTestMode ? 'SIM_TOKEN' : this.encryption.decrypt(cfg.accessTokenEnc),
       organizationId: cfg.organizationId,
       teamId: cfg.teamId,
+      isTestMode: cfg.isTestMode,
     };
   }
 
@@ -141,6 +146,21 @@ export class WapiMediaService {
       ext,
       input.buffer,
     );
+
+    // 4.P.3 — En test mode no pegamos a Meta. Devolvemos un mediaId `SIM_<sha-prefix>`
+    // (mismo prefijo que usa el sender en test mode) y persistimos solo el archivo
+    // local. Esto permite que flows con MEDIA_FROM_URL corran end-to-end en dev
+    // sin Meta real ni accessToken válido.
+    if (cfg.isTestMode) {
+      const simId = `SIM_${sha256.slice(0, 16)}`;
+      this.logger.debug(`Media upload SIM (isTestMode) mediaId=${simId} sha256=${sha256.slice(0, 12)}…`);
+      return {
+        mediaId: simId,
+        sha256,
+        size: input.buffer.length,
+        localPath: this.toRelative(localPath),
+      };
+    }
 
     const url = `${this.graphBase}/${this.apiVersion}/${cfg.phoneNumberId}/media`;
     const form = new FormData();
