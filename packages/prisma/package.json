@@ -9,7 +9,8 @@
     "lint": "echo 'no lint yet'",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist .turbo",
-    "seed:dev": "ts-node prisma/dev-seed.ts"
+    "seed:dev": "ts-node prisma/dev-seed.ts",
+    "seed:bot-infracciones": "ts-node prisma/seed-bot-infracciones.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
