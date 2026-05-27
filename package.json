@@ -11,6 +11,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "tunnel": "bash scripts/dev-tunnel.sh",
+    "dev:public": "concurrently --kill-others-on-fail --names \"DEV,TUN\" -c \"cyan,magenta\" \"pnpm dev\" \"pnpm tunnel\"",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "concurrently": "^9.0.0",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
     "eslint": "^9.17.0",
