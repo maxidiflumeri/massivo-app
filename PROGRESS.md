@@ -127,7 +127,7 @@ Monorepo pnpm + Turborepo, con:
 - **packages/permissions** — Placeholder para CASL (se implementa en Fase 1).
 - **packages/prisma** — Placeholder para schema y client extension (Fase 1).
 - **Config global** — TypeScript strict, ESLint flat config, Prettier, Husky + lint-staged, EditorConfig, `.nvmrc` (Node 22), `.vscode/`.
-- **Infra dev** — `docker-compose.dev.yml` con Postgres 16, Redis 7, MailHog.
+- **Infra dev** — infra compartida en `~/infra/docker-compose.yml` (Postgres 15, Redis 7, Mongo 6, MySQL 8) que arranca al boot. El proyecto crea su user/db `massivo` dentro de `dev-postgres`.
 - **CI** — `.github/workflows/ci.yml` corre format check, lint, typecheck, build, test en cada PR.
 - **Docs** — `MIGRATION_PLAN.md` (plan maestro), `README.md`, `.env.example`.
 
@@ -144,7 +144,10 @@ pnpm format:check
 Para levantar dev:
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+# La infra compartida (~/infra/docker-compose.yml) ya arranca al boot.
+# Si la primera vez no existe el user/db `massivo` en dev-postgres:
+#   docker exec -it dev-postgres psql -U postgres -d dev_db -c "CREATE USER massivo WITH PASSWORD 'massivo';"
+#   docker exec -it dev-postgres psql -U postgres -d dev_db -c "CREATE DATABASE massivo OWNER massivo;"
 cp .env.example .env  # si no existe
 pnpm dev
 ```

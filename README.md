@@ -51,8 +51,11 @@ massivo-app/
 # 1. Instalar dependencias
 pnpm install
 
-# 2. Levantar servicios de infraestructura (Postgres, Redis, MailHog)
-docker compose -f docker-compose.dev.yml up -d
+# 2. Asegurar que la infra compartida esté arriba (Postgres, Redis, Mongo, MySQL)
+#    El compose vive en ~/infra/docker-compose.yml y arranca al boot.
+#    La primera vez, crear el user/db del proyecto:
+#      docker exec -it dev-postgres psql -U postgres -d dev_db -c "CREATE USER massivo WITH PASSWORD 'massivo';"
+#      docker exec -it dev-postgres psql -U postgres -d dev_db -c "CREATE DATABASE massivo OWNER massivo;"
 
 # 3. Copiar variables de entorno
 cp .env.example .env
