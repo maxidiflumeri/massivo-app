@@ -18,3 +18,25 @@ export interface CreateTemplatePayload {
 }
 
 export type UpdateTemplatePayload = Partial<CreateTemplatePayload>;
+
+export interface EmailTemplateVariableDef {
+  key: string;
+  label: string;
+  sample: string;
+}
+
+export interface EmailTemplateVariablesCatalog {
+  base: EmailTemplateVariableDef[];
+  custom: { key: string; sample?: string }[];
+}
+
+export interface PreviewTemplateResponse {
+  subject: string;
+  html: string;
+}
+
+export interface SendTestTemplateResponse {
+  ok: true;
+  smtpAccountId: string;
+  messageId?: string;
+}

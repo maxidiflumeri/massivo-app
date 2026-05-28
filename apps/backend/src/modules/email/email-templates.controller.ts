@@ -18,7 +18,12 @@ import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { Audit } from '../../common/audit/audit.decorator';
 import { EmailTemplatesService } from './email-templates.service';
-import { CreateEmailTemplateDto, UpdateEmailTemplateDto } from './email-templates.dto';
+import {
+  CreateEmailTemplateDto,
+  PreviewTemplateDto,
+  SendTestTemplateDto,
+  UpdateEmailTemplateDto,
+} from './email-templates.dto';
 import type { AppAbility } from '@massivo/permissions';
 
 @Controller('email/templates')
@@ -59,5 +64,26 @@ export class EmailTemplatesController {
   @Audit({ action: 'email.template.deleted', resourceType: 'EmailTemplate', resourceIdFrom: 'param:id' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);
+  }
+
+  @Get(':id/variables-catalog')
+  @CheckPolicies((ability: AppAbility) => ability.can('read', 'Template'))
+  getVariablesCatalog(@Param('id') id: string) {
+    return this.service.getVariablesCatalog(id);
+  }
+
+  @Post(':id/preview')
+  @HttpCode(HttpStatus.OK)
+  @CheckPolicies((ability: AppAbility) => ability.can('read', 'Template'))
+  preview(@Param('id') id: string, @Body() dto: PreviewTemplateDto) {
+    return this.service.renderPreview(id, dto);
+  }
+
+  @Post(':id/send-test')
+  @HttpCode(HttpStatus.OK)
+  @CheckPolicies((ability: AppAbility) => ability.can('update', 'Template'))
+  @Audit({ action: 'email.template.testSent', resourceType: 'EmailTemplate', resourceIdFrom: 'param:id', includeBody: false })
+  sendTest(@Param('id') id: string, @Body() dto: SendTestTemplateDto) {
+    return this.service.sendTest(id, dto);
   }
 }

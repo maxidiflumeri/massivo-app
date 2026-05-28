@@ -1,4 +1,5 @@
 import {
+  IsEmail,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -54,4 +55,23 @@ export class UpdateEmailTemplateDto {
   @IsOptional()
   @IsString()
   smtpAccountId?: string | null;
+}
+
+export class PreviewTemplateDto {
+  @IsOptional()
+  @IsObject()
+  sampleData?: Record<string, unknown>;
+}
+
+export class SendTestTemplateDto {
+  @IsEmail()
+  toEmail!: string;
+
+  @IsOptional()
+  @IsObject()
+  sampleData?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  smtpAccountId?: string;
 }

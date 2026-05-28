@@ -21,6 +21,51 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### 3.C.4.g — UX de variables en templates Unlayer (mergeTags + preview + send-test) ✅
+
+Completa la UX de variables Handlebars en el editor de templates de email. Hasta ahora el usuario tipeaba `{{firstName}}` a mano dentro de Unlayer y se equivocaba seguido; ahora hay un catálogo descubierto desde el backend (identidad base + custom keys de campañas previas), Unlayer recibe `mergeTags` y muestra un dropdown "Merge tags" en cada bloque de texto, el subject (que no es Unlayer sino un TextField) gana un botón "Insertar variable", y hay una vista previa fullscreen con datos editables + envío de email de prueba sin tocar campañas. Cierra el item 3.C.4.g del plan.
+
+#### Added
+
+##### `apps/backend/src/modules/email/email-template-variables.ts`
+Catálogo base hardcoded (`CONTACT_BASE_VARIABLES`) con 7 vars de identidad del `Contact` cross-canal: `firstName`, `lastName`, `email`, `phoneE164`, `externalId`, `dni`, `cuit`. Cada entry trae `key`/`label`/`sample` listos para preview. Helpers `buildBaseSampleData()` y `CONTACT_BASE_VARIABLE_KEYS` (Set) para filtrado.
+
+##### `EmailTemplatesService.getVariablesCatalog(id)` + endpoint `GET /api/email/templates/:id/variables-catalog`
+Devuelve `{ base, custom }`. Para `custom` ejecuta un `$queryRaw` Postgres sobre `EmailContact.data` (JSONB) usando `jsonb_object_keys()` con un `JOIN EmailCampaign ON c.templateId = $id`, capeado a 500 distinct keys, scoping `(organizationId, teamId)` por bind params (raw queries no pasan por la tenant-extension del cliente ORM). Filtra las keys base para no duplicar, deduplica y ordena alfa.
+
+##### `EmailTemplatesService.renderPreview(id, dto)` + endpoint `POST /api/email/templates/:id/preview`
+Body `PreviewTemplateDto { sampleData? }`. Mergea `buildBaseSampleData()` con `sampleData` (usuario gana) y compila subject + html con Handlebars (`noEscape: true` en HTML, `false` en subject — mismo patrón que el worker). Devuelve `{ subject, html }`. Errores de compilación → `BadRequestException("Template inválido: …")`.
+
+##### `EmailTemplatesService.sendTest(id, dto)` + endpoint `POST /api/email/templates/:id/send-test`
+Body `SendTestTemplateDto { toEmail @IsEmail, sampleData?, smtpAccountId? }`. Resuelve SMTP: usa el provisto, sino el del template, sino `findFirst` ordenado por `isActive desc, createdAt asc`. Rechaza accounts inactivas. Reusa `renderPreview` para el HTML/subject. Llama `EmailSenderService.sendForAccount` con el mismo shape que el worker. **No crea EmailReport** (no es parte de ninguna campaña). `@Audit('email.template.testSent')` con `resourceIdFrom: 'param:id'`. Devuelve `{ ok, smtpAccountId, messageId? }`.
+
+##### 9 specs nuevos en `email-templates.service.spec.ts`
+Cubren: NotFound de catalog/preview/sendTest, catálogo sin campañas previas (custom vacío), descubrimiento + dedup + ordenamiento + filtrado de base keys en custom, defaults del catálogo cuando no se pasa sampleData, override del sampleData del usuario, BadRequest cuando no hay SMTP configurado, happy path de sendTest verificando args al sender. Mock incluye `prisma.$queryRaw` + `EmailSenderService.sendForAccount`.
+
+##### `apps/frontend/src/features/email/templates/TemplatePreviewDrawer.tsx`
+Drawer right-anchored (90vw, max 1400px). Columna izquierda con tabla editable (variable / valor sample) pre-cargada del catálogo; cada custom row marcada con badge. Columna derecha con header "Subject" + iframe `sandbox=""` `srcDoc={html}` para aislamiento. Botón "Renderizar" (POST /preview), botón "Enviar prueba" (Dialog interno con TextField email → POST /send-test). Auto-render al abrir.
+
+##### Frontend types (`types.ts`)
+`EmailTemplateVariableDef`, `EmailTemplateVariablesCatalog`, `PreviewTemplateResponse`, `SendTestTemplateResponse`.
+
+#### Changed
+
+##### `apps/frontend/src/features/email/templates/TemplateEditorPage.tsx`
+Tres adiciones:
+1. **Fetch del catálogo al mount** (solo para templates existentes, no para `id === 'new'`). Si falla, se loguea y el editor sigue funcionando sin mergeTags.
+2. **`mergeTags` para Unlayer**: `useMemo` que mapea `{ key: { name: label, value: '{{key}}' } }` y se pasa al `<EmailEditor options={{ mergeTags }}/>`. Effect adicional con `editor.setMergeTags(...)` para refresh post-ready (el editor cachea el config inicial). Resultado: cada bloque de texto en Unlayer muestra el dropdown nativo "Merge tags".
+3. **Botón "Insertar variable"** (IconButton con `CodeIcon`) al lado del TextField del subject. Abre un MUI Menu con dos `ListSubheader` ("Identidad" / "Custom") y los items. Click inserta `{{key}}` en la posición exacta del cursor del input (usa `subjectRef.current.selectionStart/End` + `setSelectionRange` post-render).
+4. **Botón "Vista previa"** (outlined, `VisibilityIcon`) en la toolbar superior junto a "Guardar", abre el `TemplatePreviewDrawer`.
+
+##### `apps/backend/src/modules/email/email-templates.dto.ts`
+DTOs `PreviewTemplateDto` (sampleData? object) y `SendTestTemplateDto` (toEmail @IsEmail, sampleData? object, smtpAccountId? string).
+
+##### `apps/backend/src/modules/email/email-templates.controller.ts`
+3 endpoints nuevos con `@CheckPolicies(read|update Template)` y mismos guards que los existentes. `send-test` con `@Audit`.
+
+##### `apps/backend/src/modules/email/email-templates.service.ts`
+Constructor recibe `EmailSenderService` (ya provisto por `EmailModule`, no hace falta forwardRef — sender no depende de templates). Methods nuevos descriptos arriba.
+
 ### 5.E — Reportes consolidados de contacts (lista + actividad + agregados) ✅
 
 Cierra la Fase 5 (Contacts unificados) con el módulo de reportes exportables a CSV/XLSX. Tres tipos de reporte cubren los casos definidos en el plan: lista filtrada de contactos (mismo set de filtros que `/contacts/search`), actividad cronológica por contact (export del timeline cross-canal), y agregaciones por tag / valor de atributo / prefijo de externalId. Todo sync con caps de memoria (50k filas lista, 10k filas actividad, 5k grupos agregados); datasets más grandes irán por el scheduler genérico de Fase 8.

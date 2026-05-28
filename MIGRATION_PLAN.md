@@ -560,7 +560,7 @@ Monorepo con **pnpm workspaces** + **Turborepo**.
   - [ ] **.d** Métricas globales: dashboard con widgets (total enviados últimos 7/30 días, tasa apertura/click, top campañas).
   - [ ] **.e** Live processing view: durante `status=PROCESSING`, progress bar + counts en tiempo real + botón pause.
   - [ ] **.f** Manual send (sin campaña, ad-hoc): vista "Envío rápido" con `to: emails[]` + template-or-html + smtp account → enquola jobs como campaña efímera (`name: "Manual <fecha>"`).
-  - [ ] **.g** Test send / preview en editor de templates: botón "Enviar prueba" en `TemplateEditorPage` → envía a email del usuario o a uno indicado.
+  - [x] **.g** Test send / preview en editor de templates ✅ — catálogo de variables (base + custom descubierto de campañas previas), Unlayer recibe `mergeTags` (dropdown nativo en bloques de texto), botón "Insertar variable" al lado del Subject, vista previa fullscreen con datos editables + iframe HTML + envío de prueba SMTP sin crear `EmailReport`. Audit `email.template.testSent`.
 - [ ] **3.C.5 — Acciones de control campaña** (pendiente 🆕): pausar / reanudar / forzar cierre. Endpoints `POST /api/email/campaigns/:id/pause|resume|force-close`. El worker chequea `EmailCampaign.status` antes de procesar cada job; en `PAUSED` deja el job en delay+retry; en `COMPLETED` por force-close marca todos los `PENDING` restantes como `CANCELED` (status nuevo en el enum).
 
 #### 3.D — Reportes consolidados con export 🆕
