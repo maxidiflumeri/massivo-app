@@ -70,32 +70,39 @@ jobs:
         env:
           IMAGE_SHA: ${{ steps.tags.outputs.image_sha }}
         run: |
-          # Pipeline inline: git pull (sincroniza compose/scripts) + login ECR
-          # + docker compose pull + up -d. Sin depender de que el script
-          # `deploy-backend-on-ec2.sh` ya esté en la EC2 (primera corrida).
-          REMOTE_SCRIPT=$(cat <<'EOSH'
+          # Construimos el script bash que correrá en la EC2 y lo
+          # base64-encodeamos. Bypass total de escapes de newlines / quotes /
+          # special chars al pasar por la API de SSM (que usa /bin/sh, no bash).
+          REMOTE_SCRIPT=$(cat <<EOSH
+          #!/usr/bin/env bash
           set -euo pipefail
+          export AWS_REGION=${AWS_REGION}
+          export BACKEND_IMAGE="${IMAGE_SHA}"
+          # SSM corre como root pero el repo es de ubuntu — usamos
+          # sudo -u ubuntu -H para que git vea su ownership correctamente
+          # y HOME apunte al de ubuntu (sino git config se rompe).
+          # reset --hard + clean -fd para no fallar ante mods locales o
+          # archivos untracked que pudieron quedar de debug manual previo.
           cd /opt/massivo/app
-          git pull --ff-only origin main || echo "WARN: git pull no fast-forward"
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region $AWS_REGION)
-          aws ecr get-login-password --region $AWS_REGION | \
-            docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          sudo -u ubuntu -H git fetch origin main
+          sudo -u ubuntu -H git reset --hard origin/main
+          sudo -u ubuntu -H git clean -fd
+          ACCOUNT_ID=\$(aws sts get-caller-identity --query Account --output text --region "\$AWS_REGION")
+          aws ecr get-login-password --region "\$AWS_REGION" | \
+            docker login --username AWS --password-stdin "\${ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com"
           docker compose -f infra/docker-compose.yml pull api
           docker compose -f infra/docker-compose.yml up -d api
           docker image prune -f
           docker compose -f infra/docker-compose.yml ps
           EOSH
           )
-          # Las env vars que necesita el script
-          REMOTE_SCRIPT="export AWS_REGION=${AWS_REGION}; export BACKEND_IMAGE='${IMAGE_SHA}'; ${REMOTE_SCRIPT}"
-          # JSON-escape para SSM
-          ESCAPED=$(printf '%s' "$REMOTE_SCRIPT" | jq -Rs .)
-
+          SCRIPT_B64=$(echo "$REMOTE_SCRIPT" | base64 -w0)
+          SHORT_SHA="${GITHUB_SHA:0:7}"
           CMD_ID=$(aws ssm send-command \
             --instance-ids "${EC2_INSTANCE_ID}" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy ${IMAGE_SHA}" \
-            --parameters "commands=[${ESCAPED}]" \
+            --comment "Deploy backend ${SHORT_SHA}" \
+            --parameters "commands=[\"echo ${SCRIPT_B64} | base64 -d | bash\"]" \
             --output text --query 'Command.CommandId')
           echo "SSM CommandId: $CMD_ID"
 
