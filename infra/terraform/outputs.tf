@@ -145,3 +145,17 @@ output "landing_cloudfront_domain" {
   description = "Dominio CloudFront landing — apuntar massivo.app + www a esto en Netlify"
   value       = aws_cloudfront_distribution.landing.domain_name
 }
+
+# ===========================================================
+# CI/CD outputs — usar en GitHub Secrets / vars de workflows
+# ===========================================================
+
+output "ecr_backend_repository_url" {
+  description = "URL del repo ECR para el backend (host + repo, sin tag)"
+  value       = aws_ecr_repository.backend.repository_url
+}
+
+output "github_actions_role_arn" {
+  description = "Role ARN que GitHub Actions debe assumir vía OIDC"
+  value       = aws_iam_role.github_actions.arn
+}

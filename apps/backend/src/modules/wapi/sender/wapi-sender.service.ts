@@ -46,7 +46,7 @@ export class WapiSenderService {
   constructor(private readonly config: ConfigService) {}
 
   private baseUrl(cfg: WapiSenderConfig): string {
-    const apiBase = this.config.get<string>('WAPI_GRAPH_BASE_URL') ?? 'https://graph.facebook.com';
+    const apiBase = this.config.get<string>('WAPI_GRAPH_BASE_URL') || 'https://graph.facebook.com';
     const version = cfg.apiVersion ?? DEFAULT_API_VERSION;
     return `${apiBase}/${version}/${cfg.phoneNumberId}/messages`;
   }

@@ -1,0 +1,63 @@
+# Instance profile para la EC2.
+#
+# Le da dos capacidades:
+# 1. Hablar con SSM (recibir comandos remotos de GitHub Actions sin SSH).
+# 2. Hacer pull de imágenes desde ECR.
+
+resource "aws_iam_role" "ec2" {
+  name = "${var.project}-${var.env}-ec2"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+
+  tags = {
+    Name = "${var.project}-${var.env}-ec2"
+  }
+}
+
+# Policy AWS-managed: SSM agent core (heartbeat, comandos, session manager).
+resource "aws_iam_role_policy_attachment" "ec2_ssm" {
+  role       = aws_iam_role.ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Permisos de pull de ECR — no necesita push, solo pull de imágenes.
+resource "aws_iam_role_policy" "ec2_ecr_pull" {
+  name = "${var.project}-${var.env}-ec2-ecr-pull"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EcrAuth"
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "EcrPullBackend"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+        ]
+        Resource = aws_ecr_repository.backend.arn
+      },
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "ec2" {
+  name = "${var.project}-${var.env}-ec2"
+  role = aws_iam_role.ec2.name
+}

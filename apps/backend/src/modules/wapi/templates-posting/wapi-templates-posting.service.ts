@@ -204,7 +204,7 @@ export class WapiTemplatesPostingService {
     payload: MetaPayload,
     accessToken: string,
   ): Promise<MetaCreateResponse> {
-    const apiBase = this.config.get<string>('WAPI_GRAPH_BASE_URL') ?? 'https://graph.facebook.com';
+    const apiBase = this.config.get<string>('WAPI_GRAPH_BASE_URL') || 'https://graph.facebook.com';
     const url = `${apiBase}/${DEFAULT_API_VERSION}/${businessAccountId}/message_templates`;
 
     const res = await fetch(url, {

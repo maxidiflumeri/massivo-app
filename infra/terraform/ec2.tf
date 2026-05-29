@@ -24,6 +24,7 @@ resource "aws_instance" "api" {
   subnet_id                   = data.aws_subnets.default_public.ids[0]
   vpc_security_group_ids      = [aws_security_group.ec2.id]
   key_name                    = aws_key_pair.maxi.key_name
+  iam_instance_profile        = aws_iam_instance_profile.ec2.name
   associate_public_ip_address = true
 
   root_block_device {

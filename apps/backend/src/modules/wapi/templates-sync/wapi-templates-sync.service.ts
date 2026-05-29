@@ -115,7 +115,7 @@ export class WapiTemplatesSyncService {
   }
 
   private firstPageUrl(businessAccountId: string): string {
-    const apiBase = this.config.get<string>('WAPI_GRAPH_BASE_URL') ?? 'https://graph.facebook.com';
+    const apiBase = this.config.get<string>('WAPI_GRAPH_BASE_URL') || 'https://graph.facebook.com';
     const version = DEFAULT_API_VERSION;
     const url = new URL(`${apiBase}/${version}/${businessAccountId}/message_templates`);
     url.searchParams.set('fields', FETCH_FIELDS);

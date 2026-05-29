@@ -3,17 +3,20 @@
 # Ubicación esperada: <repo-root>/infra/docker-compose.yml
 # El .env de producción vive en <repo-root>/.env (gitignored).
 #
-# Uso desde /opt/massivo/app:
+# Modo CI/CD (default en EC2): la imagen viene de ECR vía BACKEND_IMAGE.
+#   docker compose -f infra/docker-compose.yml pull
+#   docker compose -f infra/docker-compose.yml up -d
+#
+# Modo dev local: dejá BACKEND_IMAGE vacío y descomentá el `build:`.
 #   docker compose -f infra/docker-compose.yml up -d --build
-#   docker compose -f infra/docker-compose.yml logs -f api
-#   docker compose -f infra/docker-compose.yml down
 
 services:
   api:
-    build:
-      context: ..
-      dockerfile: apps/backend/Dockerfile
-    image: massivo-backend:latest
+    image: ${BACKEND_IMAGE:-massivo-backend:latest}
+    # Para buildear local en lugar de pullear, descomentar:
+    # build:
+    #   context: ..
+    #   dockerfile: apps/backend/Dockerfile
     container_name: massivo-api
     env_file:
       - ../.env
@@ -21,8 +24,6 @@ services:
       NODE_ENV: production
       PORT: "3001"
     ports:
-      # Solo loopback del host — Nginx hace el proxy desde 127.0.0.1.
-      # Externamente queda inaccesible (el SG además solo abre 80/443).
       - "127.0.0.1:3001:3001"
     depends_on:
       redis:

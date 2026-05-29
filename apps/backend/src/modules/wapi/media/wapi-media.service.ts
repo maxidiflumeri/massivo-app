@@ -67,7 +67,7 @@ export class WapiMediaService {
   }
 
   private get graphBase(): string {
-    return this.config.get<string>('WAPI_GRAPH_BASE_URL') ?? DEFAULT_GRAPH_BASE;
+    return this.config.get<string>('WAPI_GRAPH_BASE_URL') || DEFAULT_GRAPH_BASE;
   }
 
   private get mediaDir(): string {

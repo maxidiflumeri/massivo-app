@@ -93,3 +93,18 @@ variable "landing_www_domain" {
   type        = string
   default     = "www.massivo.app"
 }
+
+variable "github_repo" {
+  description = "Repo de GitHub que puede assumir el role de CI (formato owner/repo)"
+  type        = string
+  default     = "maxidiflumeri/massivo-app"
+}
+
+variable "github_oidc_thumbprints" {
+  description = "Thumbprints del certificado SSL de token.actions.githubusercontent.com (rotan eventualmente)"
+  type        = list(string)
+  default = [
+    "6938fd4d98bab03faadb97b34396831e3780aea1",
+    "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
+  ]
+}
