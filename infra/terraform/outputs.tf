@@ -116,6 +116,32 @@ output "cloudfront_distribution_id" {
 }
 
 output "cloudfront_domain" {
-  description = "Dominio CloudFront (xxx.cloudfront.net) — apuntar app.massivo.app a esto vía CNAME en Netlify"
+  description = "Dominio CloudFront (xxx.cloudfront.net) — apuntar panel.massivo.app a esto vía CNAME en Netlify"
   value       = aws_cloudfront_distribution.frontend.domain_name
+}
+
+output "landing_s3_bucket" {
+  description = "Bucket S3 donde sube el build de la landing"
+  value       = aws_s3_bucket.landing.id
+}
+
+output "landing_acm_validation_records" {
+  description = "Registros DNS para validar el cert ACM de la landing (2 SANs: massivo.app + www.massivo.app)"
+  value = {
+    for dvo in aws_acm_certificate.landing.domain_validation_options : dvo.domain_name => {
+      name  = dvo.resource_record_name
+      type  = dvo.resource_record_type
+      value = dvo.resource_record_value
+    }
+  }
+}
+
+output "landing_cloudfront_distribution_id" {
+  description = "ID CloudFront landing"
+  value       = aws_cloudfront_distribution.landing.id
+}
+
+output "landing_cloudfront_domain" {
+  description = "Dominio CloudFront landing — apuntar massivo.app + www a esto en Netlify"
+  value       = aws_cloudfront_distribution.landing.domain_name
 }

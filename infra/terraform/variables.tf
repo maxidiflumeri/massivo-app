@@ -79,5 +79,17 @@ variable "rds_master_username" {
 variable "frontend_domain" {
   description = "Dominio en el que vive el frontend del SaaS (subdominio de massivo.app)"
   type        = string
-  default     = "app.massivo.app"
+  default     = "panel.massivo.app"
+}
+
+variable "landing_apex_domain" {
+  description = "Dominio raíz para la landing marketing"
+  type        = string
+  default     = "massivo.app"
+}
+
+variable "landing_www_domain" {
+  description = "Alias www para la landing"
+  type        = string
+  default     = "www.massivo.app"
 }

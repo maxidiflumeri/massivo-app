@@ -1,17 +1,11 @@
 import { SignUp } from '@clerk/clerk-react';
-import { Box } from '@mui/material';
+import { AuthLayout } from './AuthLayout';
 
 export function SignUpPage() {
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        width: '100vw',
-        p: 2,
-      }}
+    <AuthLayout
+      title="Empezá gratis"
+      subtitle="Creá tu cuenta y conectá tu WhatsApp en minutos."
     >
       <SignUp
         routing="path"
@@ -19,7 +13,16 @@ export function SignUpPage() {
         signInUrl="/sign-in"
         fallbackRedirectUrl="/dashboard"
         forceRedirectUrl="/dashboard"
+        appearance={{
+          elements: {
+            rootBox: 'mx-auto',
+            card: 'bg-transparent shadow-none border-0',
+            headerTitle: 'hidden',
+            headerSubtitle: 'hidden',
+            footer: 'bg-transparent',
+          },
+        }}
       />
-    </Box>
+    </AuthLayout>
   );
 }
