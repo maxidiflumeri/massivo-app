@@ -159,3 +159,8 @@ output "github_actions_role_arn" {
   description = "Role ARN que GitHub Actions debe assumir vía OIDC"
   value       = aws_iam_role.github_actions.arn
 }
+
+output "ses_events_sns_topic_arn" {
+  description = "ARN del SNS topic donde SES publica eventos — setear en .env como SES_EVENTS_SNS_TOPIC_ARN"
+  value       = aws_sns_topic.ses_events.arn
+}

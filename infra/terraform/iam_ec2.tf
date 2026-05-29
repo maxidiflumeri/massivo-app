@@ -57,6 +57,53 @@ resource "aws_iam_role_policy" "ec2_ecr_pull" {
   })
 }
 
+# Permisos SES — el backend manda emails por todas las orgs/teams usando
+# las credenciales del instance profile (sin Access Keys en .env).
+resource "aws_iam_role_policy" "ec2_ses" {
+  name = "${var.project}-${var.env}-ec2-ses"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "SesSendEmails"
+        Effect = "Allow"
+        Action = [
+          "ses:SendEmail",
+          "ses:SendBulkEmail",
+          "ses:SendRawEmail",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "SesManageConfigurationSets"
+        Effect = "Allow"
+        Action = [
+          "ses:GetConfigurationSet",
+          "ses:CreateConfigurationSet",
+          "ses:DescribeConfigurationSet",
+          "ses:ListConfigurationSets",
+          "ses:CreateConfigurationSetEventDestination",
+          "ses:GetConfigurationSetEventDestinations",
+          "ses:UpdateConfigurationSetEventDestination",
+          "ses:DeleteConfigurationSetEventDestination",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "SesReadIdentities"
+        Effect = "Allow"
+        Action = [
+          "ses:GetEmailIdentity",
+          "ses:ListEmailIdentities",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "ec2" {
   name = "${var.project}-${var.env}-ec2"
   role = aws_iam_role.ec2.name
