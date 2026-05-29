@@ -1,12 +1,14 @@
 import {
   BadRequestException,
-  Body,
   Controller,
   HttpCode,
   HttpStatus,
   Logger,
   Post,
+  Req,
+  RawBodyRequest,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { SkipTenantScope } from '../../../common/auth/skip-tenant-scope.decorator';
 import { SesWebhookService } from './ses-webhook.service';
 import { SnsValidatorAdapter } from './sns-validator.adapter';
@@ -37,7 +39,22 @@ export class SesWebhookController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  async handle(@Body() body: SnsMessage): Promise<{ ok: true }> {
+  async handle(@Req() req: RawBodyRequest<Request>): Promise<{ ok: true }> {
+    // SNS publica con Content-Type "text/plain; charset=UTF-8" — el parser
+    // JSON default de NestJS no lo procesa. Tomamos rawBody (Buffer) y
+    // hacemos JSON.parse manual; es lo más quirúrgico para no afectar
+    // otros endpoints.
+    let body: SnsMessage;
+    try {
+      const raw = req.rawBody?.toString('utf-8');
+      if (!raw) throw new Error('rawBody vacío');
+      body = JSON.parse(raw) as SnsMessage;
+    } catch (err) {
+      throw new BadRequestException(
+        `No se pudo parsear body SNS: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
     if (!body || typeof body.Type !== 'string') {
       throw new BadRequestException('Payload SNS inválido');
     }

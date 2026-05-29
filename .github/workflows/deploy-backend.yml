@@ -63,8 +63,12 @@ jobs:
           tags: |
             ${{ steps.tags.outputs.image_sha }}
             ${{ steps.tags.outputs.image_latest }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # cache-from/to deshabilitados temporalmente: el cache de GHA con
+          # buildx reusaba layers de COPY de versiones anteriores y nos
+          # entregaba imágenes con código viejo (incluso cuando los archivos
+          # fuente cambiaban). Builds son más lentos (~15 min vs 5-8) pero
+          # confiables. Reactivar cuando migremos a registry cache
+          # (type=registry,ref=<ecr>:cache).
 
       - name: Deploy to EC2 via SSM
         env:
