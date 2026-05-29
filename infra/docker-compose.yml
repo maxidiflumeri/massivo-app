@@ -1,0 +1,66 @@
+# docker-compose para correr massivo-app en la EC2.
+#
+# Ubicación esperada: <repo-root>/infra/docker-compose.yml
+# El .env de producción vive en <repo-root>/.env (gitignored).
+#
+# Uso desde /opt/massivo/app:
+#   docker compose -f infra/docker-compose.yml up -d --build
+#   docker compose -f infra/docker-compose.yml logs -f api
+#   docker compose -f infra/docker-compose.yml down
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: apps/backend/Dockerfile
+    image: massivo-backend:latest
+    container_name: massivo-api
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+    ports:
+      # Solo loopback del host — Nginx hace el proxy desde 127.0.0.1.
+      # Externamente queda inaccesible (el SG además solo abre 80/443).
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  redis:
+    image: redis:7-alpine
+    container_name: massivo-redis
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  redis-data:
+    name: massivo-redis-data
+
+networks:
+  internal:
+    name: massivo-internal

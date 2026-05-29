@@ -1,0 +1,55 @@
+# Dependencias y build artifacts — se reconstruyen dentro de la imagen
+node_modules
+**/node_modules
+dist
+**/dist
+.turbo
+**/.turbo
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Tooling local
+.vscode
+.idea
+*.swp
+
+# Logs y caches
+*.log
+.pnpm-store
+.cache
+
+# Tests y coverage
+coverage
+**/coverage
+.nyc_output
+
+# Env y secrets — el contenedor recibe sus envs vía --env-file
+.env
+.env.local
+.env.development
+.env.test
+.env.*.local
+
+# Git
+.git
+.gitignore
+.github
+.husky
+
+# Infra / scripts no relacionados al build de la app
+infra
+.claude
+
+# Docs / markdown
+*.md
+CHANGELOG.md
+PROGRESS.md
+MIGRATION_PLAN.md
+README.md
+despliegue-prod.md
+
+# Frontend (no va en la imagen del backend)
+apps/frontend
+
+# Uploads locales de dev
+**/uploads
