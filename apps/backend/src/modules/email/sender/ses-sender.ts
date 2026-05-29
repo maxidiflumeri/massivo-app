@@ -61,8 +61,17 @@ export class SesSender implements EmailSender {
     } catch (err) {
       const code = (err as { name?: string }).name;
       if (code !== 'NotFoundException') throw err;
-      await this.client.send(new CreateConfigurationSetCommand({ ConfigurationSetName: name }));
-      this.logger.log(`SES configuration set creado: ${name}`);
+      try {
+        await this.client.send(new CreateConfigurationSetCommand({ ConfigurationSetName: name }));
+        this.logger.log(`SES configuration set creado: ${name}`);
+      } catch (createErr) {
+        // Race condition: 2 workers paralelos pasan el Get→NotFoundException,
+        // ambos llaman Create. El segundo recibe "AlreadyExistsException". Es
+        // semánticamente OK — el set existe, sólo no lo creamos nosotros.
+        const createCode = (createErr as { name?: string }).name;
+        if (createCode !== 'AlreadyExistsException') throw createErr;
+        this.logger.debug(`SES configuration set ${name} ya existía (race condition tolerada)`);
+      }
     }
     await this.ensureEventDestination(name);
     this.ensuredSets.add(name);
@@ -109,6 +118,14 @@ export class SesSender implements EmailSender {
   }
 
   async send(input: SendEmailInput): Promise<SendEmailResult> {
+    // SES v2 SimpleContent acepta Headers como array {Name, Value}. Lo usamos
+    // para inyectar List-Unsubscribe + List-Unsubscribe-Post (requeridos por
+    // Gmail/Yahoo 2024 para envíos bulk > 5k/día) y cualquier header custom
+    // que el caller quiera setear.
+    const headers = input.headers
+      ? Object.entries(input.headers).map(([Name, Value]) => ({ Name, Value }))
+      : undefined;
+
     const out = await this.client.send(
       new SendEmailCommand({
         FromEmailAddress: input.from,
@@ -117,6 +134,7 @@ export class SesSender implements EmailSender {
           Simple: {
             Subject: { Data: input.subject, Charset: 'UTF-8' },
             Body: { Html: { Data: input.html, Charset: 'UTF-8' } },
+            Headers: headers,
           },
         },
         ConfigurationSetName: input.configurationSet,

@@ -140,6 +140,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
         include: {
           contact: true,
           campaign: { include: { template: true, smtpAccount: true } },
+          organization: { select: { name: true } },
         },
       });
       if (!report) throw new Error(`EmailReport ${reportId} not found in tenant`);
@@ -207,10 +208,18 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
         t: report.teamId,
         c: report.campaignId,
       });
+      const publicUrl = this.tokens.publicUrl();
+      // Scope=campaign: el unsubscribe se persiste por campaña, no global.
+      // Cambiar a sin ?scope= si querés que un click signifique opt-out global.
+      const unsubscribeUrl = `${publicUrl}/api/unsubscribe?t=${encodeURIComponent(trackingToken)}&scope=campaign`;
+      const senderLabel = report.organization?.name ?? account.fromName;
+
       const html = prepareHtmlForTracking({
         html: renderedHtml,
         token: trackingToken,
-        publicUrl: this.tokens.publicUrl(),
+        publicUrl,
+        unsubscribeUrl,
+        senderLabel,
       });
 
       try {
@@ -227,7 +236,16 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
             provider: account.provider,
             sesConfigSet: account.sesConfigSet,
           },
-          { to: report.contact.email, subject, html },
+          {
+            to: report.contact.email,
+            subject,
+            html,
+            // RFC 8058: header obligatorio para envíos bulk (Gmail/Yahoo 2024)
+            headers: {
+              'List-Unsubscribe': `<${unsubscribeUrl}>`,
+              'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+            },
+          },
         );
 
         await this.prisma.scoped.emailReport.update({
