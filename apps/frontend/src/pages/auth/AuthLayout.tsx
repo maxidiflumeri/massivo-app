@@ -140,8 +140,32 @@ export function AuthLayout({ title, subtitle, children }: Props) {
             width: '100%',
             display: 'flex',
             justifyContent: 'center',
-            '& .cl-rootBox': { width: '100% !important' },
-            '& .cl-card': { width: '100% !important', boxShadow: 'none', background: 'transparent' },
+            '& .cl-rootBox': {
+              width: '100% !important',
+              display: 'flex !important',
+              flexDirection: 'column !important',
+              alignItems: 'center !important',
+            },
+            '& .cl-card': {
+              width: '100% !important',
+              margin: '0 !important',
+              background: isDark
+                ? 'rgba(20, 20, 28, 0.72) !important'
+                : 'rgba(255, 255, 255, 0.92) !important',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              border: isDark
+                ? '1px solid rgba(255,255,255,0.08) !important'
+                : '1px solid rgba(0,0,0,0.06) !important',
+              borderRadius: '16px !important',
+              boxShadow: isDark
+                ? '0 1px 0 rgba(255,255,255,0.06) inset, 0 2px 8px rgba(0,0,0,0.4), 0 16px 32px -8px rgba(0,0,0,0.7), 0 40px 80px -16px rgba(0,0,0,0.85), 0 24px 60px -12px rgba(91,91,214,0.45) !important'
+                : '0 1px 0 rgba(255,255,255,0.8) inset, 0 2px 8px rgba(15,23,42,0.08), 0 16px 32px -8px rgba(15,23,42,0.18), 0 40px 80px -16px rgba(15,23,42,0.28), 0 24px 60px -12px rgba(91,91,214,0.3) !important',
+            },
+            '& .cl-footer': {
+              background: 'transparent !important',
+              borderTop: 'none !important',
+            },
           }}
         >
           {children}
