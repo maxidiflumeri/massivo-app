@@ -21,6 +21,181 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### Fase 11 + 12 — Despliegue POC productivo en AWS ✅
+
+Sesión maratónica que llevó el monorepo de "todo en local" a un POC completamente productivo en AWS, con CI/CD automatizado, landing page propia, infra reproducible vía Terraform, y SES platform-wide listo para volumen. La estrategia fue **simplificar 11.A** (EC2 single-instance + docker-compose en lugar de ECS Fargate Multi-AZ — apropiado para POC con costo controlado por créditos AWS) sin perder el camino a 11.A "real" cuando el producto valide. CI/CD en GH Actions con OIDC (sin Access Keys hardcoded), build ARM nativo, deploy via SSM Send Command. Incluye implementación parcial de Fase 12 (landing pública en `massivo.app`).
+
+#### Added
+
+##### `infra/terraform/` — Infraestructura como código completa
+Carpeta nueva con módulos Terraform que provisionan toda la infra AWS del POC:
+- **`providers.tf`**: AWS provider (`~> 5.80`) con profile `massivo`, region us-east-1, `default_tags` (Project/Env/ManagedBy).
+- **`variables.tf`**: region, project, env, ec2_instance_type (`t4g.small`), rds_instance_class (`db.t4g.micro`), frontend_domain (`panel.massivo.app`), landing_apex_domain (`massivo.app`), landing_www_domain (`www.massivo.app`), github_repo, github_oidc_thumbprints, ssh_public_key_path, ssh_ingress_cidrs.
+- **`data.tf` + `main.tf`**: data sources de VPC default, subnets default, AMI Ubuntu 24.04 ARM más reciente de Canonical, caller_identity, region.
+- **`security_groups.tf`**: SG EC2 (22/80/443 ingress, default egress) + SG RDS (5432 solo desde SG EC2).
+- **`keys.tf`**: `aws_key_pair` para la clave SSH de Maxi (`~/.ssh/massivo_aws.pub`).
+- **`ec2.tf`**: instance `t4g.small` con 20 GB gp3 encriptado, IMDSv2 obligatorio, en subnet pública. `aws_eip` adjunta (32.198.176.111). Iam instance profile.
+- **`rds.tf`**: `db.t4g.micro` Postgres 16, 20 GB → autoscale 100 GB, encryption at-rest, backups 7 días, no Multi-AZ (POC), no publicly accessible. Password random generado con `random_password`.
+- **`s3.tf` + `cloudfront.tf` + `acm.tf`**: bucket frontend privado + OAC + CloudFront + ACM cert para `panel.massivo.app` con DNS validation.
+- **`landing.tf`**: idem para la landing — bucket `massivo-prod-landing-*`, CloudFront separado, ACM multi-SAN para `massivo.app` + `www.massivo.app`.
+- **`ecr.tf`**: repo `massivo-prod-backend` con lifecycle policy (mantener últimas 10 imágenes).
+- **`iam_github.tf`**: OIDC trust provider para GitHub Actions + role `massivo-prod-github-actions` con perms: ECR push, SSM SendCommand a la EC2 específica, S3 sync de panel + landing, CloudFront invalidate. Scope al repo `maxidiflumeri/massivo-app`.
+- **`iam_ec2.tf`**: instance profile + role con `AmazonSSMManagedInstanceCore` + ECR pull + SES (`SendEmail`/`SendBulkEmail`/`SendRawEmail`, manage configuration sets + event destinations, GetAccount, read identities).
+- **`ses.tf`**: SNS topic `massivo-prod-ses-events` platform-wide para bounce/complaint/delivery/open/click + topic policy permitiendo `ses.amazonaws.com` publicar + subscription HTTPS al webhook backend con `endpoint_auto_confirms`.
+- **`outputs.tf`**: account_id, EC2 instance_id + public_ip + ssh_connect_command, RDS endpoint/host/password (sensitive), S3 buckets, CloudFront ids + domains, ECR URL, GH Actions role ARN, SNS topic ARN.
+
+##### `infra/scripts/` — Scripts de provisión y deploy
+- **`provision-ec2.sh`**: idempotente. Instala Docker CE oficial (no el de Ubuntu), docker-compose-plugin, Nginx, certbot + python3-certbot-nginx, crea swap 2 GiB (t4g.small tiene solo 2 GiB RAM), agrega user ubuntu al grupo docker, crea `/opt/massivo`. Tolera `apt-get update` fallido por mirror sync transitorio con retry + `|| true`.
+- **`setup-nginx.sh`**: copia el site config `api.massivo.app.conf` a `/etc/nginx/sites-available`, symlinkea a `sites-enabled`, valida + reload, corre `certbot --nginx -d api.massivo.app --non-interactive --agree-tos --redirect` para emitir cert Let's Encrypt + agregar 80→443 redirect.
+- **`deploy-frontend.sh`**: build local de `apps/frontend` con VITE envs de prod → `aws s3 sync` con cache headers (assets immutable 1 año, html no-cache) → `cloudfront create-invalidation`. Lee bucket + distribution ID via `terraform output`.
+- **`deploy-landing.sh`**: idem pero para `apps/landing`.
+- **`deploy-backend-on-ec2.sh`**: corre en la EC2 vía SSM. Hace `git pull` (como user ubuntu para evitar dubious-ownership), login a ECR, `docker compose pull api`, `docker compose up -d api`, prune. Inline en el workflow para destrabar primera corrida sin chicken-and-egg.
+
+##### `infra/nginx/api.massivo.app.conf`
+Reverse proxy `127.0.0.1:3001` → `https://api.massivo.app`. Headers WebSocket upgrade (Socket.io del módulo inbox), timeouts largos para SSE/WS (86400s), `proxy_buffering off` + `proxy_request_buffering off` para streaming, `client_max_body_size 25M` para uploads de media WhatsApp. Endpoint extra `/nginx-health` para chequeos externos. Listo para que certbot lo promueva a 443 con SSL en la primera corrida.
+
+##### `infra/docker-compose.yml`
+Define `api` (imagen via `${BACKEND_IMAGE:-massivo-backend:latest}` para soportar ECR en prod + build local en dev) y `redis:7-alpine` con AOF persistente (`--save 60 1`). `api` bind a `127.0.0.1:3001` (no expone externamente, Nginx hace proxy). Health checks para ambos. Logging json-file con rotación (max 10MB/5 archivos en api, 10MB/3 en redis). Network interna `massivo-internal`.
+
+##### `apps/backend/Dockerfile`
+Multi-stage Plan B "copy-everything". Stage `base` con `node:22-slim` + corepack + pnpm 9.15.0 + openssl/ca-certificates/curl + prisma CLI 6.16.2 global. Stage `builder` con `pnpm install --frozen-lockfile`, `prisma generate` desde `packages/prisma`, `pnpm --filter @massivo/<pkg> build` para shared-types/permissions/prisma/backend. Stage `runtime` copia `/app` entero del builder (preserva symlinks pnpm). Healthcheck via curl a `/api/health`. Non-root user `massivo`. WORKDIR `/app/apps/backend`. Decisión arquitectónica: descartado `pnpm deploy --prod` por incompatibilidad con prisma auto-install + `workspace:*` refs preservadas en bundle; el costo es imagen ~2.6 GB pero conceptualmente trivial y confiable.
+
+##### `.github/workflows/deploy-backend.yml`
+Push a main + cambios en `apps/backend/**`, `packages/**`, `pnpm-lock.yaml`, `infra/docker-compose.yml` o el propio workflow → build linux/arm64 nativo en runner `ubuntu-24.04-arm` (sin QEMU), push a ECR con tag `<sha>` + `latest`, SSM SendCommand a la EC2 con script bash base64-encoded inline (bypass de escape de newlines/quotes al pasar por SSM API). El script en EC2: `git fetch + reset --hard + clean -fd` como ubuntu user, login ECR, `docker compose pull api + up -d`, prune. Smoke test final: poll `https://api.massivo.app/api/health` cada 5s hasta 150s. Auth via OIDC trust (sin AWS_ACCESS_KEY_ID en GH Secrets). Cache GHA deshabilitado temporalmente (corrupción de layers de COPY).
+
+##### `.github/workflows/deploy-frontend.yml` + `deploy-landing.yml`
+Push a main + cambios en `apps/frontend/**` (o `apps/landing/**`) → `pnpm install --frozen-lockfile` → `vite build` con VITE envs (`VITE_API_BASE_URL=https://api.massivo.app`, `VITE_CLERK_PUBLISHABLE_KEY`, etc.) → `aws s3 sync` con cache headers diferenciados → `cloudfront create-invalidation`. Auth OIDC. Skip de `tsc -b` en el build de frontend (errores de tipos preexistentes en `wapi/bots` y `wapi/inbox` que no bloquean vite).
+
+##### `apps/landing/` — App marketing nueva
+Vite + React 19 + Tailwind v4 + Clerk SDK + lucide-react. Una sola página larga responsive con dark theme + brand morado del panel:
+- **Nav** sticky con backdrop-blur. Logo paper-plane (mismo que el panel). Auth-aware via `useUser()` de Clerk: logged-out muestra "Iniciar sesión" + botón "Probar gratis" → `panel.massivo.app/sign-up`. Logged-in muestra "Ir al panel" + avatar.
+- **Hero** con halo radial brand + grilla sutil estilo Linear. Titular "Conversaciones que **venden.** WhatsApp y Email en un solo lugar." + CTA dual condicional Clerk.
+- **Features** grid de 6 cards: WhatsApp Business API oficial, Email transaccional+masivo, Bots conversacionales no-code, Inbox unificado, Multi-tenant nativo, Cifrado AES-256-GCM.
+- **HowItWorks** con 3 pasos numerados: Conectá canales → Importá contactos → Automatizá y mandá.
+- **Plans** con 3 tiers (FREE/STARTER/BUSINESS) — Starter highlighted como "Recomendado". Precios y límites en sintonía con seed de Plans.
+- **CtaBand** + **Footer**.
+- Bundle final: 304 KB JS / 89 KB gzip (vs 2.4 MB del panel) — Lighthouse 95+ ready.
+- `favicon.svg` + `logo-horizontal.{svg,png}` + `logo-square.png` brandeados (también copiados a `apps/frontend/public/` para que el panel los use).
+
+##### `apps/frontend/src/pages/auth/AuthLayout.tsx`
+Layout compartido por SignIn y SignUp. Centra el widget Clerk de verdad (overrides del `rootBox: width 100%` global del `ClerkWithTheme`). Background dark con halo radial brand + grilla sutil. Logo `<Massivo>` arriba con paper plane gradient. Título + subtítulo por encima del widget de Clerk. Mask radial en la grilla para fade-out.
+
+##### `apps/frontend/src/components/CsvContactsInput.tsx`
+Componente compartido (email + wapi) para carga de contactos por CSV. Tres formas de input: botón "Subir CSV" con file picker, drag & drop visual, paste/escritura manual. Panel de validación arriba: filas válidas / con error / total, chips de columnas detectadas, lista de errores (primeros 5 + "y N más"), chip de required fields. Severity del Alert ajustada según resultado. Drop area con highlight visual brand.
+
+##### `apps/landing/src/components/Plans.tsx` + `Features.tsx` + `Hero.tsx` etc.
+Componentes Tailwind con CTA condicional via `useUser()` de Clerk — toda la landing está "logged-in aware".
+
+#### Changed
+
+##### `apps/backend/src/main.ts`
+Sumado `import type { Request } from 'express'` (type-only, runtime trae nestjs/platform-express). No cambia el comportamiento por defecto del body parser global — el fix del webhook SES se hizo via `req.rawBody` en el controller (ver Fixed).
+
+##### `apps/backend/src/modules/email/webhook/ses-webhook.controller.ts`
+Cambia `@Body() body: SnsMessage` por `@Req() req: RawBodyRequest<Request>` + `JSON.parse(req.rawBody!.toString('utf-8'))`. AWS SNS publica con `Content-Type: text/plain; charset=UTF-8` que el parser default de NestJS no procesa. La approach `rawBody` es quirúrgica: cero impacto en otros endpoints (descartamos un `app.use('/api/webhooks/ses', json({type:'*/*'}))` global que rompía el body parsing de otras rutas en Express 5).
+
+##### `apps/backend/src/modules/email/sender/ses-sender.ts`
+- `send()` ahora pasa el `input.headers` al SES SendEmailCommand vía `Content.Simple.Headers` (array `{Name, Value}`). Habilita inyección de `List-Unsubscribe` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click` requeridos por Gmail/Yahoo 2024 para envíos >5k/día.
+- `ensureConfigurationSet()` ahora tolera race condition: 2 workers que pasan el `Get→NotFoundException` al mismo tiempo y ambos llaman `Create` — el segundo recibía `AlreadyExistsException`. Catch del segundo y debug log; el set existe, semánticamente OK.
+
+##### `apps/backend/src/modules/email/queue/email-worker.service.ts`
+- Suma `organization: { select: { name: true } }` al include de `report`.
+- Construye `unsubscribeUrl` con tracking JWT + `scope=campaign` (opt-out por-campaña).
+- Pasa `unsubscribeUrl` + `senderLabel = organization.name ?? fromName` al nuevo `prepareHtmlForTracking`.
+- Suma headers `List-Unsubscribe: <url>` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click` al sendForAccount.
+
+##### `apps/backend/src/modules/email/tracking/prepare-html.ts`
+Función ahora recibe 2 props nuevos obligatorios: `unsubscribeUrl` + `senderLabel`. Inyecta footer HTML antes del `</body>` con "Enviado por **<Org>** vía Massivo" + link "Cancelar suscripción". Escapa HTML del `senderLabel` (defensa por las dudas). Estilos inline para render consistente en Outlook/Gmail. Spec actualizada en `prepare-html.spec.ts` para pasar los nuevos props.
+
+##### `apps/frontend/src/team/TeamContext.tsx`
+Ahora escucha `useOrganization()` de Clerk y re-deriva `activeTeamId` cuando la org activa cambia. Antes el primer login post-signup tiraba "Falta header X-Team-Id" en cada llamada hasta que el usuario seteara localStorage a mano. También maneja el caso edge de "org cambió pero todavía no llegó el webhook organization.created" limpiando el storage para evitar 403 "el team no pertenece a esta org". `useRef` para detectar transiciones.
+
+##### `apps/frontend/src/pages/auth/SignInPage.tsx` + `SignUpPage.tsx`
+Reescritas para usar el `AuthLayout` compartido. Pasan `appearance` al widget Clerk para hide del header default (mostramos nuestro propio título), card transparente, footer transparente. Auth pages ahora centradas verticalmente con halo brand + grilla — alinea con el resto del producto.
+
+##### `apps/frontend/src/features/email/campaigns/CampaignDetailPage.tsx` + `apps/frontend/src/features/wapi/campaigns/WapiCampaignDetailPage.tsx`
+Reemplazado el `<TextField multiline>` raw del CSV por `<CsvContactsInput>`. El caller calcula `CsvValidationResult` con `useMemo` desde el parser actual; mantenidos los parsers específicos de cada flujo. Required fields label diferenciado: email muestra "email + (externalId o dni)", wapi muestra "phone + (externalId o dni)".
+
+##### `apps/frontend/index.html`
+- favicon: cambiado de `vite.svg` (no existía) a `/favicon.svg` brandeado.
+- title: "Massivo — Panel".
+- theme-color meta: `#5B5BD6` (brand primario).
+
+##### `infra/docker-compose.yml` (vs primera versión)
+Migrado de `build: context: .. dockerfile: apps/backend/Dockerfile` a `image: ${BACKEND_IMAGE:-massivo-backend:latest}`. La línea `build:` queda comentada como referencia para dev local — vos podés descomentarla y reactivarla cuando necesites buildear local sin pasar por ECR.
+
+#### Fixed
+
+##### Bug WAPI: variable `{{1}}` mapeada a "nombre" tiraba "está vacía o no existe"
+`apps/frontend/src/features/wapi/campaigns/WapiCampaignDetailPage.tsx` (y el equivalente en email). El parser CSV solo guardaba en `data` los headers NO reservados — si el CSV venía con header "nombre" se hoisteaba a `firstName` y `data.nombre` quedaba undefined. El worker después buscaba `contact.data['nombre']` y tiraba "Variable {{1}} (columna nombre) está vacía o no existe en este contacto", aunque el CSV sí traía el valor. Fix: el parser ahora pone TODOS los headers en `data[h]` SIEMPRE, además de hoistear los reservados a sus campos específicos. Es duplicación benigna — el backend usa `c.phone`/`c.dni`/etc. directo y solo lee `c.data` para los extras del template.
+
+##### Bug WAPI: `WAPI_GRAPH_BASE_URL=""` no caía al default
+`apps/backend/src/modules/wapi/sender/wapi-sender.service.ts`, `media/wapi-media.service.ts`, `templates-sync/wapi-templates-sync.service.ts`, `templates-posting/wapi-templates-posting.service.ts`. Las 4 services usaban `?? 'https://graph.facebook.com'` (nullish coalescing) que solo cae al default si el valor es `null`/`undefined`. Con `WAPI_GRAPH_BASE_URL=""` en `.env` el `??` no se disparaba, `apiBase` quedaba en string vacío, y los fetch eran a `/v20.0/<phoneId>/messages` sin host → "Failed to parse URL". Cambio a `||` que también cae al default ante string vacío. Detectado el día 0 del bot Multas en producción.
+
+##### Bug Clerk webhook: 404 en path sin prefix `/api`
+Originalmente registramos la URL del webhook Clerk como `https://api.massivo.app/webhooks/clerk`, pero el backend monta el global prefix `/api` (`app.setGlobalPrefix('api')`). El path real es `/api/webhooks/clerk`. Corregido en el dashboard Clerk; el webhook ahora confirma 200 en cada evento.
+
+##### Bug GH Actions buildx cache
+El cache `type=gha` de buildx estaba reusando layers de COPY de versiones anteriores y nos entregaba imágenes con código viejo. El síntoma era: image en ECR tagged con el SHA correcto, pero `dist/main.js` adentro tenía código de un commit anterior. Removidos `cache-from: type=gha` + `cache-to: type=gha,mode=max` del workflow del backend. Builds tardan ~15 min vs 5-8 con cache, pero son confiables. A futuro: migrar a registry cache (`type=registry,ref=<ecr>:cache`).
+
+##### Bug deploy SSM: comment cap 100 chars
+SSM `SendCommand --comment` tiene límite 100 chars. Usábamos `"Deploy ${IMAGE_SHA}"` donde IMAGE_SHA incluye el host ECR + repo + SHA completo (~108 chars). Cambio a `"Deploy backend ${SHORT_SHA}"` (16 chars + 7).
+
+##### Bug deploy SSM: script multi-línea se mangleaba
+El script bash que pasábamos como parameter a SSM perdía los newlines al pasar por `/bin/sh` del agente — recibía `set -o pipefailncd` en lugar de salto de línea. Fix: base64-encode el script en GH Actions y `base64 -d | bash` en el remoto. Bypass total de escapes.
+
+##### Bug deploy SSM: dubious ownership en git pull
+SSM corre como root pero el repo `/opt/massivo/app` es del user ubuntu (lo clonamos así en la provisión). Git desde 2.35 rechaza repos de otro user con "fatal: detected dubious ownership". Fix: `sudo -u ubuntu -H git fetch + reset --hard + clean -fd`. `-H` setea `$HOME` al de ubuntu (sin esto `git config` se rompía). `reset --hard + clean -fd` robustece ante cualquier drift local de debug manual previo.
+
+#### Infra
+
+##### Subdominios resueltos
+- `panel.massivo.app` (era `app.massivo.app` originalmente). Cambio por redundancia con TLD `.app` que generaba "app-app". Migrado vía Terraform: cert ACM nuevo + CloudFront alias swap, sin downtime perceptible.
+- `api.massivo.app` → EC2 Elastic IP `32.198.176.111` via A record en Netlify-DNS.
+- `massivo.app` (apex) → CloudFront landing via ALIAS en Netlify-DNS (RFC 7208 disallow CNAME en apex).
+- `www.massivo.app` → CloudFront landing via CNAME en Netlify-DNS.
+- `bounce.massivo.app` → MAIL FROM custom para SES (MX a `feedback-smtp.us-east-1.amazonses.com` + TXT SPF). Aligned DMARC alignment en relaxed mode con `noreply@massivo.app`.
+
+##### Email auth records
+- **DKIM**: 3 CNAMEs `<token>._domainkey.massivo.app` → `<token>.dkim.amazonses.com` (SES auto-generados).
+- **SPF**: `v=spf1 include:amazonses.com include:spf.improvmx.com ~all` (consolidado en un solo TXT record después de detectar duplicación).
+- **DMARC**: `_dmarc.massivo.app` TXT `v=DMARC1; p=none; rua=mailto:maxidiflumeri@gmail.com` (modo monitor para 2-4 semanas, después escalar a `quarantine` y eventualmente `reject`).
+- **MAIL FROM**: `bounce.massivo.app` (SUCCESS en SES dashboard).
+
+##### Clerk webhook
+Registrado endpoint `https://api.massivo.app/api/webhooks/clerk` con todos los eventos de `user.*` + `organization.*` + `organizationMembership.*`. CLERK_WEBHOOK_SECRET en `.env` de EC2.
+
+##### Meta WhatsApp webhook
+Configurado en Meta dashboard para la WapiConfig real (phoneNumberId `1148839158307039`). URL: `https://api.massivo.app/api/webhooks/wapi/<orgSlug>`. Verify token alineado con la WapiConfig en DB.
+
+##### IP whitelisting Ministerio Transporte BA
+Pasada la EIP `32.198.176.111` al ministerio para acceder a las APIs SOAP del SACIT (`sacitWS`, `sii-ws`, `sacitWS2/infraccionesService` en `ws02.dppsv.gba.gov.ar:8080`). Whitelisting confirmado funcionando — el JBoss responde HTTP a la EIP. Pendiente: que el ministerio confirme paths actuales (los del doc devolvieron 404) y entregue credenciales para `abrir_sesion`. Documentado el reemplazo a futuro del flujo Multas (hoy con reCAPTCHA + JSESSIONID brittle) por `informeDeInfracciones` SOAP.
+
+##### `.env` de producción en EC2
+Generado fuera del repo y scp-eado a `/opt/massivo/app/.env`. Incluye `DATABASE_URL` del RDS (con password URL-encoded), `REDIS_HOST=redis` (service name del compose), Clerk test keys (POC), `SES_EVENTS_SNS_TOPIC_ARN`, `MASSIVO_ENCRYPTION_KEY` (32 bytes hex fresh), `INTERNAL_JWT_SECRET` + `EMAIL_TRACKING_JWT_SECRET` fresh, `EMAIL_PUBLIC_URL=https://api.massivo.app`, `FRONTEND_URL=https://panel.massivo.app`, `ENABLE_DEV_SIMULATOR=false`, `WAPI_GRAPH_BASE_URL=https://graph.facebook.com` (explícito para evitar el bug del `??` que ya fixeamos).
+
+##### Migrations + seeds aplicados a RDS
+17 migrations de Prisma corridas con `prisma migrate deploy`. 3 seeds: `seed.ts` (Plans FREE/STARTER/BUSINESS/ENTERPRISE), `dev-seed.ts` (User + Organization + Team default para el clerkUserId de Maxi), `seed-bot-infracciones.ts` (config POC `DEV_INFRACCIONES_SIM` + flow Bot Multas GBA).
+
+##### Bot Multas GBA migrado a config real Meta
+Vía node one-liner con prisma client, copiados los campos bot del config POC (`cmpr54r8x...`) al config real de Meta (`cmpr7305v0001mr01b8t0jono`, phoneNumberId `1148839158307039`): `botEnabled`, `botFlow`, `botTopics` (1 topic), `botRouter`, `botVariables` (8 variables), `botTopicsDraft`, drafts, `botPublishedAt`. El bot ahora arranca cuando alguien manda "multas" al número real, no solo en el simulador.
+
+##### SES Smoke test end-to-end exitoso
+Campaign creada en el panel → 2 reports enqueueados → SES config set + event destination SNS creados automáticamente → mails enviados → 2 inboxes recibieron OK (`maxidiflumeri@gmail.com`, `maximiliano.diflumeri88@gmail.com`). Validado en logs: `SES configuration set creado`, `SES event destination SNS creado`, `Campaign COMPLETED`. El mail llegó a spam de Outlook por falta del wrapper email (footer + List-Unsubscribe) que arreglamos en este mismo entry — próximo envío debería ir a inbox.
+
+#### Docs
+
+##### `despliegue-prod.md`
+Plan de despliegue con stack final decidido (EC2 t4g.small + RDS t4g.micro + S3+CloudFront + SES + Meta WhatsApp), pre-requisitos manuales (cuenta AWS, Budget alerts, IAM user), 7 fases ordenadas (infra base → provisión instancia → backend → frontend → dominio + certs → SES → WhatsApp). Sirvió de norte durante toda la sesión.
+
+##### `infra/terraform/README.md`
+Cómo usar Terraform en el repo: pre-requisitos, comandos básicos, estado local gitignored (con TODO de migrar a backend S3 cuando POC estabilice), estructura inicial.
+
+##### `infra/dns/ses-dkim-records.csv`
+Snapshot de los 3 CNAMEs DKIM de SES para reproducción rápida ante un eventual cambio de DNS provider.
+
+---
+
 ### 3.C.4.g — UX de variables en templates Unlayer (mergeTags + preview + send-test) ✅
 
 Completa la UX de variables Handlebars en el editor de templates de email. Hasta ahora el usuario tipeaba `{{firstName}}` a mano dentro de Unlayer y se equivocaba seguido; ahora hay un catálogo descubierto desde el backend (identidad base + custom keys de campañas previas), Unlayer recibe `mergeTags` y muestra un dropdown "Merge tags" en cada bloque de texto, el subject (que no es Unlayer sino un TextField) gana un botón "Insertar variable", y hay una vista previa fullscreen con datos editables + envío de email de prueba sin tocar campañas. Cierra el item 3.C.4.g del plan.

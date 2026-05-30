@@ -1234,9 +1234,9 @@ Cierra el ciclo handoff humano: una vez que un operador toma una conversación (
 
 ### Fase 11 — Hardening + Producción
 
-- [ ] **11.A** — Terraform AWS (VPC, ECS Fargate, RDS Postgres Multi-AZ, ElastiCache Redis, ALB, CloudFront, S3, KMS, Secrets Manager, SES, SNS).
-- [ ] **11.B** — CI/CD completo (build → test → deploy staging → smoke → prod con approval).
-- [ ] **11.C** — Backups Postgres retention 30d + DR runbook.
+- [x] **11.A** — Terraform AWS (POC version) ✅ — `infra/terraform/` con VPC default + EC2 t4g.small ARM + EIP + RDS Postgres t4g.micro single-AZ + Redis container con AOF + S3 + CloudFront (×2: panel y landing) + ACM + Route 53/Netlify-DNS + IAM (instance profile + GH Actions OIDC role) + ECR + SNS topic SES. **Simplificado vs target original**: no ECS Fargate (single EC2 + docker-compose, ~USD 30/mes vs 200+), no Multi-AZ RDS (ahorra USD 15/mes), no ElastiCache (Redis en container), no ALB (Nginx en la EC2 con certbot + Let's Encrypt), no Secrets Manager (instance profile + .env gitignored). Documentado el camino a 11.A "real" (Multi-AZ, ECS, ElastiCache, ALB) para cuando el POC valide.
+- [x] **11.B** — CI/CD completo ✅ — 3 GH Actions workflows (deploy-backend, deploy-frontend, deploy-landing) con OIDC trust (sin Access Keys en GH Secrets), paths filter para deploys independientes, push a ECR con tag `<sha>` + `latest`, deploy via SSM SendCommand a la EC2 (sin SSH inbound), smoke test al /api/health post-deploy. **Pendiente del target original**: stage staging (hoy solo `prod` desde main) y approval manual antes de prod.
+- [ ] **11.C** — Backups Postgres retention 30d + DR runbook. Hoy `aws_db_instance.backup_retention_period = 7` y `skip_final_snapshot = true` (POC). Cambiar antes de onboardear clientes reales.
 - [ ] **11.D** — Sentry + OpenTelemetry SDK (deferido desde Fase 0) con tags `orgId/teamId`.
 - [ ] **11.E** — Load testing (k6/Artillery): 10k mensajes/min sostenidos.
 - [ ] **11.F** — Pen-test interno: aislamiento + OWASP Top 10.
@@ -1246,8 +1246,8 @@ Cierra el ciclo handoff humano: una vez que un operador toma una conversación (
 
 ### Fase 12 — Lanzamiento
 
-- [ ] Landing page de marketing (ya esbozado en Fase 3.C.3.e).
-- [ ] Onboarding emails.
+- [x] **Landing page de marketing** ✅ — `apps/landing/` (Vite + React 19 + Tailwind v4 + Clerk SDK) deployada en `massivo.app` + `www.massivo.app` via S3 + CloudFront separados del panel. Brand unificado con panel (gradient morado paper-plane). Nav reactiva a Clerk session via `useUser()` con CTA condicional (logged-out: "Probar gratis" → panel/sign-up; logged-in: "Ir al panel"). Hero, 6 features, 3 pasos how-it-works, 3 planes con Starter highlighted, CTA band, footer. Bundle 304 KB / 89 KB gzip.
+- [ ] Onboarding emails (ahora que SES está operativo + email wrapper con List-Unsubscribe + footer + DKIM/SPF/DMARC/MAIL FROM alineados — unblocked).
 - [ ] Documentación pública (Mintlify/Docusaurus): API OpenAPI/Swagger + guías de usuario.
 - [ ] Soporte: integrar Intercom o Crisp.
 - [ ] Programa beta cerrado → GA.
