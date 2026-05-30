@@ -153,6 +153,11 @@ function parseContactsCsv(text: string): {
       headers.forEach((h, i) => {
         const v = cols[i] ?? '';
         if (!v) return;
+        // SIEMPRE guardamos en data para que las variables del template
+        // ({{1}} mapeado a "nombre", "phone", "dni", etc.) puedan resolver
+        // el valor — independientemente de si el header es reservado.
+        data[h] = v;
+        // Y además hoisteamos a campos específicos del DTO:
         if (h === 'phone' || h === 'telefono' || h === 'teléfono') phone = v;
         else if (h === 'externalid' || h === 'external_id' || h === 'idexterno' || h === 'id_externo') externalId = v;
         else if (h === 'dni' || h === 'documento') dni = v;
@@ -160,7 +165,6 @@ function parseContactsCsv(text: string): {
         else if (h === 'firstname' || h === 'first_name' || h === 'nombre') firstName = v;
         else if (h === 'lastname' || h === 'last_name' || h === 'apellido') lastName = v;
         else if (h === 'name') name = v;
-        else if (!RESERVED_HEADERS.has(h)) data[h] = v;
       });
     } else {
       phone = cols[0];
