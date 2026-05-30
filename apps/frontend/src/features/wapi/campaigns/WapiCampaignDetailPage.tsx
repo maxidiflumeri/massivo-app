@@ -39,6 +39,7 @@ import type {
 } from './types';
 import { WapiCampaignSendsSection } from './WapiCampaignSendsSection';
 import { WapiCampaignProcessingBanner } from './WapiCampaignProcessingBanner';
+import { CsvContactsInput, type CsvValidationResult } from '../../../components/CsvContactsInput';
 
 const REPORT_STATUSES: Array<{
   key: string;
@@ -357,6 +358,20 @@ export function WapiCampaignDetailPage() {
     }
     return Array.from(keys).sort();
   }, [parsed.contacts, savedDataKeys]);
+
+  // Validación para el panel del CsvContactsInput.
+  const csvValidation: CsvValidationResult = useMemo(() => {
+    const lines = contactsText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const first = lines[0]?.toLowerCase() ?? '';
+    const looksLikeHeader = /phone|tel[eé]fono|externalid|external_id|idexterno|id_externo|dni|documento/.test(first);
+    const totalDataLines = looksLikeHeader ? Math.max(0, lines.length - 1) : lines.length;
+    return {
+      totalDataLines,
+      validRows: parsed.contacts.length,
+      errors: parsed.errors,
+      detectedColumns: csvColumnSuggestions,
+    };
+  }, [contactsText, parsed, csvColumnSuggestions]);
 
   async function handleSave() {
     if (!campaign) return;
@@ -877,16 +892,15 @@ export function WapiCampaignDetailPage() {
               cross-canal). Columnas extra quedan disponibles como variables del template. Los
               teléfonos se normalizan automáticamente (espacios y guiones se descartan).
             </Typography>
-            <TextField
-              multiline
-              minRows={6}
-              maxRows={16}
-              fullWidth
+            <CsvContactsInput
+              value={contactsText}
+              onChange={setContactsText}
+              validation={csvValidation}
+              requiredFieldsLabel="phone + (externalId o dni)"
+              helperText="Header esperado: phone, externalId|dni, opcional nombre/apellido + cualquier columna extra para usar como variable del template."
               placeholder={
                 'externalId,phone,nombre,apellido\nC-001,+5491100000001,Juan,Perez\nC-002,+5491100000002,Ana,Lopez'
               }
-              value={contactsText}
-              onChange={(e) => setContactsText(e.target.value)}
             />
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
               <Button
@@ -898,11 +912,6 @@ export function WapiCampaignDetailPage() {
                 Agregar {parsed.contacts.length} contacto
                 {parsed.contacts.length === 1 ? '' : 's'}
               </Button>
-              {parsed.errors.length > 0 && (
-                <Typography variant="caption" color="error">
-                  {parsed.errors.length} línea(s) inválidas
-                </Typography>
-              )}
             </Box>
           </Stack>
         ) : (

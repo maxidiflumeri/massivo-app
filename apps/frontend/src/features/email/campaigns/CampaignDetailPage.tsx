@@ -34,6 +34,7 @@ import type {
 import { CampaignSendsSection } from './CampaignSendsSection';
 import { CampaignProcessingBanner } from './CampaignProcessingBanner';
 import { ExportReportButton } from '../reports/ExportReportButton';
+import { CsvContactsInput, type CsvValidationResult } from '../../../components/CsvContactsInput';
 
 const REPORT_STATUSES: Array<{ key: string; label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error' }> = [
   { key: 'PENDING', label: 'Pendientes', color: 'default' },
@@ -121,6 +122,10 @@ function parseContactsCsv(text: string): { contacts: CampaignContactInput[]; err
       headers.forEach((h, i) => {
         const v = cols[i] ?? '';
         if (!v) return;
+        // Siempre guardamos en data para que variables del template
+        // ({{nombre}}, {{phone}}, etc.) resuelvan sin importar si el
+        // header coincide con un campo reservado del DTO.
+        data[h] = v;
         if (h === 'email') email = v;
         else if (h === 'externalid' || h === 'external_id' || h === 'idexterno' || h === 'id_externo') externalId = v;
         else if (h === 'dni' || h === 'documento') dni = v;
@@ -128,7 +133,6 @@ function parseContactsCsv(text: string): { contacts: CampaignContactInput[]; err
         else if (h === 'firstname' || h === 'first_name' || h === 'nombre') firstName = v;
         else if (h === 'lastname' || h === 'last_name' || h === 'apellido') lastName = v;
         else if (h === 'name') name = v;
-        else if (!RESERVED_HEADERS.has(h)) data[h] = v;
       });
     } else {
       email = cols[0];
@@ -242,6 +246,23 @@ export function CampaignDetailPage() {
   }, [socket, id, load]);
 
   const parsed = useMemo(() => parseContactsCsv(contactsText), [contactsText]);
+
+  // Validación para el panel del CsvContactsInput.
+  const csvValidation: CsvValidationResult = useMemo(() => {
+    const lines = contactsText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const first = lines[0]?.toLowerCase() ?? '';
+    const looksLikeHeader = /email|externalid|external_id|idexterno|id_externo|dni|documento/.test(first);
+    const totalDataLines = looksLikeHeader ? Math.max(0, lines.length - 1) : lines.length;
+    const detectedColumns = looksLikeHeader
+      ? lines[0]!.split(/[,;\t]/).map((h) => h.trim()).filter(Boolean)
+      : [];
+    return {
+      totalDataLines,
+      validRows: parsed.contacts.length,
+      errors: parsed.errors,
+      detectedColumns,
+    };
+  }, [contactsText, parsed]);
 
   async function handleSave() {
     if (!campaign) return;
@@ -571,16 +592,15 @@ export function CampaignDetailPage() {
               <code>externalId</code> o <code>dni</code> (clave fuerte para unificar el
               contacto cross-canal). Columnas extra se guardan como <code>data</code>.
             </Typography>
-            <TextField
-              multiline
-              minRows={6}
-              maxRows={16}
-              fullWidth
+            <CsvContactsInput
+              value={contactsText}
+              onChange={setContactsText}
+              validation={csvValidation}
+              requiredFieldsLabel="email + (externalId o dni)"
+              helperText="Header esperado: email, externalId|dni, opcional nombre/apellido + cualquier columna extra para usar como variable del template."
               placeholder={
                 'externalId,email,nombre,apellido\nC-001,juan@ejemplo.com,Juan,Perez\nC-002,ana@ejemplo.com,Ana,Lopez'
               }
-              value={contactsText}
-              onChange={(e) => setContactsText(e.target.value)}
             />
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
               <Button
@@ -592,11 +612,6 @@ export function CampaignDetailPage() {
                 Agregar {parsed.contacts.length} contacto
                 {parsed.contacts.length === 1 ? '' : 's'}
               </Button>
-              {parsed.errors.length > 0 && (
-                <Typography variant="caption" color="error">
-                  {parsed.errors.length} línea(s) inválidas
-                </Typography>
-              )}
             </Box>
           </Stack>
         ) : (
