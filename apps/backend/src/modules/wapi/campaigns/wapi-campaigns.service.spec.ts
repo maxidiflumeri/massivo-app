@@ -48,11 +48,22 @@ describe('WapiCampaignsService', () => {
     contactUpsert = {
       upsert: jest.fn().mockResolvedValue({ contactId: 'k1', outcome: 'created' }),
     };
+    const quota = {
+      getSnapshot: jest.fn().mockResolvedValue({
+        planCode: 'TEST',
+        periodStart: new Date(0),
+        periodEnd: new Date(0),
+        used: 0,
+        limit: null,
+        remaining: null,
+      }),
+    };
     svc = new WapiCampaignsService(
       prisma as never,
       queue as never,
       events as never,
       contactUpsert as never,
+      quota as never,
     );
   });
 
@@ -236,7 +247,7 @@ describe('WapiCampaignsService', () => {
 
       const r = await withCtx(() => svc.send('c1'));
 
-      expect(r).toEqual({ enqueued: 2 });
+      expect(r).toMatchObject({ enqueued: 2, quotaSkipped: 0 });
       expect(prisma.scoped.wapiCampaign.update).toHaveBeenCalledWith({
         where: { id: 'c1' }, data: { status: 'PROCESSING' },
       });

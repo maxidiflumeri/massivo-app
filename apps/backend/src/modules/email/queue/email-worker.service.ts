@@ -8,6 +8,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EventsService } from '../../events/events.service';
 import { EmailSenderService } from '../sender/email-sender.service';
 import { SuppressionService } from '../suppression/suppression.service';
+import { QuotaService } from '../../../common/quota/quota.service';
 import { prepareHtmlForTracking } from '../tracking/prepare-html';
 import { TrackingTokenService } from '../tracking/tracking-token.service';
 import { EMAIL_QUEUE_NAME, type EmailSendJob } from './email-queue.types';
@@ -33,6 +34,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly tokens: TrackingTokenService,
     private readonly suppression: SuppressionService,
     private readonly events: EventsService,
+    private readonly quota: QuotaService,
   ) {}
 
   private notifyReportUpdate(teamId: string, campaignId: string): void {
@@ -196,6 +198,31 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
         await this.maybeCompleteCampaign(report.campaignId, teamId);
         this.logger.log(`Report ${reportId} suprimido (${supp.reason}) — skip send`);
         return { suppressed: true, reason: supp.reason };
+      }
+
+      // Defense in depth: el send() del service ya rebanó por quota, pero entre
+      // el momento del split y este job pudieron correr otros jobs/campañas y
+      // dejar la cuenta en 0. Re-chequea y cancela el report si excede.
+      const quota = await this.quota.getSnapshot(organizationId, 'EMAIL');
+      if (quota.remaining !== null && quota.remaining <= 0) {
+        const quotaError = `quota-exceeded:plan-${quota.planCode}`;
+        await this.prisma.scoped.emailReport.update({
+          where: { id: reportId },
+          data: { status: 'CANCELED', error: quotaError },
+        });
+        this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportLog(teamId, {
+          campaignId: report.campaignId,
+          reportId,
+          email: report.contact.email,
+          status: 'FAILED',
+          error: quotaError,
+        });
+        await this.maybeCompleteCampaign(report.campaignId, teamId);
+        this.logger.warn(
+          `Report ${reportId} → CANCELED (quota exceeded plan=${quota.planCode}, used=${quota.used}, limit=${quota.limit})`,
+        );
+        return { canceled: true };
       }
 
       const vars = (report.contact.data as Record<string, unknown> | null) ?? {};

@@ -11,6 +11,7 @@ import { TenantContext } from '../../../common/auth/tenant-context';
 import { ContactUpsertService } from '../../contacts/contact-upsert.service';
 import { EventsService } from '../../events/events.service';
 import { WapiQueueService } from '../queue/wapi-queue.service';
+import { QuotaService } from '../../../common/quota/quota.service';
 import {
   AddWapiCampaignContactsDto,
   CreateWapiCampaignDto,
@@ -59,6 +60,7 @@ export class WapiCampaignsService {
     private readonly queue: WapiQueueService,
     private readonly events: EventsService,
     private readonly contactUpsert: ContactUpsertService,
+    private readonly quota: QuotaService,
   ) {}
 
   private notifyCampaignUpdated(teamId: string, campaignId: string): void {
@@ -228,8 +230,23 @@ export class WapiCampaignsService {
   /**
    * Crea WapiReport por contacto + enquola job por cada uno. Marca PROCESSING.
    * Idempotente a nivel de job (BullMQ jobId=reportId).
+   *
+   * Aplica enforcement de quota mensual del plan con **corte parcial**: si los
+   * contactos exceden el `remaining` del mes, los primeros N van a PENDING y
+   * se encolan; el resto se crea con status `CANCELED` + error `quota-exceeded:plan-<code>`
+   * (no se encolan). Si la quota está totalmente consumida, todos los reports
+   * salen CANCELED y la campaña se marca COMPLETED directamente.
    */
-  async send(id: string): Promise<{ enqueued: number }> {
+  async send(id: string): Promise<{
+    enqueued: number;
+    quotaSkipped: number;
+    quota: {
+      planCode: string;
+      used: number;
+      limit: number | null;
+      remaining: number | null;
+    };
+  }> {
     const ctx = TenantContext.current();
     if (!ctx) throw new Error('send sin TenantContext');
 
@@ -245,13 +262,23 @@ export class WapiCampaignsService {
     if (!campaign.configId) throw new BadRequestException('Falta configId');
     if (campaign.contacts.length === 0) throw new BadRequestException('Campaign sin contactos');
 
+    const quota = await this.quota.getSnapshot(ctx.organizationId, 'WAPI');
+    const total = campaign.contacts.length;
+    const allowed = quota.remaining === null ? total : Math.min(total, quota.remaining);
+    const skipped = total - allowed;
+    const quotaError = `quota-exceeded:plan-${quota.planCode}`;
+
+    // Si no entra nadie: pasamos directo a COMPLETED para no dejar la campaña
+    // colgada en PROCESSING (no se encola nada, el worker nunca corre
+    // maybeCompleteCampaign).
+    const initialStatus = allowed === 0 ? 'COMPLETED' : 'PROCESSING';
     await this.prisma.scoped.wapiCampaign.update({
       where: { id },
-      data: { status: 'PROCESSING' },
+      data: { status: initialStatus },
     });
 
     const reports = await this.prisma.$transaction(
-      campaign.contacts.map((c) =>
+      campaign.contacts.map((c, idx) =>
         this.prisma.wapiReport.create({
           data: {
             organizationId: ctx.organizationId,
@@ -259,24 +286,42 @@ export class WapiCampaignsService {
             campaignId: id,
             contactId: c.id,
             phone: c.phone,
-            status: 'PENDING',
+            status: idx < allowed ? 'PENDING' : 'CANCELED',
+            error: idx < allowed ? null : quotaError,
           },
-          select: { id: true },
+          select: { id: true, status: true },
         }),
       ),
     );
 
-    for (const r of reports) {
+    // Los primeros `allowed` reports son los PENDING (el resto vino CANCELED
+    // del split). No leo `r.status` del retorno: el orden del create matchea
+    // el del input por construcción.
+    let enqueued = 0;
+    for (let i = 0; i < Math.min(allowed, reports.length); i++) {
       await this.queue.enqueue({
-        reportId: r.id,
+        reportId: reports[i]!.id,
         organizationId: ctx.organizationId,
         teamId: ctx.teamId,
       });
+      enqueued++;
     }
 
-    this.logger.log(`WapiCampaign ${id} → enqueued ${reports.length} reports`);
+    this.logger.log(
+      `WapiCampaign ${id} → enqueued ${enqueued}/${total} (quota skipped: ${skipped}, plan=${quota.planCode}, used=${quota.used}, limit=${quota.limit ?? '∞'})`,
+    );
     this.notifyCampaignUpdated(ctx.teamId, id);
-    return { enqueued: reports.length };
+
+    return {
+      enqueued,
+      quotaSkipped: skipped,
+      quota: {
+        planCode: quota.planCode,
+        used: quota.used,
+        limit: quota.limit,
+        remaining: quota.remaining,
+      },
+    };
   }
 
   /**

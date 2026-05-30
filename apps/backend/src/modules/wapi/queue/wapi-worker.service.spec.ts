@@ -53,6 +53,16 @@ describe('WapiWorkerService.process', () => {
       resolveKeywords: jest.fn().mockReturnValue([]),
       matchKeyword: jest.fn().mockReturnValue(null),
     };
+    const quota = {
+      getSnapshot: jest.fn().mockResolvedValue({
+        planCode: 'TEST',
+        periodStart: new Date(0),
+        periodEnd: new Date(0),
+        used: 0,
+        limit: null,
+        remaining: null,
+      }),
+    };
     // Forzar jitter a 0 para no demorar tests
     worker = new WapiWorkerService(
       new ConfigService({ WAPI_DELAY_MIN_MS: '0', WAPI_DELAY_MAX_MS: '0' }),
@@ -61,6 +71,7 @@ describe('WapiWorkerService.process', () => {
       events as never,
       encryption as never,
       optOut as never,
+      quota as never,
     );
   });
 
@@ -309,6 +320,7 @@ describe('WapiWorkerService.jitterMs (4.Q cascade)', () => {
     return new WapiWorkerService(
       new ConfigService(env),
       { scoped: {}, wapiCampaign: {} } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

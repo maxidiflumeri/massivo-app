@@ -45,11 +45,22 @@ describe('EmailCampaignsService', () => {
     contactUpsert = {
       upsert: jest.fn().mockResolvedValue({ contactId: 'k1', outcome: 'created' }),
     };
+    const quota = {
+      getSnapshot: jest.fn().mockResolvedValue({
+        planCode: 'TEST',
+        periodStart: new Date(0),
+        periodEnd: new Date(0),
+        used: 0,
+        limit: null,
+        remaining: null,
+      }),
+    };
     svc = new EmailCampaignsService(
       prisma as never,
       queue as never,
       events as never,
       contactUpsert as never,
+      quota as never,
     );
   });
 
@@ -191,7 +202,7 @@ describe('EmailCampaignsService', () => {
 
       const r = await withCtx(() => svc.send('c1'));
 
-      expect(r).toEqual({ enqueued: 2 });
+      expect(r).toMatchObject({ enqueued: 2, quotaSkipped: 0 });
       expect(prisma.scoped.emailCampaign.update).toHaveBeenCalledWith({
         where: { id: 'c1' }, data: { status: 'PROCESSING' },
       });

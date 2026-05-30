@@ -365,11 +365,21 @@ export function CampaignDetailPage() {
     if (!ok) return;
     setSending(true);
     try {
-      const res = await api.post<{ enqueued: number }>(
-        `/api/email/campaigns/${campaign.id}/send`,
-        {},
-      );
-      notify.success(`Encolados ${res.enqueued} envíos`);
+      const res = await api.post<{
+        enqueued: number;
+        quotaSkipped: number;
+        quota: { planCode: string; limit: number | null; remaining: number | null };
+      }>(`/api/email/campaigns/${campaign.id}/send`, {});
+      if (res.quotaSkipped > 0) {
+        const total = res.enqueued + res.quotaSkipped;
+        notify.warning(
+          res.enqueued === 0
+            ? `Tu plan ${res.quota.planCode} llegó al límite mensual de emails: 0 de ${total} encolados, ${res.quotaSkipped} cancelados por cuota.`
+            : `Llegaste al límite mensual del plan ${res.quota.planCode}: ${res.enqueued} de ${total} encolados, ${res.quotaSkipped} cancelados por cuota.`,
+        );
+      } else {
+        notify.success(`Encolados ${res.enqueued} envíos`);
+      }
       await Promise.all([load(), loadReport()]);
     } catch (e) {
       notify.error(e instanceof Error ? e.message : 'Error enviando');

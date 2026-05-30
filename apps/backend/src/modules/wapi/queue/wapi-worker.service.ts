@@ -13,6 +13,7 @@ import {
   type TemplateComponent,
 } from '../sender/wapi-sender.types';
 import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
+import { QuotaService } from '../../../common/quota/quota.service';
 import { WAPI_QUEUE_NAME, type WapiSendJob } from './wapi-queue.types';
 
 const DEFAULT_DELAY_MIN_MS = 30_000;
@@ -62,6 +63,7 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly events: EventsService,
     private readonly encryption: EncryptionService,
     private readonly optOut: WapiOptOutService,
+    private readonly quota: QuotaService,
   ) {}
 
   private notifyReportUpdate(teamId: string, campaignId: string): void {
@@ -255,6 +257,31 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
           error: `opted-out:${optOutCheck.scope?.toLowerCase() ?? 'global'}`,
         });
         await this.maybeCompleteCampaign(report.campaignId, teamId);
+        return { canceled: true };
+      }
+
+      // Defense in depth: el send() del service ya rebanó por quota mensual,
+      // pero entre el split y este job pudieron correr otros jobs/campañas y
+      // dejar la cuenta en 0. Re-chequea y cancela el report si excede.
+      const quota = await this.quota.getSnapshot(organizationId, 'WAPI');
+      if (quota.remaining !== null && quota.remaining <= 0) {
+        const quotaError = `quota-exceeded:plan-${quota.planCode}`;
+        await this.prisma.scoped.wapiReport.update({
+          where: { id: reportId },
+          data: { status: 'CANCELED', error: quotaError, failedAt: new Date() },
+        });
+        this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportLog(teamId, {
+          campaignId: report.campaignId,
+          reportId,
+          phone: report.phone,
+          status: 'FAILED',
+          error: quotaError,
+        });
+        await this.maybeCompleteCampaign(report.campaignId, teamId);
+        this.logger.warn(
+          `Report ${reportId} → CANCELED (quota exceeded plan=${quota.planCode}, used=${quota.used}, limit=${quota.limit})`,
+        );
         return { canceled: true };
       }
 

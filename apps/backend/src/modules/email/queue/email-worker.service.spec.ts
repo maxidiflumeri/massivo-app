@@ -43,6 +43,16 @@ describe('EmailWorkerService.process', () => {
       check: jest.fn().mockResolvedValue({ suppressed: false }),
     };
     events = { emitToTeamDebounced: jest.fn(), emitToTeam: jest.fn() };
+    const quota = {
+      getSnapshot: jest.fn().mockResolvedValue({
+        planCode: 'TEST',
+        periodStart: new Date(0),
+        periodEnd: new Date(0),
+        used: 0,
+        limit: null,
+        remaining: null,
+      }),
+    };
     worker = new EmailWorkerService(
       new ConfigService({}),
       { scoped: prismaScoped, ...prismaRoot } as never,
@@ -50,6 +60,7 @@ describe('EmailWorkerService.process', () => {
       tokens as never,
       suppression as never,
       events as never,
+      quota as never,
     );
   });
 
