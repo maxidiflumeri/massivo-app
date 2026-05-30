@@ -66,3 +66,37 @@ export interface MeContextResponse {
   user: MeUser;
   organizations: MeOrganization[];
 }
+
+/**
+ * Snapshot de consumo de la organización activa contra los límites de su plan,
+ * más accesos rápidos a la última actividad del usuario (campañas).
+ *
+ * `limit: null` = ilimitado.
+ */
+export interface UsageMetricSnapshot {
+  used: number;
+  limit: number | null;
+}
+
+export interface MeUsageLastCampaign {
+  id: string;
+  name: string;
+  status: string;
+  updatedAt: string;
+}
+
+export interface MeUsageResponse {
+  /** Plan code para colorear/labelear en UI. */
+  planCode: string;
+  planName: string;
+  /** ISO date — inicio del período facturable actual (mes). */
+  periodStart: string;
+  periodEnd: string;
+  metrics: {
+    emails: UsageMetricSnapshot;
+    wapiMessages: UsageMetricSnapshot;
+    dedicatedDomains: UsageMetricSnapshot;
+  };
+  lastEmailCampaign: MeUsageLastCampaign | null;
+  lastWapiCampaign: MeUsageLastCampaign | null;
+}

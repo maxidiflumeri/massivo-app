@@ -8,6 +8,7 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './common/auth/auth.module';
 import { AuditLogModule } from './common/audit/audit-log.module';
 import { SecurityModule } from './common/security/security.module';
+import { QuotaModule } from './common/quota/quota.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { MeModule } from './modules/me/me.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -31,6 +32,7 @@ import { DevModule } from './modules/dev/dev.module';
     AuthModule,
     AuditLogModule,
     SecurityModule,
+    QuotaModule,
     WebhooksModule,
     MeModule,
     OrganizationsModule,
