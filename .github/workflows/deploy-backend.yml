@@ -96,7 +96,12 @@ jobs:
             docker login --username AWS --password-stdin "\${ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com"
           docker compose -f infra/docker-compose.yml pull api
           docker compose -f infra/docker-compose.yml up -d api
-          docker image prune -f
+          # Limpieza:
+          #   - imágenes sin contenedor > 24h (mantiene una para rollback rápido)
+          #   - build cache de buildx > 72h (acumula GBs si no se purga)
+          # Sin esto el disco de 20GB se llena cada ~5 deploys (imagen ~2.6GB).
+          docker image prune -a -f --filter "until=24h"
+          docker builder prune -a -f --filter "until=72h"
           docker compose -f infra/docker-compose.yml ps
           EOSH
           )
