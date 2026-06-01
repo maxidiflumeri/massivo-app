@@ -6,7 +6,6 @@ import { PANEL_URL, SIGNUP_URL } from '@/lib/config';
 type Plan = {
   code: string;
   name: string;
-  price: string;
   desc: string;
   features: string[];
   highlight?: boolean;
@@ -17,7 +16,6 @@ const PLANS: Plan[] = [
   {
     code: 'FREE',
     name: 'Free',
-    price: 'USD 0',
     desc: 'Para probar, validar y entender la plataforma.',
     features: [
       '1.000 emails / mes',
@@ -30,7 +28,6 @@ const PLANS: Plan[] = [
   {
     code: 'STARTER',
     name: 'Starter',
-    price: 'USD 29',
     desc: 'Para PyMEs que ya tienen volumen y quieren escalar.',
     features: [
       '25.000 emails / mes',
@@ -45,7 +42,6 @@ const PLANS: Plan[] = [
   {
     code: 'BUSINESS',
     name: 'Business',
-    price: 'USD 99',
     desc: 'Para agencias multi-cliente y equipos de soporte grandes.',
     features: [
       '150.000 emails / mes',
@@ -68,11 +64,12 @@ export function Plans() {
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-sm font-medium text-brand-400 uppercase tracking-wider">Planes</p>
           <h2 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-tight">
-            Pagás por volumen, no por feature.
+            Todo incluido. Elegís según el volumen.
           </h2>
           <p className="mt-5 text-lg text-neutral-400">
             Todos los planes incluyen WhatsApp Business API, email, bots e inbox. La diferencia
-            es cuánto mandás.
+            es cuánto mandás. Estamos definiendo precios — escribinos para conocer las
+            condiciones del programa beta.
           </p>
         </div>
 
@@ -95,13 +92,6 @@ export function Plans() {
 
               <h3 className="font-display text-xl font-semibold tracking-tight">{plan.name}</h3>
               <p className="mt-1 text-sm text-neutral-400">{plan.desc}</p>
-
-              <div className="mt-5 flex items-baseline gap-1">
-                <span className="font-display text-4xl font-semibold tracking-tight">
-                  {plan.price}
-                </span>
-                <span className="text-neutral-500 text-sm">/mes</span>
-              </div>
 
               <a
                 href={target}
