@@ -12,11 +12,13 @@ describe('TeamsService', () => {
       findMany: jest.Mock;
       findUnique: jest.Mock;
       findFirst: jest.Mock;
+      count: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
       delete: jest.Mock;
     };
     teamMembership: { create: jest.Mock };
+    organization: { findUniqueOrThrow: jest.Mock };
   };
 
   const ownerCtx: RequestContext = {
