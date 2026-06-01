@@ -130,6 +130,38 @@ const sidebars: SidebarsConfig = {
         },
       ],
     },
+    {
+      type: 'category',
+      label: 'Contactos',
+      collapsed: false,
+      link: {type: 'generated-index', slug: '/contactos'},
+      items: [
+        {
+          type: 'category',
+          label: 'Conceptos',
+          items: [
+            'contactos/conceptos/modelo-unificado',
+            'contactos/conceptos/merge-suggestions',
+            'contactos/conceptos/listas-y-tags',
+          ],
+        },
+        'contactos/importar-csv',
+        'contactos/buscar-y-filtrar',
+        'contactos/gestionar-duplicados',
+        'contactos/reportes',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Administración',
+      collapsed: false,
+      link: {type: 'generated-index', slug: '/administracion'},
+      items: [
+        'administracion/gestionar-usuarios',
+        'administracion/audit-log',
+        'administracion/cambiar-plan-billing',
+      ],
+    },
   ],
 };
 
