@@ -13,12 +13,16 @@ import type { BotData } from './bot-flow-runtime';
  * Parser singleton para responses XML/SOAP. `removeNSPrefix` aplana namespaces
  * (`soapenv:Envelope` → `Envelope`) para que JSONata/dot-access del bot sea
  * directo. `ignoreAttributes:false` preserva atributos como `@_*` por si el
- * cliente los necesita (ej. `xsi:nil`).
+ * cliente los necesita (ej. `xsi:nil`). `htmlEntities:true` decodifica
+ * numeric character references como `&#xF3;` → ó y `&#xED;` → í (típico en
+ * webservices gov.ar de Java/Axis viejos que escapean acentos en lugar de
+ * mandar UTF-8 puro).
  */
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   removeNSPrefix: true,
+  htmlEntities: true,
 });
 
 /**

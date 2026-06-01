@@ -258,6 +258,32 @@ describe('WapiBotHttpExecutor', () => {
       expect(r.body).toMatchObject({ binary: true, contentType: 'application/octet-stream' });
     });
 
+    it('XML: numeric entities (&#xF3;) se decodifican a caracteres reales (acentos)', async () => {
+      // Typical en webservices gov.ar de Java/Axis viejos: mandan los acentos
+      // como numeric character references en lugar de UTF-8. Sin htmlEntities,
+      // los caracteres llegan como `&#xF3;` literales al bot.
+      nextResponse = {
+        status: 200,
+        headers: { 'content-type': 'text/xml; charset=utf-8' },
+        body:
+          '<?xml version="1.0"?><root>' +
+          '<descripcion>Notificaci&#xF3;n de Infracci&#xF3;n</descripcion>' +
+          '<motivo>L&#xED;mites de velocidad</motivo>' +
+          '</root>',
+      };
+      const limiter = new WapiBotHttpRateLimiterService();
+      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const r = await exec.execute(
+        makeNode({ url: `${baseUrl}/xml-entities` }),
+        {},
+        { mode: 'real', configId: 'c1', nodeId: 'n1', organizationId: 'org1' },
+      );
+      expect(r.ok).toBe(true);
+      const body = r.body as { root: { descripcion: string; motivo: string } };
+      expect(body.root.descripcion).toBe('Notificación de Infracción');
+      expect(body.root.motivo).toBe('Límites de velocidad');
+    });
+
     it('SOAP: body string crudo se envía sin JSON.stringify y XML response se parsea a JSON', async () => {
       // El server recibe el SOAP request y devuelve un SOAP response. Verificamos
       // que el body llegó intacto (no envuelto en quotes por stringify) y que el
