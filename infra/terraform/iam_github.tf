@@ -89,7 +89,7 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
         Resource = "*"
       },
-      # S3 — sync de panel y landing
+      # S3 — sync de panel, landing y docs
       {
         Sid    = "S3Sync"
         Effect = "Allow"
@@ -105,6 +105,8 @@ resource "aws_iam_role_policy" "github_actions" {
           "${aws_s3_bucket.frontend.arn}/*",
           aws_s3_bucket.landing.arn,
           "${aws_s3_bucket.landing.arn}/*",
+          aws_s3_bucket.docs.arn,
+          "${aws_s3_bucket.docs.arn}/*",
         ]
       },
       # CloudFront — invalidaciones post-deploy
@@ -117,6 +119,7 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = [
           aws_cloudfront_distribution.frontend.arn,
           aws_cloudfront_distribution.landing.arn,
+          aws_cloudfront_distribution.docs.arn,
         ]
       },
     ]

@@ -94,6 +94,12 @@ variable "landing_www_domain" {
   default     = "www.massivo.app"
 }
 
+variable "docs_domain" {
+  description = "Subdominio donde vive la documentación pública (Docusaurus)"
+  type        = string
+  default     = "docs.massivo.app"
+}
+
 variable "github_repo" {
   description = "Repo de GitHub que puede assumir el role de CI (formato owner/repo)"
   type        = string

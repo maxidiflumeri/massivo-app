@@ -146,6 +146,32 @@ output "landing_cloudfront_domain" {
   value       = aws_cloudfront_distribution.landing.domain_name
 }
 
+output "docs_s3_bucket" {
+  description = "Bucket S3 donde sube el build de la docs"
+  value       = aws_s3_bucket.docs.id
+}
+
+output "docs_acm_validation_records" {
+  description = "Registros DNS que hay que crear en NS1 para validar el cert ACM de docs.massivo.app"
+  value = {
+    for dvo in aws_acm_certificate.docs.domain_validation_options : dvo.domain_name => {
+      name  = dvo.resource_record_name
+      type  = dvo.resource_record_type
+      value = dvo.resource_record_value
+    }
+  }
+}
+
+output "docs_cloudfront_distribution_id" {
+  description = "ID CloudFront docs"
+  value       = aws_cloudfront_distribution.docs.id
+}
+
+output "docs_cloudfront_domain" {
+  description = "Dominio CloudFront docs — apuntar docs.massivo.app a esto vía CNAME en NS1"
+  value       = aws_cloudfront_distribution.docs.domain_name
+}
+
 # ===========================================================
 # CI/CD outputs — usar en GitHub Secrets / vars de workflows
 # ===========================================================
