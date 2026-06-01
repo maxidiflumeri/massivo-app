@@ -34,11 +34,32 @@ const sidebars: SidebarsConfig = {
         'conceptos/permisos-roles',
       ],
     },
-    // {
-    //   type: 'category',
-    //   label: 'Email',
-    //   items: [...]
-    // },
+    {
+      type: 'category',
+      label: 'Email',
+      collapsed: false,
+      link: {type: 'generated-index', slug: '/email'},
+      items: [
+        {
+          type: 'category',
+          label: 'Conceptos',
+          items: [
+            'email/conceptos/dominios-verificados',
+            'email/conceptos/dkim-spf-dmarc',
+            'email/conceptos/reply-to-vs-from',
+            'email/conceptos/suppression-list',
+            'email/conceptos/tracking-opens-clicks',
+            'email/conceptos/templates-handlebars',
+          ],
+        },
+        'email/agregar-dominio',
+        'email/conectar-cuenta-smtp',
+        'email/crear-template',
+        'email/crear-campana',
+        'email/metricas-reportes',
+        'email/gestionar-desuscriptos',
+      ],
+    },
     // {
     //   type: 'category',
     //   label: 'WhatsApp',
