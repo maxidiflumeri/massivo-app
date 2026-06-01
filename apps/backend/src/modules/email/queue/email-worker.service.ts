@@ -262,6 +262,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
             fromEmail: account.fromEmail,
             provider: account.provider,
             sesConfigSet: account.sesConfigSet,
+            replyTo: account.replyTo,
           },
           {
             to: report.contact.email,
@@ -272,6 +273,8 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
               'List-Unsubscribe': `<${unsubscribeUrl}>`,
               'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
             },
+            // Override de campaign sobre account default; null/undefined → cae al account.
+            replyTo: report.campaign.replyTo ?? undefined,
           },
         );
 

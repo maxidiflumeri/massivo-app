@@ -12,6 +12,7 @@ export interface SmtpAccount {
   provider: SmtpProvider;
   sesConfigSet: string | null;
   emailDomainId: string | null;
+  replyTo: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -27,6 +28,8 @@ export interface CreateSmtpAccountPayload {
   provider?: SmtpProvider;
   sesConfigSet?: string;
   emailDomainId?: string;
+  /** Pasar "" para desetear en update. */
+  replyTo?: string;
 }
 
 export type UpdateSmtpAccountPayload = Partial<CreateSmtpAccountPayload>;

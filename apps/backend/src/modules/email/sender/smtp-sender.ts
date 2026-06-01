@@ -42,6 +42,7 @@ export class SmtpSender implements EmailSender {
       subject: input.subject,
       html: input.html,
       headers: input.headers,
+      ...(input.replyTo ? { replyTo: input.replyTo } : {}),
     });
     this.logger.debug(`smtp send → ${input.to}: ${info.messageId}`);
     return { messageId: info.messageId, provider: 'smtp' };

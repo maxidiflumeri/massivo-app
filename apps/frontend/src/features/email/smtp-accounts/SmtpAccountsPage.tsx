@@ -52,6 +52,7 @@ interface FormState {
   sesConfigSet: string;
   /** Empty string = no domain linked (modo SMTP/SES manual). */
   emailDomainId: string;
+  replyTo: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -65,6 +66,7 @@ const EMPTY_FORM: FormState = {
   fromEmail: '',
   sesConfigSet: '',
   emailDomainId: '',
+  replyTo: '',
 };
 
 export function SmtpAccountsPage() {
@@ -132,6 +134,7 @@ export function SmtpAccountsPage() {
       fromEmail: acc.fromEmail,
       sesConfigSet: acc.sesConfigSet ?? '',
       emailDomainId: acc.emailDomainId ?? '',
+      replyTo: acc.replyTo ?? '',
     });
     setEditorOpen(true);
   }
@@ -172,11 +175,12 @@ export function SmtpAccountsPage() {
 
   async function handleSave() {
     const usingDomain = Boolean(form.emailDomainId);
-    // Cuando se vincula a un dominio verificado el backend setea provider='ses'
-    // y rellena host/port/user/pass con placeholders. No exigimos esos campos
-    // en el form.
-    const portNum = usingDomain ? null : Number(form.port);
-    if (!usingDomain) {
+    const isSes = usingDomain || form.provider === 'ses';
+    // SMTP fields sólo cuando provider='smtp'. Para SES (con o sin dominio
+    // verificado) el backend rellena placeholders — el sender SES no usa
+    // host/port/user/pass (habla SESv2 API con instance profile).
+    const portNum = isSes ? null : Number(form.port);
+    if (!isSes) {
       if (!Number.isInteger(portNum) || (portNum as number) < 1 || (portNum as number) > 65535) {
         notify.error('Puerto inválido');
         return;
@@ -201,21 +205,27 @@ export function SmtpAccountsPage() {
     setSaving(true);
     try {
       let res: SmtpAccountWithVerify;
+      // En SES no mandamos host/port/user/pass; el backend mete placeholders.
+      // Mandamos replyTo siempre (string vacío = desetear).
+      const sesPayload = {
+        provider: 'ses' as const,
+        sesConfigSet: form.sesConfigSet || undefined,
+        ...(usingDomain ? { emailDomainId: form.emailDomainId } : {}),
+      };
+      const smtpPayload = {
+        provider: form.provider,
+        host: form.host,
+        port: portNum as number,
+        username: form.username,
+        sesConfigSet: form.provider === 'ses' ? form.sesConfigSet || undefined : undefined,
+      };
       if (isEditing && editing) {
         const payload: UpdateSmtpAccountPayload = {
           name: form.name,
           fromName: form.fromName,
           fromEmail: form.fromEmail,
-          ...(usingDomain
-            ? { emailDomainId: form.emailDomainId }
-            : {
-                provider: form.provider,
-                host: form.host,
-                port: portNum as number,
-                username: form.username,
-                sesConfigSet: form.provider === 'ses' ? form.sesConfigSet || undefined : undefined,
-                emailDomainId: '',
-              }),
+          replyTo: form.replyTo,
+          ...(isSes ? sesPayload : { ...smtpPayload, emailDomainId: '' }),
         };
         if (form.password) payload.password = form.password;
         res = await api.patch<SmtpAccountWithVerify>(
@@ -228,16 +238,10 @@ export function SmtpAccountsPage() {
           name: form.name,
           fromName: form.fromName,
           fromEmail: form.fromEmail,
-          ...(usingDomain
-            ? { emailDomainId: form.emailDomainId }
-            : {
-                provider: form.provider,
-                host: form.host,
-                port: portNum as number,
-                username: form.username,
-                password: form.password,
-                sesConfigSet: form.provider === 'ses' ? form.sesConfigSet || undefined : undefined,
-              }),
+          ...(form.replyTo ? { replyTo: form.replyTo } : {}),
+          ...(isSes
+            ? sesPayload
+            : { ...smtpPayload, password: form.password }),
         };
         res = await api.post<SmtpAccountWithVerify>('/api/email/smtp-accounts', payload);
         applyVerifyResult(res, 'created');
@@ -496,20 +500,27 @@ export function SmtpAccountsPage() {
               </TextField>
             )}
 
-            {/* SMTP / SES manual: campos completos */}
+            {/* Selector de proveedor: visible cuando NO se eligió un dominio
+                verificado (en ese caso se autoset 'ses' y se oculta). */}
             {!form.emailDomainId && (
+              <TextField
+                select
+                label="Proveedor"
+                value={form.provider}
+                onChange={(e) => setForm({ ...form, provider: e.target.value as SmtpProvider })}
+                fullWidth
+                helperText="SMTP: servidor genérico vía nodemailer. SES: AWS SES API (recomendado para volumen)."
+              >
+                <MenuItem value="smtp">SMTP</MenuItem>
+                <MenuItem value="ses">AWS SES</MenuItem>
+              </TextField>
+            )}
+
+            {/* Campos SMTP: sólo cuando provider='smtp'. Para SES (con o sin
+                dominio verificado) el backend rellena placeholders — el sender
+                SES no usa host/port/user/pass. */}
+            {form.provider === 'smtp' && !form.emailDomainId && (
               <>
-                <TextField
-                  select
-                  label="Proveedor"
-                  value={form.provider}
-                  onChange={(e) => setForm({ ...form, provider: e.target.value as SmtpProvider })}
-                  fullWidth
-                  helperText="SMTP: servidor genérico vía nodemailer. SES: AWS SES API (recomendado para volumen)."
-                >
-                  <MenuItem value="smtp">SMTP</MenuItem>
-                  <MenuItem value="ses">AWS SES</MenuItem>
-                </TextField>
                 <Stack direction="row" spacing={2}>
                   <TextField
                     label="Host"
@@ -585,6 +596,15 @@ export function SmtpAccountsPage() {
                 helperText="Si lo dejás vacío, se autoprovisiona uno por team."
               />
             )}
+            <TextField
+              label="Reply-To (opcional)"
+              type="email"
+              value={form.replyTo}
+              onChange={(e) => setForm({ ...form, replyTo: e.target.value })}
+              fullWidth
+              placeholder="info@empresa.com"
+              helperText="Cuando un destinatario haga 'Responder', el mail va acá en vez del 'From'. Útil si enviás desde noreply@... pero querés recibir las respuestas en tu casilla real. Dejar vacío = las respuestas van al From."
+            />
             <Typography variant="caption" color="text.secondary">
               {form.emailDomainId
                 ? 'La cuenta queda activa automáticamente si el dominio sigue VERIFIED al guardar.'

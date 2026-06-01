@@ -68,6 +68,13 @@ export class CreateSmtpAccountDto {
   @IsOptional()
   @IsString()
   emailDomainId?: string;
+
+  // Reply-To default para emails enviados con esta cuenta. EmailCampaign.replyTo
+  // puede sobreescribirlo. Si null, el header no se setea.
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(320)
+  replyTo?: string;
 }
 
 export class TestSmtpAccountDto {
@@ -133,4 +140,10 @@ export class UpdateSmtpAccountDto {
   @IsOptional()
   @IsString()
   emailDomainId?: string;
+
+  // Pasar string vacío "" para desetear el replyTo en update.
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  replyTo?: string;
 }

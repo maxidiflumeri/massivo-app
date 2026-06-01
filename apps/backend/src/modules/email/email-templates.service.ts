@@ -279,6 +279,7 @@ export class EmailTemplatesService {
         fromEmail: account.fromEmail,
         provider: account.provider,
         sesConfigSet: account.sesConfigSet,
+        replyTo: account.replyTo,
       },
       { to: dto.toEmail, subject, html },
     );

@@ -54,6 +54,7 @@ export class EmailCampaignsService {
         smtpAccountId: dto.smtpAccountId,
         scheduledAt: dto.scheduledAt,
         status: dto.scheduledAt ? 'SCHEDULED' : 'DRAFT',
+        ...(dto.replyTo !== undefined && { replyTo: dto.replyTo || null }),
       } as never,
     });
   }
@@ -93,6 +94,10 @@ export class EmailCampaignsService {
       } else if (current.status === 'SCHEDULED' && dto.scheduledAt === null) {
         data.status = 'DRAFT';
       }
+    }
+    // replyTo: "" en el patch → null para volver al default del SmtpAccount.
+    if (dto.replyTo !== undefined) {
+      data.replyTo = dto.replyTo || null;
     }
     return this.prisma.scoped.emailCampaign.update({
       where: { id },

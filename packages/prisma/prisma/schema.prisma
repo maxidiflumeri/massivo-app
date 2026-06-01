@@ -328,6 +328,10 @@ model SmtpAccount {
   // cuentas SMTP de clientes externos (Mailpit, SMTP propio) no requieren
   // verificación SES.
   emailDomainId  String?
+  // Default Reply-To para emails enviados desde esta cuenta. Si null, el
+  // header no se setea y el cliente de mail cae al `From` para "Responder".
+  // EmailCampaign.replyTo puede pisarlo per-campaign.
+  replyTo        String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -416,6 +420,9 @@ model EmailCampaign {
   scheduledAt     DateTime?
   sentAt          DateTime?
   config          Json?
+  // Override per-campaign del Reply-To. Si null, el worker cae al
+  // `SmtpAccount.replyTo` y si ese también es null, no setea el header.
+  replyTo         String?
   createdByUserId String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt

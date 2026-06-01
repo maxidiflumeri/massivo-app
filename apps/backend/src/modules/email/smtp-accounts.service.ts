@@ -37,6 +37,7 @@ export interface SmtpAccountListItem {
   provider: string;
   sesConfigSet: string | null;
   emailDomainId: string | null;
+  replyTo: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,6 +54,7 @@ function toListItem(row: {
   provider: string;
   sesConfigSet: string | null;
   emailDomainId: string | null;
+  replyTo: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): SmtpAccountListItem {
@@ -68,6 +70,7 @@ function toListItem(row: {
     provider: row.provider,
     sesConfigSet: row.sesConfigSet,
     emailDomainId: row.emailDomainId,
+    replyTo: row.replyTo,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -116,6 +119,7 @@ export class SmtpAccountsService {
         ...(normalized.provider !== undefined && { provider: normalized.provider }),
         ...(normalized.sesConfigSet !== undefined && { sesConfigSet: normalized.sesConfigSet }),
         ...(normalized.emailDomainId !== undefined && { emailDomainId: normalized.emailDomainId }),
+        ...(dto.replyTo !== undefined && { replyTo: dto.replyTo || null }),
       } as Prisma.SmtpAccountUncheckedCreateInput,
     });
     this.logger.log(`SmtpAccount created: ${created.id} in org ${ctx.organizationId} team ${ctx.teamId}`);
@@ -162,6 +166,8 @@ export class SmtpAccountsService {
         ...(dto.emailDomainId !== undefined && {
           emailDomainId: merged.emailDomainId ?? null,
         }),
+        // replyTo: "" → null para desetear; cualquier otro string → setear.
+        ...(dto.replyTo !== undefined && { replyTo: dto.replyTo || null }),
       },
     });
     return this.runVerifyAndUpdate(updated);
@@ -301,6 +307,7 @@ export class SmtpAccountsService {
           fromEmail: account.fromEmail,
           provider: account.provider,
           sesConfigSet: account.sesConfigSet,
+          replyTo: account.replyTo,
         },
         {
           to: dto.to,
@@ -344,6 +351,7 @@ export class SmtpAccountsService {
     provider: string;
     sesConfigSet: string | null;
     emailDomainId: string | null;
+    replyTo: string | null;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
@@ -359,6 +367,7 @@ export class SmtpAccountsService {
       fromEmail: row.fromEmail,
       provider: row.provider,
       sesConfigSet: row.sesConfigSet,
+      replyTo: row.replyTo,
     });
 
     const desiredActive = verify.ok;

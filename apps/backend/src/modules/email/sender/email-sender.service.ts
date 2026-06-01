@@ -15,6 +15,8 @@ interface SmtpAccountForSend {
   fromEmail: string;
   provider: string;
   sesConfigSet: string | null;
+  /** Default Reply-To per-account. Pisado por `input.replyTo` si el caller lo manda. */
+  replyTo: string | null;
 }
 
 /**
@@ -73,6 +75,9 @@ export class EmailSenderService {
       html: input.html,
       headers: input.headers,
       configurationSet,
+      // Resolución del Reply-To: campaign (input) → account default → undefined
+      // (no se setea header, recipient cae al `from`).
+      replyTo: input.replyTo ?? account.replyTo ?? undefined,
     });
   }
 

@@ -31,6 +31,13 @@ export class CreateEmailCampaignDto {
   @IsDate()
   @Type(() => Date)
   scheduledAt?: Date;
+
+  // Override del Reply-To del SmtpAccount para esta campaña. Si null/undefined,
+  // el worker cae al account default.
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(320)
+  replyTo?: string;
 }
 
 export class UpdateEmailCampaignDto {
@@ -52,6 +59,12 @@ export class UpdateEmailCampaignDto {
   @IsDate()
   @Type(() => Date)
   scheduledAt?: Date | null;
+
+  // Pasar "" para desetear (volver al default del SmtpAccount).
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  replyTo?: string;
 }
 
 export class CampaignContactDto {

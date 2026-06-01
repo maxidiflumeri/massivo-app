@@ -25,6 +25,7 @@ export interface CampaignDetail {
   templateId: string | null;
   smtpAccountId: string | null;
   scheduledAt: string | null;
+  replyTo: string | null;
   createdAt: string;
   updatedAt: string;
   template: { id: string; name: string; subject: string } | null;
@@ -55,6 +56,8 @@ export interface UpdateCampaignPayload {
   templateId?: string | null;
   smtpAccountId?: string | null;
   scheduledAt?: string | null;
+  /** "" → desetear; vuelve al default del SmtpAccount. */
+  replyTo?: string;
 }
 
 export interface CampaignContactInput {

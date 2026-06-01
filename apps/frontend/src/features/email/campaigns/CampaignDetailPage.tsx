@@ -180,6 +180,7 @@ export function CampaignDetailPage() {
   const [templateId, setTemplateId] = useState('');
   const [smtpAccountId, setSmtpAccountId] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
+  const [replyTo, setReplyTo] = useState('');
 
   const [contactsText, setContactsText] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -204,6 +205,7 @@ export function CampaignDetailPage() {
       setTemplateId(c.templateId ?? '');
       setSmtpAccountId(c.smtpAccountId ?? '');
       setScheduledAt(c.scheduledAt ? c.scheduledAt.slice(0, 16) : '');
+      setReplyTo(c.replyTo ?? '');
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error cargando campaña');
@@ -272,6 +274,7 @@ export function CampaignDetailPage() {
       payload.templateId = templateId || null;
       payload.smtpAccountId = smtpAccountId || null;
       payload.scheduledAt = scheduledAt ? new Date(scheduledAt).toISOString() : null;
+      payload.replyTo = replyTo; // "" → backend lo mapea a null (volver al default del account)
       await api.patch(`/api/email/campaigns/${campaign.id}`, payload);
       notify.success('Cambios guardados');
       await load();
@@ -557,6 +560,16 @@ export function CampaignDetailPage() {
             onChange={(e) => setScheduledAt(e.target.value)}
             disabled={!editable}
             InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+          <TextField
+            label="Reply-To (opcional)"
+            type="email"
+            value={replyTo}
+            onChange={(e) => setReplyTo(e.target.value)}
+            disabled={!editable}
+            placeholder="info@empresa.com"
+            helperText="Pisa el Reply-To default de la cuenta SMTP. Dejar vacío = usa el de la cuenta. Las respuestas van a esta casilla en vez del From."
             fullWidth
           />
           <Box sx={{ display: 'flex', gap: 1 }}>

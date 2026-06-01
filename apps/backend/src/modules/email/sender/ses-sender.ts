@@ -130,6 +130,9 @@ export class SesSender implements EmailSender {
       new SendEmailCommand({
         FromEmailAddress: input.from,
         Destination: { ToAddresses: [input.to] },
+        // SES v2: ReplyToAddresses se setea a nivel command, no como header.
+        // Si está vacío AWS no agrega Reply-To al mail.
+        ...(input.replyTo ? { ReplyToAddresses: [input.replyTo] } : {}),
         Content: {
           Simple: {
             Subject: { Data: input.subject, Charset: 'UTF-8' },
