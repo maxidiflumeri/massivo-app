@@ -300,10 +300,17 @@ export function DomainDetailPage() {
         </TableContainer>
 
         <Box sx={{ p: 3, pt: 2, borderTop: 1, borderColor: 'divider', bgcolor: 'action.hover' }}>
-          <Typography variant="caption" color="text.secondary">
-            Tu proveedor de DNS suele pedir solo la parte antes del dominio (ej:{' '}
-            <code>xxx._domainkey</code>, no <code>xxx._domainkey.{domain.domain}</code>). Si te
-            permite incluir el dominio completo, también funciona — depende del provider.
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Los <strong>nombres mostrados son FQDN absolutos</strong> (terminan en{' '}
+            <code>{domain.domain}</code>). Pegalos tal cual si tu DNS provider acepta FQDN
+            completos (ej: Route 53, Cloudflare).
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+            <strong>Si tu provider auto-completa tu zone</strong> (Netlify, GoDaddy, NS1, etc.),
+            te va a agregar el zone al final automáticamente. En ese caso, pegá solo la parte que
+            NO es tu zone. Ejemplo: si tu zone es <code>empresa.com</code> y el record es{' '}
+            <code>xxx._domainkey.test.empresa.com</code>, pegá solo{' '}
+            <code>xxx._domainkey.test</code> en el campo "Name".
           </Typography>
         </Box>
       </Paper>

@@ -16,7 +16,14 @@ export type SesDkimStatus =
   | 'NOT_STARTED';
 
 export interface SesDkimToken {
-  /** Nombre del registro CNAME relativo al dominio. Ej: `selector1._domainkey`. */
+  /**
+   * Nombre del registro CNAME en **FQDN absoluto** (sin trailing dot).
+   * Ej: `selector1._domainkey.test.empresa.com`. Usamos FQDN porque algunos
+   * proveedores de DNS (Netlify, GoDaddy) tratan el nombre relativo respecto
+   * a su zone, no al dominio registrado — si registramos `test.empresa.com`
+   * pero la zone es `empresa.com`, pegar `<token>._domainkey` termina en
+   * `<token>._domainkey.empresa.com` (mal — falta el `.test`).
+   */
   name: string;
   /** Valor del registro CNAME. Ej: `selector1.dkim.amazonses.com`. */
   value: string;
@@ -81,7 +88,7 @@ export class SesDomainsService {
         }),
       );
       const tokens = (res.DkimAttributes?.Tokens ?? []).map((t) =>
-        toDkimToken(t),
+        toDkimToken(t, normalized),
       );
       const dkimStatus = (res.DkimAttributes?.Status ?? 'NOT_STARTED') as SesDkimStatus;
       this.logger.log(`SES identity creada: ${normalized} (${tokens.length} tokens, status=${dkimStatus})`);
@@ -109,7 +116,7 @@ export class SesDomainsService {
     const res = await this.client.send(
       new GetEmailIdentityCommand({ EmailIdentity: normalized }),
     );
-    const tokens = (res.DkimAttributes?.Tokens ?? []).map((t) => toDkimToken(t));
+    const tokens = (res.DkimAttributes?.Tokens ?? []).map((t) => toDkimToken(t, normalized));
     const dkimStatus = (res.DkimAttributes?.Status ?? 'NOT_STARTED') as SesDkimStatus;
     return {
       domain: normalized,
@@ -141,10 +148,14 @@ export class SesDomainsService {
   }
 }
 
-/** Transforma un token SES (string) en `{ name, value }` CNAME ready-to-display. */
-function toDkimToken(token: string): SesDkimToken {
+/**
+ * Transforma un token SES en `{ name, value }` CNAME ready-to-display.
+ * El nombre es el FQDN absoluto: `<token>._domainkey.<domain>`. Ver comentario
+ * en `SesDkimToken.name` para el porqué.
+ */
+function toDkimToken(token: string, domain: string): SesDkimToken {
   return {
-    name: `${token}._domainkey`,
+    name: `${token}._domainkey.${domain}`,
     value: `${token}.dkim.amazonses.com`,
   };
 }
