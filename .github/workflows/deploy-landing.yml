@@ -20,7 +20,7 @@ env:
   S3_BUCKET: massivo-prod-landing-811261691778
   CF_DISTRIBUTION_ID: EYO1OVL0SGSKM
   VITE_PANEL_URL: https://panel.massivo.app
-  VITE_CLERK_PUBLISHABLE_KEY: pk_test_ZmxleGlibGUtZm94aG91bmQtNjMuY2xlcmsuYWNjb3VudHMuZGV2JA
+  VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
   VITE_ENABLE_DEV_SIMULATOR: 'false'
   VITE_WAPI_BOT_FEATURE_ENABLED: 'true'
 
@@ -45,6 +45,13 @@ jobs:
 
       - name: Install deps
         run: pnpm install --frozen-lockfile
+
+      - name: Verify Clerk pubkey is set
+        run: |
+          if [ -z "${VITE_CLERK_PUBLISHABLE_KEY}" ]; then
+            echo "::error::CLERK_PUBLISHABLE_KEY secret no está configurado en GitHub Actions. Setear en Settings → Secrets → Actions."
+            exit 1
+          fi
 
       - name: Build landing
         run: pnpm --filter @massivo/landing exec vite build
