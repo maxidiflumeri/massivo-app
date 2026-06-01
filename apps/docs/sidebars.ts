@@ -162,6 +162,19 @@ const sidebars: SidebarsConfig = {
         'administracion/cambiar-plan-billing',
       ],
     },
+    {
+      type: 'category',
+      label: 'Referencia',
+      collapsed: true,
+      link: {type: 'generated-index', slug: '/referencia'},
+      items: [
+        'referencia/atajos-teclado',
+        'referencia/codigos-error',
+        'referencia/limites-del-plan',
+      ],
+    },
+    'faq',
+    'troubleshooting',
   ],
 };
 
