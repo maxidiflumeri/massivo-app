@@ -23,6 +23,14 @@ export function Footer() {
           <a href="#plans" className="hover:text-white transition">
             Planes
           </a>
+          <a
+            href="https://docs.massivo.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-white transition"
+          >
+            Documentación
+          </a>
           <a href="mailto:hola@massivo.app" className="hover:text-white transition">
             Contacto
           </a>

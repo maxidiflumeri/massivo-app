@@ -34,6 +34,14 @@ export function Nav() {
           <a href="#plans" className="hover:text-white transition">
             Planes
           </a>
+          <a
+            href="https://docs.massivo.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-white transition"
+          >
+            Docs
+          </a>
         </nav>
 
         <div className="flex items-center gap-3">

@@ -21,6 +21,7 @@ import ContactsIcon from '@mui/icons-material/Contacts';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DnsIcon from '@mui/icons-material/Dns';
 import LanguageIcon from '@mui/icons-material/Language';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 import BlockIcon from '@mui/icons-material/Block';
 import InsightsIcon from '@mui/icons-material/Insights';
 import HomeIcon from '@mui/icons-material/Home';
@@ -49,6 +50,8 @@ const GROUP_STATE_KEY = 'massivo:sidebarGroups';
 
 interface NavItemSpec {
   to?: string;
+  /** URL externa — abre en nueva pestaña. Mutuamente excluyente con `to`. */
+  href?: string;
   label: string;
   icon: ReactElement;
   disabled?: boolean;
@@ -165,6 +168,11 @@ const NAV_GROUPS: NavGroupSpec[] = [
         to: '/dashboard/audit',
         label: 'Audit log',
         icon: <HistoryIcon fontSize="small" />,
+      },
+      {
+        href: 'https://docs.massivo.app',
+        label: 'Documentación',
+        icon: <MenuBookIcon fontSize="small" />,
       },
       { label: 'Configuración', icon: <SettingsIcon fontSize="small" />, disabled: true },
     ],
@@ -401,7 +409,7 @@ function NavRow({
   } as const;
 
   const button =
-    item.disabled || !item.to ? (
+    item.disabled || (!item.to && !item.href) ? (
       <ListItemButton disabled sx={baseSx}>
         <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
         {!collapsed && (
@@ -416,10 +424,26 @@ function NavRow({
           </>
         )}
       </ListItemButton>
+    ) : item.href ? (
+      <ListItemButton
+        component="a"
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        sx={baseSx}
+      >
+        <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
+        {!collapsed && (
+          <ListItemText
+            primary={item.label}
+            primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+          />
+        )}
+      </ListItemButton>
     ) : (
       <ListItemButton
         component={NavLink}
-        to={item.to}
+        to={item.to!}
         end={item.to === '/dashboard'}
         onClick={() => onNavigate?.()}
         sx={baseSx}
