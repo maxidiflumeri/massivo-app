@@ -19,6 +19,7 @@ import {
   Select,
   Stack,
   TextField,
+  Toolbar,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -257,6 +258,10 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
       PaperProps={{ sx: { width: { xs: '100%', sm: 420 } } }}
     >
       <Stack sx={{ height: '100%' }}>
+        {/* Spacer del AppBar fixed (zIndex.drawer+1). Sin esto el header
+            del sandbox queda tapado por el navbar. Toolbar matchea la altura
+            exacta del AppBar (mobile 56px / desktop 64px). */}
+        <Toolbar variant="dense" disableGutters sx={{ minHeight: { xs: 56, sm: 64 } }} />
         <Stack
           direction="row"
           alignItems="center"
