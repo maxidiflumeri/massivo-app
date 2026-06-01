@@ -17,9 +17,9 @@ const sidebars: SidebarsConfig = {
       link: {type: 'generated-index', slug: '/empezar'},
       items: [
         'empezar/que-es-massivo',
-        // 'empezar/tour-plataforma',
-        // 'empezar/primera-campana',
-        // 'empezar/glosario',
+        'empezar/tour-plataforma',
+        'empezar/primera-campana',
+        'empezar/glosario',
       ],
     },
     {
@@ -30,8 +30,8 @@ const sidebars: SidebarsConfig = {
       items: [
         'conceptos/orgs-teams-usuarios',
         'conceptos/planes-limites-consumo',
-        // 'conceptos/multi-tenancy',
-        // 'conceptos/permisos-roles',
+        'conceptos/multi-tenancy',
+        'conceptos/permisos-roles',
       ],
     },
     // {
