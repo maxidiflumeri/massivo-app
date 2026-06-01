@@ -34,6 +34,7 @@
     "class-validator": "^0.14.1",
     "csv-stringify": "^6.7.0",
     "exceljs": "^4.4.0",
+    "fast-xml-parser": "^5.0.0",
     "handlebars": "^4.7.9",
     "ioredis": "^5.10.1",
     "jsonata": "^2.2.1",

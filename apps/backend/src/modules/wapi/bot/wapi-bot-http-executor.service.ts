@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Agent, fetch as undiciFetch } from 'undici';
+import { XMLParser } from 'fast-xml-parser';
 import { AuditLogService } from '../../../common/audit/audit-log.service';
 import { interpolateAsync } from './interpolate';
 import { resolveAndValidate } from './wapi-bot-http-ssrf';
@@ -7,6 +8,18 @@ import { WapiBotHttpRateLimiterService } from './wapi-bot-http-rate-limiter.serv
 import type { HttpExecResult } from './bot-flow-runtime';
 import type { BotHttpNode } from './wapi-bot.types';
 import type { BotData } from './bot-flow-runtime';
+
+/**
+ * Parser singleton para responses XML/SOAP. `removeNSPrefix` aplana namespaces
+ * (`soapenv:Envelope` → `Envelope`) para que JSONata/dot-access del bot sea
+ * directo. `ignoreAttributes:false` preserva atributos como `@_*` por si el
+ * cliente los necesita (ej. `xsi:nil`).
+ */
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  removeNSPrefix: true,
+});
 
 /**
  * 4.N.3 — Ejecutor de nodos HTTP del bot. Dos modos:
@@ -133,9 +146,15 @@ export class WapiBotHttpExecutor {
     try {
       const hasBody =
         bodyInterp !== undefined && ['POST', 'PUT', 'PATCH'].includes(node.method);
+      const bodyIsString = typeof bodyInterp === 'string';
       const finalHeaders: Record<string, string> = { ...headersInterp };
+      // Auto-default `Content-Type: application/json` SOLO si el body es un objeto/
+      // array (lo vamos a serializar a JSON). Cuando el cliente manda un body
+      // string crudo (XML/SOAP, form-urlencoded, GraphQL, lo que sea), no
+      // asumimos nada — debe setear el Content-Type apropiado en `headers`.
       if (
         hasBody &&
+        !bodyIsString &&
         !Object.keys(finalHeaders).find((k) => k.toLowerCase() === 'content-type')
       ) {
         finalHeaders['Content-Type'] = 'application/json';
@@ -144,7 +163,11 @@ export class WapiBotHttpExecutor {
       const res = await undiciFetch(urlInterp, {
         method: node.method,
         headers: finalHeaders,
-        body: hasBody ? JSON.stringify(bodyInterp) : undefined,
+        body: hasBody
+          ? bodyIsString
+            ? (bodyInterp as string)
+            : JSON.stringify(bodyInterp)
+          : undefined,
         signal: ctrl.signal,
         redirect: 'manual',
         dispatcher: agent,
@@ -299,7 +322,19 @@ async function readBodyLimited(
       return buf.toString('utf8');
     }
   }
-  if (ct.startsWith('text/') || ct.includes('xml') || ct.includes('javascript')) {
+  // XML/SOAP: parsear a objeto JS para que el bot pueda acceder con dot-notation
+  // sin tener que hacer regex en JSONata. `removeNSPrefix` aplana `soapenv:` →
+  // accesos quedan tipo `body.Envelope.Body.getActasImpagasResponse.resultado`.
+  // Si el parse falla, fallback al texto crudo.
+  if (ct.includes('xml')) {
+    const text = buf.toString('utf8');
+    try {
+      return xmlParser.parse(text);
+    } catch {
+      return text;
+    }
+  }
+  if (ct.startsWith('text/') || ct.includes('javascript')) {
     return buf.toString('utf8');
   }
   return { binary: true, size: total, contentType: ct };

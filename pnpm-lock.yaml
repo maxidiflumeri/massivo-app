@@ -98,6 +98,9 @@ importers:
       express:
         specifier: ^5.0.0
         version: 5.2.1
+      fast-xml-parser:
+        specifier: ^5.0.0
+        version: 5.7.2
       handlebars:
         specifier: ^4.7.9
         version: 4.7.9
@@ -4454,8 +4457,8 @@ packages:
   '@ungap/structured-clone@1.3.1':
     resolution: {integrity: sha512-mUFwbeTqrVgDQxFveS+df2yfap6iuP20NAKAsBt5jDEoOTDew+zwLAOilHCeQJOVSvmgCX4ogqIrA0mnyr08yQ==}
 
-  '@unlayer/types@1.420.0':
-    resolution: {integrity: sha512-oxWgsB/X4/thhLeU7p0QdcnCoVoQtzpcWVj0MJLmTaRT3OWOaB+GHn86io9FxPyEN2fGYxIwI8A3WKygjPe+iA==}
+  '@unlayer/types@1.421.0':
+    resolution: {integrity: sha512-oE5pan7Kipb4hHGEKV6SML6Vu9Qb7wNxWGqQxlH7hS/zY+E1IaaNJEiTKk3etsr12ftEVSWy5Ito54PK/5ykvw==}
 
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
@@ -15405,7 +15408,7 @@ snapshots:
 
   '@ungap/structured-clone@1.3.1': {}
 
-  '@unlayer/types@1.420.0': {}
+  '@unlayer/types@1.421.0': {}
 
   '@vitejs/plugin-react@4.7.0(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.2)(yaml@2.8.3))':
     dependencies:
@@ -20443,7 +20446,7 @@ snapshots:
 
   react-email-editor@1.8.0(react@19.2.5):
     dependencies:
-      '@unlayer/types': 1.420.0
+      '@unlayer/types': 1.421.0
       react: 19.2.5
 
   react-fast-compare@3.2.2: {}

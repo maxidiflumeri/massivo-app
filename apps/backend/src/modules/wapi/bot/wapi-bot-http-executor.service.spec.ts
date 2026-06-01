@@ -257,6 +257,84 @@ describe('WapiBotHttpExecutor', () => {
       expect(r.ok).toBe(true);
       expect(r.body).toMatchObject({ binary: true, contentType: 'application/octet-stream' });
     });
+
+    it('SOAP: body string crudo se envía sin JSON.stringify y XML response se parsea a JSON', async () => {
+      // El server recibe el SOAP request y devuelve un SOAP response. Verificamos
+      // que el body llegó intacto (no envuelto en quotes por stringify) y que el
+      // executor parsea el XML response, removiendo prefijos de namespace para
+      // que el bot pueda acceder con dot-notation.
+      const soapResponse = `<?xml version="1.0"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <getActasResponse xmlns="http://example/ws/">
+      <resultado>
+        <total>2</total>
+        <actas>
+          <item><nro>123</nro><importe>500</importe></item>
+          <item><nro>456</nro><importe>750</importe></item>
+        </actas>
+      </resultado>
+    </getActasResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+      nextResponse = {
+        status: 200,
+        headers: { 'content-type': 'text/xml; charset=utf-8' },
+        body: soapResponse,
+      };
+
+      const soapRequestBody = `<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><getActas><dni>33689563</dni></getActas></soapenv:Body></soapenv:Envelope>`;
+
+      const limiter = new WapiBotHttpRateLimiterService();
+      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const r = await exec.execute(
+        makeNode({
+          url: `${baseUrl}/soap`,
+          method: 'POST',
+          headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '""' },
+          body: soapRequestBody,
+        }),
+        {},
+        { mode: 'real', configId: 'c1', nodeId: 'n1', organizationId: 'org1' },
+      );
+
+      // Body llegó al server crudo (sin JSON.stringify wrap).
+      expect(lastRequest.body).toBe(soapRequestBody);
+      expect(lastRequest.headers['content-type']).toContain('text/xml');
+      expect(lastRequest.headers['soapaction']).toBe('""');
+
+      // Response XML se parseó a JSON. Con removeNSPrefix, `soapenv:Envelope` →
+      // `Envelope`, lo que permite acceder via dot-notation desde el bot.
+      expect(r.ok).toBe(true);
+      const body = r.body as Record<string, any>;
+      expect(body).toHaveProperty('Envelope.Body.getActasResponse.resultado.total', 2);
+      const actas = body.Envelope.Body.getActasResponse.resultado.actas.item;
+      expect(Array.isArray(actas)).toBe(true);
+      expect(actas).toHaveLength(2);
+      expect(actas[0]).toMatchObject({ nro: 123, importe: 500 });
+      expect(actas[1]).toMatchObject({ nro: 456, importe: 750 });
+    });
+
+    it('body string sin Content-Type explícito no auto-defaultea a application/json', async () => {
+      // Cuando el bot manda un body string crudo (xml/x-www-form-urlencoded/etc)
+      // y no setea Content-Type, NO lo asumimos como JSON. El cliente debe
+      // setearlo explícito; mientras tanto fetch manda sin Content-Type.
+      nextResponse = { status: 200, headers: { 'content-type': 'text/plain' }, body: 'ok' };
+      const limiter = new WapiBotHttpRateLimiterService();
+      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      await exec.execute(
+        makeNode({
+          url: `${baseUrl}/raw`,
+          method: 'POST',
+          body: 'foo=bar&baz=qux',
+        }),
+        {},
+        { mode: 'real', configId: 'c1', nodeId: 'n1', organizationId: 'org1' },
+      );
+      expect(lastRequest.body).toBe('foo=bar&baz=qux');
+      // Sin auto-default a application/json
+      expect(lastRequest.headers['content-type']).not.toContain('application/json');
+    });
   });
 
   describe('modo real — errores', () => {
