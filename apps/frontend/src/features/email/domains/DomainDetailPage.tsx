@@ -17,6 +17,8 @@ import {
   TableRow,
   Tooltip,
   Typography,
+  alpha,
+  useTheme,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -24,10 +26,20 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import LanguageIcon from '@mui/icons-material/Language';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import ShieldIcon from '@mui/icons-material/Shield';
+import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
+import PolicyIcon from '@mui/icons-material/Policy';
 import { useApi, ApiError } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useConfirm } from '../../../feedback/ConfirmProvider';
-import type { EmailDomainDetail, EmailDomainStatus } from '@massivo/shared-types';
+import type {
+  DnsRecordStatus,
+  EmailDomainDetail,
+  EmailDomainStatus,
+} from '@massivo/shared-types';
 
 const STATUS_COLOR: Record<EmailDomainStatus, 'default' | 'success' | 'warning' | 'error'> = {
   PENDING: 'warning',
@@ -220,6 +232,50 @@ export function DomainDetailPage() {
         </Alert>
       )}
 
+      {/* Panel de verificación: 3 cards (DKIM, SPF, DMARC) tipo SendGrid/Resend */}
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 2,
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+        }}
+      >
+        <VerificationCard
+          icon={<VerifiedUserIcon />}
+          label="DKIM"
+          tag="Requerido"
+          status={dkimToDnsStatus(domain.status)}
+          successText="Tu dominio firma los emails con DKIM. AWS verificó las 3 CNAMEs."
+          missingText="Agregá las 3 CNAMEs DKIM de abajo al DNS y esperá la verificación."
+          invalidText="SES marcó DKIM como fallado. Revisá los registros DNS."
+          pendingText="Esperando que se propague el DNS y SES verifique los CNAMEs."
+        />
+        <VerificationCard
+          icon={<ShieldIcon />}
+          label="SPF"
+          tag="Recomendado"
+          status={domain.spfStatus}
+          record={domain.spfRecord}
+          recommendedRecord={domain.recommendedRecords.spf}
+          successText="SPF apunta a Amazon SES. Los servidores receptores pueden validar el origen."
+          missingText="Sin SPF. Agregá un TXT en tu dominio para que los servidores validen el origen."
+          invalidText="Hay SPF pero no incluye amazonses.com. Agregá `include:amazonses.com` al record."
+          pendingText="Esperando primer chequeo de DNS."
+        />
+        <VerificationCard
+          icon={<PolicyIcon />}
+          label="DMARC"
+          tag="Recomendado (req. Gmail/Yahoo)"
+          status={domain.dmarcStatus}
+          record={domain.dmarcRecord}
+          recommendedRecord={domain.recommendedRecords.dmarc}
+          successText="DMARC configurado. Tu dominio cumple los requisitos de Gmail/Yahoo 2024 para envíos masivos."
+          missingText="Sin DMARC. Gmail/Yahoo 2024 lo requieren para envíos masivos (> 5k/día)."
+          invalidText="Hay un TXT en _dmarc pero no es válido. Revisá el formato."
+          pendingText="Esperando primer chequeo de DNS."
+        />
+      </Box>
+
       <Paper variant="outlined" sx={{ borderRadius: 3 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 3, pb: 2 }}>
           <Box>
@@ -331,6 +387,218 @@ export function DomainDetailPage() {
           </Button>
         </Stack>
       </Paper>
+    </Stack>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verification card (DKIM/SPF/DMARC)
+
+/** Adapter para mostrar el status del DKIM en la misma estructura DnsRecordStatus. */
+function dkimToDnsStatus(s: EmailDomainStatus): DnsRecordStatus {
+  if (s === 'VERIFIED') return 'VERIFIED';
+  if (s === 'FAILED') return 'INVALID';
+  return 'PENDING'; // PENDING + TEMPORARY_FAILURE
+}
+
+const DNS_STATUS_META: Record<
+  DnsRecordStatus,
+  { color: string; icon: React.ReactNode; label: string }
+> = {
+  VERIFIED: {
+    color: '#10B981',
+    icon: <CheckCircleIcon fontSize="small" />,
+    label: 'Verificado',
+  },
+  PENDING: {
+    color: '#F59E0B',
+    icon: <HourglassEmptyIcon fontSize="small" />,
+    label: 'Esperando',
+  },
+  MISSING: {
+    color: '#94A3B8',
+    icon: <HelpOutlineIcon fontSize="small" />,
+    label: 'Falta agregar',
+  },
+  INVALID: {
+    color: '#EF4444',
+    icon: <CancelIcon fontSize="small" />,
+    label: 'Inválido',
+  },
+};
+
+interface VerificationCardProps {
+  icon: React.ReactElement;
+  label: string;
+  tag: string;
+  status: DnsRecordStatus;
+  record?: string | null;
+  recommendedRecord?: { name: string; value: string };
+  successText: string;
+  missingText: string;
+  invalidText: string;
+  pendingText: string;
+}
+
+function VerificationCard({
+  icon,
+  label,
+  tag,
+  status,
+  record,
+  recommendedRecord,
+  successText,
+  missingText,
+  invalidText,
+  pendingText,
+}: VerificationCardProps) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  const meta = DNS_STATUS_META[status];
+  const description =
+    status === 'VERIFIED'
+      ? successText
+      : status === 'INVALID'
+        ? invalidText
+        : status === 'MISSING'
+          ? missingText
+          : pendingText;
+
+  const [showRecommended, setShowRecommended] = useState(false);
+  const showHint = recommendedRecord && status !== 'VERIFIED';
+
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        p: 2.5,
+        borderRadius: 3,
+        position: 'relative',
+        overflow: 'hidden',
+        background: isDark
+          ? `linear-gradient(135deg, ${alpha(meta.color, 0.04)} 0%, transparent 70%)`
+          : `linear-gradient(135deg, ${alpha(meta.color, 0.06)} 0%, transparent 70%)`,
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 3,
+          background: meta.color,
+        },
+      }}
+    >
+      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
+        <Box
+          sx={{
+            width: 36,
+            height: 36,
+            borderRadius: 1.5,
+            bgcolor: alpha(meta.color, 0.12),
+            color: meta.color,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {icon}
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="subtitle1" fontWeight={700}>
+              {label}
+            </Typography>
+            <Chip label={tag} size="small" sx={{ height: 18, fontSize: '0.62rem' }} variant="outlined" />
+          </Stack>
+        </Box>
+      </Stack>
+
+      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 1, color: meta.color }}>
+        {meta.icon}
+        <Typography variant="body2" fontWeight={600} sx={{ color: meta.color }}>
+          {meta.label}
+        </Typography>
+      </Stack>
+
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+        {description}
+      </Typography>
+
+      {record && (
+        <Box
+          sx={{
+            p: 1,
+            borderRadius: 1,
+            bgcolor: 'action.hover',
+            fontFamily: 'monospace',
+            fontSize: '0.7rem',
+            wordBreak: 'break-all',
+            mb: 1,
+          }}
+        >
+          {record}
+        </Box>
+      )}
+
+      {showHint && (
+        <>
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => setShowRecommended((v) => !v)}
+            sx={{ pl: 0, fontSize: '0.7rem', minWidth: 0 }}
+          >
+            {showRecommended ? 'Ocultar record recomendado' : 'Ver record recomendado'}
+          </Button>
+          {showRecommended && recommendedRecord && (
+            <Stack spacing={0.5} sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                Agregá este TXT a tu DNS:
+              </Typography>
+              <RecommendedRow label="Nombre" value={recommendedRecord.name} />
+              <RecommendedRow label="Tipo" value="TXT" />
+              <RecommendedRow label="Valor" value={recommendedRecord.value} />
+            </Stack>
+          )}
+        </>
+      )}
+    </Paper>
+  );
+}
+
+function RecommendedRow({ label, value }: { label: string; value: string }) {
+  return (
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      sx={{ fontSize: '0.7rem' }}
+    >
+      <Typography variant="caption" sx={{ color: 'text.secondary', width: 56, flexShrink: 0 }}>
+        {label}:
+      </Typography>
+      <Box
+        sx={{
+          flex: 1,
+          fontFamily: 'monospace',
+          wordBreak: 'break-all',
+          fontSize: '0.7rem',
+        }}
+      >
+        {value}
+      </Box>
+      <Tooltip title="Copiar">
+        <IconButton
+          size="small"
+          onClick={() => {
+            navigator.clipboard.writeText(value);
+          }}
+          sx={{ p: 0.25 }}
+        >
+          <ContentCopyIcon sx={{ fontSize: 14 }} />
+        </IconButton>
+      </Tooltip>
     </Stack>
   );
 }

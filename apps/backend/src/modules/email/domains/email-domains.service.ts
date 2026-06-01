@@ -15,6 +15,7 @@ import type {
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { SesDomainsService, type SesDkimStatus, type SesDkimToken } from './ses-domains.service';
+import { DnsVerificationService } from './dns-verification.service';
 
 /**
  * Orquesta el ciclo de vida de dominios verificados en SES desde el panel:
@@ -33,6 +34,7 @@ export class EmailDomainsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ses: SesDomainsService,
+    private readonly dns: DnsVerificationService,
   ) {}
 
   async create(dto: { domain: string }): Promise<EmailDomainDetail> {
@@ -68,8 +70,14 @@ export class EmailDomainsService {
       throw new ConflictException(`El dominio ${normalized} ya está registrado en tu organización.`);
     }
 
-    // Llamar a SES
-    const sesResult = await this.ses.createIdentity(normalized);
+    // Llamar a SES + DNS lookups en paralelo. SPF/DMARC son consultas TXT
+    // independientes (~50-100ms cada una), no esperan al SES.
+    const [sesResult, spfCheck, dmarcCheck] = await Promise.all([
+      this.ses.createIdentity(normalized),
+      this.dns.checkSpf(normalized),
+      this.dns.checkDmarc(normalized),
+    ]);
+    const now = new Date();
 
     // Persistir
     const row = await this.prisma.emailDomain.create({
@@ -78,8 +86,13 @@ export class EmailDomainsService {
         domain: normalized,
         status: mapSesStatus(sesResult.dkimStatus, sesResult.verifiedForSending),
         dkimTokens: sesResult.dkimTokens as unknown as object,
-        lastCheckedAt: new Date(),
-        verifiedAt: sesResult.verifiedForSending ? new Date() : null,
+        lastCheckedAt: now,
+        verifiedAt: sesResult.verifiedForSending ? now : null,
+        spfStatus: spfCheck.status,
+        spfRecord: spfCheck.record,
+        dmarcStatus: dmarcCheck.status,
+        dmarcRecord: dmarcCheck.record,
+        dnsLastCheckedAt: now,
       },
     });
 
@@ -121,20 +134,30 @@ export class EmailDomainsService {
     });
     if (!row) throw new NotFoundException(`EmailDomain ${id} no encontrado`);
 
-    const sesResult = await this.ses.getIdentity(row.domain);
+    const [sesResult, spfCheck, dmarcCheck] = await Promise.all([
+      this.ses.getIdentity(row.domain),
+      this.dns.checkSpf(row.domain),
+      this.dns.checkDmarc(row.domain),
+    ]);
+    const now = new Date();
     const status = mapSesStatus(sesResult.dkimStatus, sesResult.verifiedForSending);
     const updated = await this.prisma.emailDomain.update({
       where: { id },
       data: {
         status,
         dkimTokens: sesResult.dkimTokens as unknown as object,
-        lastCheckedAt: new Date(),
+        lastCheckedAt: now,
         verifiedAt:
-          status === 'VERIFIED' && row.verifiedAt === null ? new Date() : row.verifiedAt,
+          status === 'VERIFIED' && row.verifiedAt === null ? now : row.verifiedAt,
         failureReason:
           status === 'FAILED'
             ? row.failureReason ?? 'DKIM verification failed in SES'
             : null,
+        spfStatus: spfCheck.status,
+        spfRecord: spfCheck.record,
+        dmarcStatus: dmarcCheck.status,
+        dmarcRecord: dmarcCheck.record,
+        dnsLastCheckedAt: now,
       },
     });
 
@@ -184,8 +207,11 @@ function toSummary(row: EmailDomain): EmailDomainSummary {
     id: row.id,
     domain: row.domain,
     status: row.status,
+    spfStatus: row.spfStatus,
+    dmarcStatus: row.dmarcStatus,
     verifiedAt: row.verifiedAt?.toISOString() ?? null,
     lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
+    dnsLastCheckedAt: row.dnsLastCheckedAt?.toISOString() ?? null,
     failureReason: row.failureReason,
     createdAt: row.createdAt.toISOString(),
   };
@@ -195,6 +221,20 @@ function toDetail(row: EmailDomain): EmailDomainDetail {
   return {
     ...toSummary(row),
     dkimRecords: parseTokens(row.dkimTokens),
+    spfRecord: row.spfRecord,
+    dmarcRecord: row.dmarcRecord,
+    recommendedRecords: {
+      spf: {
+        name: row.domain,
+        value: 'v=spf1 include:amazonses.com ~all',
+      },
+      dmarc: {
+        name: `_dmarc.${row.domain}`,
+        // p=none = monitor mode, no rechaza nada pero satisface Gmail/Yahoo 2024.
+        // El user puede subirla a quarantine/reject cuando esté seguro de su tráfico.
+        value: 'v=DMARC1; p=none; rua=mailto:postmaster@' + row.domain,
+      },
+    },
   };
 }
 

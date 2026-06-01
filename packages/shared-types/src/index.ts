@@ -95,8 +95,11 @@ export type EmailDomainStatus =
   | 'FAILED'
   | 'TEMPORARY_FAILURE';
 
+/** Status genérico de un record DNS (SPF, DMARC). */
+export type DnsRecordStatus = 'PENDING' | 'VERIFIED' | 'MISSING' | 'INVALID';
+
 export interface EmailDomainDkimRecord {
-  /** Nombre del CNAME relativo al dominio. Ej: `xxx._domainkey`. */
+  /** FQDN absoluto del CNAME. Ej: `xxx._domainkey.test.empresa.com`. */
   name: string;
   /** Valor del CNAME. Ej: `xxx.dkim.amazonses.com`. */
   value: string;
@@ -106,14 +109,26 @@ export interface EmailDomainSummary {
   id: string;
   domain: string;
   status: EmailDomainStatus;
+  spfStatus: DnsRecordStatus;
+  dmarcStatus: DnsRecordStatus;
   verifiedAt: string | null;
   lastCheckedAt: string | null;
+  dnsLastCheckedAt: string | null;
   failureReason: string | null;
   createdAt: string;
 }
 
 export interface EmailDomainDetail extends EmailDomainSummary {
   dkimRecords: EmailDomainDkimRecord[];
+  /** Record TXT crudo encontrado en DNS para el dominio (SPF). null si MISSING. */
+  spfRecord: string | null;
+  /** Record TXT crudo encontrado en `_dmarc.<domain>`. null si MISSING. */
+  dmarcRecord: string | null;
+  /** Records recomendados a agregar para que SPF/DMARC pasen a VERIFIED. */
+  recommendedRecords: {
+    spf: { name: string; value: string };
+    dmarc: { name: string; value: string };
+  };
 }
 
 export interface CreateEmailDomainResponse extends EmailDomainDetail {}

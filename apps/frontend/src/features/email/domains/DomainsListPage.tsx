@@ -22,10 +22,18 @@ import AddIcon from '@mui/icons-material/Add';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
 import LanguageIcon from '@mui/icons-material/Language';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import { useApi, ApiError } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useConfirm } from '../../../feedback/ConfirmProvider';
-import type { EmailDomainSummary, EmailDomainStatus } from '@massivo/shared-types';
+import type {
+  DnsRecordStatus,
+  EmailDomainSummary,
+  EmailDomainStatus,
+} from '@massivo/shared-types';
 
 const STATUS_COLOR: Record<EmailDomainStatus, 'default' | 'success' | 'warning' | 'error'> = {
   PENDING: 'warning',
@@ -138,6 +146,7 @@ export function DomainsListPage() {
               <TableRow>
                 <TableCell>Dominio</TableCell>
                 <TableCell>Estado</TableCell>
+                <TableCell>Verificación</TableCell>
                 <TableCell>Última verificación</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
@@ -156,6 +165,9 @@ export function DomainsListPage() {
                       <TableCell>
                         <Skeleton width={140} />
                       </TableCell>
+                      <TableCell>
+                        <Skeleton width={140} />
+                      </TableCell>
                       <TableCell align="right">
                         <Skeleton width={80} sx={{ ml: 'auto' }} />
                       </TableCell>
@@ -165,7 +177,7 @@ export function DomainsListPage() {
               )}
               {!loading && rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={5}>
                     <Stack alignItems="center" spacing={2} sx={{ py: 6 }}>
                       <LanguageIcon sx={{ fontSize: 48, color: 'text.disabled' }} />
                       <Typography color="text.secondary">
@@ -210,6 +222,13 @@ export function DomainsListPage() {
                       )}
                     </TableCell>
                     <TableCell>
+                      <Stack direction="row" spacing={0.5}>
+                        <MiniBadge label="DKIM" status={dkimToDns(row.status)} />
+                        <MiniBadge label="SPF" status={row.spfStatus} />
+                        <MiniBadge label="DMARC" status={row.dmarcStatus} />
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
                       <Typography variant="body2" color="text.secondary">
                         {row.lastCheckedAt
                           ? new Date(row.lastCheckedAt).toLocaleString('es-AR')
@@ -251,5 +270,47 @@ export function DomainsListPage() {
         </TableContainer>
       </Paper>
     </Stack>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mini badge DKIM/SPF/DMARC
+
+function dkimToDns(s: EmailDomainStatus): DnsRecordStatus {
+  if (s === 'VERIFIED') return 'VERIFIED';
+  if (s === 'FAILED') return 'INVALID';
+  return 'PENDING';
+}
+
+const BADGE_META: Record<
+  DnsRecordStatus,
+  { color: string; icon: React.ReactNode; tip: string }
+> = {
+  VERIFIED: { color: '#10B981', icon: <CheckCircleIcon sx={{ fontSize: 14 }} />, tip: 'Verificado' },
+  PENDING: { color: '#F59E0B', icon: <HourglassEmptyIcon sx={{ fontSize: 14 }} />, tip: 'Esperando verificación' },
+  MISSING: { color: '#94A3B8', icon: <HelpOutlineIcon sx={{ fontSize: 14 }} />, tip: 'Falta agregar' },
+  INVALID: { color: '#EF4444', icon: <CancelIcon sx={{ fontSize: 14 }} />, tip: 'Inválido' },
+};
+
+function MiniBadge({ label, status }: { label: string; status: DnsRecordStatus }) {
+  const meta = BADGE_META[status];
+  return (
+    <Tooltip title={`${label}: ${meta.tip}`} arrow>
+      <Chip
+        icon={meta.icon as React.ReactElement}
+        label={label}
+        size="small"
+        sx={{
+          height: 22,
+          fontSize: '0.65rem',
+          fontWeight: 600,
+          bgcolor: 'transparent',
+          border: 1,
+          borderColor: meta.color,
+          color: meta.color,
+          '& .MuiChip-icon': { color: meta.color, ml: 0.5 },
+        }}
+      />
+    </Tooltip>
   );
 }

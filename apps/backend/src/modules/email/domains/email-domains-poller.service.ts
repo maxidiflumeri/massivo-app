@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { SesDomainsService } from './ses-domains.service';
+import { DnsVerificationService } from './dns-verification.service';
 
 const TICK_MS = 5 * 60_000;
 /**
@@ -34,6 +35,7 @@ export class EmailDomainsPollerService implements OnModuleInit, OnModuleDestroy 
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly ses: SesDomainsService,
+    private readonly dns: DnsVerificationService,
   ) {}
 
   onModuleInit(): void {
@@ -60,11 +62,29 @@ export class EmailDomainsPollerService implements OnModuleInit, OnModuleDestroy 
   }
 
   async tick(): Promise<{ checked: number; transitioned: number }> {
+    // Candidates: PENDING/TEMP_FAILURE (SES re-check) + cualquiera con DNS
+    // stale (> 1h sin chequear) o nunca chequeado. La query es un OR amplio;
+    // dentro del loop decidimos qué chequear por row.
+    const dnsStaleThreshold = new Date(Date.now() - 60 * 60_000);
     const candidates = await this.prisma.emailDomain.findMany({
-      where: { status: { in: ['PENDING', 'TEMPORARY_FAILURE'] } },
+      where: {
+        OR: [
+          { status: { in: ['PENDING', 'TEMPORARY_FAILURE'] } },
+          { dnsLastCheckedAt: null },
+          { dnsLastCheckedAt: { lt: dnsStaleThreshold } },
+        ],
+      },
       orderBy: { lastCheckedAt: { sort: 'asc', nulls: 'first' } },
       take: BATCH_LIMIT,
-      select: { id: true, domain: true, status: true, verifiedAt: true },
+      select: {
+        id: true,
+        domain: true,
+        status: true,
+        verifiedAt: true,
+        spfStatus: true,
+        dmarcStatus: true,
+        dnsLastCheckedAt: true,
+      },
     });
 
     if (candidates.length === 0) return { checked: 0, transitioned: 0 };
@@ -72,30 +92,59 @@ export class EmailDomainsPollerService implements OnModuleInit, OnModuleDestroy 
     let transitioned = 0;
     for (const row of candidates) {
       try {
-        const sesResult = await this.ses.getIdentity(row.domain);
-        const newStatus = mapSesStatus(sesResult.dkimStatus, sesResult.verifiedForSending);
-        if (newStatus !== row.status) {
-          transitioned++;
-          this.logger.log(
-            `EmailDomain ${row.domain} → ${row.status} → ${newStatus} (poller)`,
-          );
+        const needsSes = row.status === 'PENDING' || row.status === 'TEMPORARY_FAILURE';
+        const needsDns =
+          row.dnsLastCheckedAt === null ||
+          row.dnsLastCheckedAt < dnsStaleThreshold;
+
+        // Corremos lo que aplica en paralelo. Ambos checks son independientes.
+        const [sesResult, spfCheck, dmarcCheck] = await Promise.all([
+          needsSes ? this.ses.getIdentity(row.domain) : Promise.resolve(null),
+          needsDns ? this.dns.checkSpf(row.domain) : Promise.resolve(null),
+          needsDns ? this.dns.checkDmarc(row.domain) : Promise.resolve(null),
+        ]);
+
+        const now = new Date();
+        const data: Record<string, unknown> = {};
+
+        if (sesResult) {
+          const newStatus = mapSesStatus(sesResult.dkimStatus, sesResult.verifiedForSending);
+          if (newStatus !== row.status) {
+            transitioned++;
+            this.logger.log(
+              `EmailDomain ${row.domain} DKIM → ${row.status} → ${newStatus} (poller)`,
+            );
+          }
+          data.status = newStatus;
+          data.dkimTokens = sesResult.dkimTokens as unknown as object;
+          data.lastCheckedAt = now;
+          if (newStatus === 'VERIFIED' && row.verifiedAt === null) data.verifiedAt = now;
+          data.failureReason = newStatus === 'FAILED' ? 'DKIM verification failed in SES' : null;
         }
-        await this.prisma.emailDomain.update({
-          where: { id: row.id },
-          data: {
-            status: newStatus,
-            dkimTokens: sesResult.dkimTokens as unknown as object,
-            lastCheckedAt: new Date(),
-            verifiedAt:
-              newStatus === 'VERIFIED' && row.verifiedAt === null
-                ? new Date()
-                : row.verifiedAt,
-            failureReason:
-              newStatus === 'FAILED'
-                ? 'DKIM verification failed in SES'
-                : null,
-          },
-        });
+
+        if (spfCheck) {
+          if (spfCheck.status !== row.spfStatus) {
+            this.logger.log(
+              `EmailDomain ${row.domain} SPF → ${row.spfStatus} → ${spfCheck.status} (poller)`,
+            );
+          }
+          data.spfStatus = spfCheck.status;
+          data.spfRecord = spfCheck.record;
+        }
+        if (dmarcCheck) {
+          if (dmarcCheck.status !== row.dmarcStatus) {
+            this.logger.log(
+              `EmailDomain ${row.domain} DMARC → ${row.dmarcStatus} → ${dmarcCheck.status} (poller)`,
+            );
+          }
+          data.dmarcStatus = dmarcCheck.status;
+          data.dmarcRecord = dmarcCheck.record;
+        }
+        if (needsDns) data.dnsLastCheckedAt = now;
+
+        if (Object.keys(data).length > 0) {
+          await this.prisma.emailDomain.update({ where: { id: row.id }, data });
+        }
       } catch (err) {
         this.logger.warn(
           `EmailDomain ${row.domain}: refresh falló — ${err instanceof Error ? err.message : String(err)}`,

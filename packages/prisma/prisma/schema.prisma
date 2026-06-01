@@ -354,6 +354,19 @@ enum EmailDomainStatus {
 }
 
 /**
+ * Estado de un record DNS auxiliar (SPF, DMARC) que verificamos con DNS
+ * lookup directo, no vía SES. Si el lookup falla por DNS (NXDOMAIN, no TXT),
+ * marcamos MISSING; si existe pero no cumple (ej. SPF sin amazonses.com,
+ * DMARC sin v=DMARC1), marcamos INVALID.
+ */
+enum DnsRecordStatus {
+  PENDING   // Default antes del primer check
+  VERIFIED  // Record encontrado y válido
+  MISSING   // No hay TXT en el DNS para esta key
+  INVALID   // Hay TXT pero no cumple el formato esperado
+}
+
+/**
  * Dominio de envío verificado en AWS SES bajo la account de Massivo.
  * Cada org puede registrar sus propios dominios; el cliente agrega 3 CNAMEs
  * DKIM al DNS de su dominio y SES los verifica.
@@ -369,11 +382,20 @@ model EmailDomain {
   domain          String            // lowercase, sin trailing dot
   status          EmailDomainStatus @default(PENDING)
   // 3 CNAMEs DKIM que el cliente debe agregar al DNS.
-  // Shape: [{ name: 'xxx._domainkey', value: 'xxx.dkim.amazonses.com' }, ...]
+  // Shape: [{ name: 'xxx._domainkey.<domain>', value: 'xxx.dkim.amazonses.com' }, ...]
   dkimTokens      Json              @default("[]")
   lastCheckedAt   DateTime?
   verifiedAt      DateTime?
   failureReason   String?
+  // SPF check: lookup TXT en `<domain>`. VERIFIED si hay `v=spf1` con
+  // `include:amazonses.com`. Si hay SPF pero no incluye amazonses, INVALID.
+  spfStatus       DnsRecordStatus   @default(PENDING)
+  spfRecord       String?           // El TXT encontrado, para mostrar al user
+  // DMARC: lookup TXT en `_dmarc.<domain>`. VERIFIED si hay `v=DMARC1`.
+  // No exigimos política estricta — Gmail/Yahoo 2024 acepta p=none.
+  dmarcStatus     DnsRecordStatus   @default(PENDING)
+  dmarcRecord     String?
+  dnsLastCheckedAt DateTime?        // Última vez que corrimos SPF + DMARC
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 

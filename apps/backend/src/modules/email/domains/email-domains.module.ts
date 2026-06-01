@@ -3,10 +3,16 @@ import { EmailDomainsController } from './email-domains.controller';
 import { EmailDomainsService } from './email-domains.service';
 import { EmailDomainsPollerService } from './email-domains-poller.service';
 import { SesDomainsService } from './ses-domains.service';
+import { DnsVerificationService } from './dns-verification.service';
 
 @Module({
   controllers: [EmailDomainsController],
-  providers: [EmailDomainsService, EmailDomainsPollerService, SesDomainsService],
+  providers: [
+    EmailDomainsService,
+    EmailDomainsPollerService,
+    SesDomainsService,
+    DnsVerificationService,
+  ],
   exports: [EmailDomainsService, SesDomainsService],
 })
 export class EmailDomainsModule {}
