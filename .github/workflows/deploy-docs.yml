@@ -18,10 +18,7 @@ env:
   AWS_REGION: us-east-1
   AWS_ROLE_ARN: arn:aws:iam::811261691778:role/massivo-prod-github-actions
   S3_BUCKET: massivo-prod-docs-811261691778
-  # CF_DISTRIBUTION_ID: completar después del primer `terraform apply` con el
-  # output `docs_cloudfront_distribution_id`. Sin esto el workflow falla en
-  # el step "Invalidate CloudFront".
-  CF_DISTRIBUTION_ID: TODO_AFTER_TERRAFORM_APPLY
+  CF_DISTRIBUTION_ID: E21L5EETRDCVUX
 
 jobs:
   build-and-deploy:
