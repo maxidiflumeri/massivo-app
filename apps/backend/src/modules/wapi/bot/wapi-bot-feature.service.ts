@@ -35,15 +35,22 @@ export class WapiBotFeatureService {
     return this.config.get<string>('WAPI_BOT_FEATURE_ENABLED') === 'true';
   }
 
-  /** True si la org tiene `botEnabled=true`. Hace 1 SELECT. Usa el cliente
-   *  raíz (no scoped): la lookup es por orgId explícito y la tenant-extension
-   *  no aplica a `Organization`. */
+  /** True si el plan trae `features.bot=true` (preferido) o si la org tiene el
+   *  flag legacy `botEnabled=true` como override. Hace 1 SELECT con join al
+   *  plan. Usa el cliente raíz (no scoped): la lookup es por orgId explícito
+   *  y la tenant-extension no aplica a `Organization`. */
   async isOrgEnabled(organizationId: string): Promise<boolean> {
     const row = await this.prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { botEnabled: true } as never,
+      select: { botEnabled: true, plan: { select: { features: true } } } as never,
     });
-    return (row as unknown as { botEnabled: boolean } | null)?.botEnabled === true;
+    const r = row as unknown as {
+      botEnabled?: boolean;
+      plan?: { features?: Record<string, unknown> | null };
+    } | null;
+    if (!r) return false;
+    if (r.botEnabled === true) return true; // legacy per-org override
+    return r.plan?.features?.bot === true;
   }
 
   /** AND de env + org. Devuelve false si falta contexto (defensive). */

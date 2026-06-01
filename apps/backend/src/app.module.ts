@@ -12,6 +12,7 @@ import { QuotaModule } from './common/quota/quota.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { MeModule } from './modules/me/me.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { PlansModule } from './modules/plans/plans.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { EmailModule } from './modules/email/email.module';
@@ -36,6 +37,7 @@ import { DevModule } from './modules/dev/dev.module';
     WebhooksModule,
     MeModule,
     OrganizationsModule,
+    PlansModule,
     TeamsModule,
     AuditLogsModule,
     EmailModule,

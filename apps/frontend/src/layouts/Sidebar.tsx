@@ -36,6 +36,8 @@ import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import HistoryIcon from '@mui/icons-material/History';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import { OrganizationSwitcher } from '@clerk/clerk-react';
+import CreditCardIcon from '@mui/icons-material/CreditCard';
+import { PlanManagement } from '../features/billing/PlanManagement';
 
 const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
 // 4.O.1 — kill-switch del feature de bots (env). El backend además valida
@@ -263,7 +265,15 @@ export function Sidebar({
                   },
                 },
               }}
-            />
+            >
+              <OrganizationSwitcher.OrganizationProfilePage
+                label="Plan"
+                labelIcon={<CreditCardIcon fontSize="small" />}
+                url="plan"
+              >
+                <PlanManagement />
+              </OrganizationSwitcher.OrganizationProfilePage>
+            </OrganizationSwitcher>
           </Box>
           <Divider />
         </>

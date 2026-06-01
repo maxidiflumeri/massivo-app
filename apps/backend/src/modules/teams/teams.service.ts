@@ -60,6 +60,27 @@ export class TeamsService {
   async create(dto: CreateTeamDto): Promise<TeamListItem> {
     const ctx = this.requireContext();
 
+    // Cap check contra Plan.limits.teams (separado del gate multiTeam que es
+    // binario y vive en defineAbilityFor). Esto permite a un plan con
+    // multiTeam=true tener N teams máximo.
+    const org = await this.prisma.organization.findUniqueOrThrow({
+      where: { id: ctx.organizationId },
+      include: { plan: true },
+    });
+    const limits = (org.plan.limits ?? {}) as Record<string, unknown>;
+    const rawLimit = limits.teams;
+    const limit = typeof rawLimit === 'number' ? rawLimit : 0;
+    if (limit >= 0) {
+      const current = await this.prisma.team.count({
+        where: { organizationId: ctx.organizationId },
+      });
+      if (current >= limit) {
+        throw new ForbiddenException(
+          `El plan ${org.plan.code} permite hasta ${limit} team(s). Subí de plan para crear más.`,
+        );
+      }
+    }
+
     // Verificar que el slug no existe ya en esta org
     const existing = await this.prisma.team.findUnique({
       where: {

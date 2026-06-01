@@ -41,9 +41,10 @@ export class MeService {
     const botEnvOn = this.config.get<string>('WAPI_BOT_FEATURE_ENABLED') === 'true';
     const organizations = user.orgMemberships.map((membership) => {
       const org = membership.organization;
-      // 4.O.1 — feature flags efectivos. botEnabled puede no existir en clientes
-      // viejos sin la columna; lo casteamos defensivamente.
+      // 4.O.1 — feature flags efectivos. Bot prende si plan lo incluye o si
+      // hay override legacy en Organization.botEnabled (per-org grandfather).
       const orgBotEnabled = (org as unknown as { botEnabled?: boolean }).botEnabled === true;
+      const planBot = (org.plan.features as Record<string, unknown> | null)?.bot === true;
       const teams = org.teams
         .filter((team) => team.memberships.length > 0)
         .map((team) => {
@@ -72,7 +73,7 @@ export class MeService {
         },
         permissions: computePlanFlags(org.plan.features as Record<string, unknown> | null),
         features: {
-          bot: botEnvOn && orgBotEnabled,
+          bot: botEnvOn && (orgBotEnabled || planBot),
         },
         teams,
       };

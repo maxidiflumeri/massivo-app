@@ -1,7 +1,9 @@
 import {
+  Body,
   Controller,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   UseGuards,
   UseInterceptors,
@@ -13,6 +15,7 @@ import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { Audit } from '../../common/audit/audit.decorator';
 import { OrganizationsService } from './organizations.service';
+import { ChangePlanDto } from './organizations.dto';
 import type { AppAbility } from '@massivo/permissions';
 
 /**
@@ -31,5 +34,13 @@ export class OrganizationsController {
   @Audit({ action: 'org.webhookSlugRegenerated', resourceType: 'Organization' })
   regenerateWebhookSlug() {
     return this.organizationsService.regenerateWebhookSlug();
+  }
+
+  @Patch('plan')
+  @HttpCode(HttpStatus.OK)
+  @CheckPolicies((ability: AppAbility) => ability.can('manage', 'Billing'))
+  @Audit({ action: 'org.planChanged', resourceType: 'Organization' })
+  changePlan(@Body() dto: ChangePlanDto) {
+    return this.organizationsService.changePlan(dto.planCode);
   }
 }

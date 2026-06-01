@@ -41,11 +41,20 @@ describe('TeamsService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn(),
         findFirst: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
       },
       teamMembership: { create: jest.fn() },
+      organization: {
+        // Default: plan unlimited (-1) para que el cap check no bloquee
+        // los tests existentes; tests que ejercitan el cap setean su propio mock.
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'org1',
+          plan: { code: 'ENTERPRISE', limits: { teams: -1 } },
+        }),
+      },
     };
 
     const moduleRef = await Test.createTestingModule({
