@@ -60,11 +60,31 @@ const sidebars: SidebarsConfig = {
         'email/gestionar-desuscriptos',
       ],
     },
-    // {
-    //   type: 'category',
-    //   label: 'WhatsApp',
-    //   items: [...]
-    // },
+    {
+      type: 'category',
+      label: 'WhatsApp',
+      collapsed: false,
+      link: {type: 'generated-index', slug: '/whatsapp'},
+      items: [
+        {
+          type: 'category',
+          label: 'Conceptos',
+          items: [
+            'whatsapp/conceptos/meta-whatsapp-business-api',
+            'whatsapp/conceptos/phone-number-id-access-token',
+            'whatsapp/conceptos/templates-aprobados',
+            'whatsapp/conceptos/24h-window',
+            'whatsapp/conceptos/webhooks-meta',
+          ],
+        },
+        'whatsapp/configurar-numero',
+        'whatsapp/crear-template',
+        'whatsapp/crear-campana',
+        'whatsapp/inbox',
+        'whatsapp/respuestas-rapidas',
+        'whatsapp/opt-out-compliance',
+      ],
+    },
     // {
     //   type: 'category',
     //   label: 'Bots',
