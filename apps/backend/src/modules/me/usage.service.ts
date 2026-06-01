@@ -8,19 +8,6 @@ import type {
   UsageMetricSnapshot,
 } from '@massivo/shared-types';
 
-/**
- * Cuántos dominios de envío dedicados (SmtpAccount provider=ses) puede tener
- * la org según su plan. No vive en Plan.limits todavía — cuando exista de
- * verdad un modelo EmailDomain con verificación SES propia se va a migrar.
- * -1 = ilimitado.
- */
-const DEDICATED_DOMAINS_BY_PLAN: Record<string, number> = {
-  FREE: 1,
-  STARTER: 3,
-  BUSINESS: 10,
-  ENTERPRISE: -1,
-};
-
 @Injectable()
 export class UsageService {
   constructor(
@@ -36,35 +23,39 @@ export class UsageService {
     }
     const { organizationId } = ctx;
 
-    const [emailQuota, wapiQuota, dedicatedDomainsUsed, lastEmail, lastWapi] =
-      await Promise.all([
-        this.quota.getSnapshot(organizationId, 'EMAIL'),
-        this.quota.getSnapshot(organizationId, 'WAPI'),
-        this.prisma.smtpAccount.count({
-          where: { organizationId, provider: 'ses' },
-        }),
-        this.prisma.emailCampaign.findFirst({
-          where: { organizationId, archived: false },
-          orderBy: { updatedAt: 'desc' },
-          select: { id: true, name: true, status: true, updatedAt: true },
-        }),
-        this.prisma.wapiCampaign.findFirst({
-          where: { organizationId, archived: false },
-          orderBy: { updatedAt: 'desc' },
-          select: { id: true, name: true, status: true, updatedAt: true },
-        }),
-      ]);
+    const [
+      emailQuota,
+      wapiQuota,
+      dedicatedDomainsUsed,
+      lastEmail,
+      lastWapi,
+      org,
+    ] = await Promise.all([
+      this.quota.getSnapshot(organizationId, 'EMAIL'),
+      this.quota.getSnapshot(organizationId, 'WAPI'),
+      // Cuenta sólo los VERIFIED — los PENDING todavía no son una identidad
+      // utilizable, no aportan capacidad de envío.
+      this.prisma.emailDomain.count({
+        where: { organizationId, status: 'VERIFIED' },
+      }),
+      this.prisma.emailCampaign.findFirst({
+        where: { organizationId, archived: false },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true, name: true, status: true, updatedAt: true },
+      }),
+      this.prisma.wapiCampaign.findFirst({
+        where: { organizationId, archived: false },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true, name: true, status: true, updatedAt: true },
+      }),
+      this.prisma.organization.findUniqueOrThrow({
+        where: { id: organizationId },
+        select: { plan: { select: { code: true, name: true, limits: true } } },
+      }),
+    ]);
 
-    // Plan code y nombre los traigo de la org (no del snapshot — el snapshot
-    // no expone el nombre comercial). Hago una sola query extra.
-    const org = await this.prisma.organization.findUniqueOrThrow({
-      where: { id: organizationId },
-      select: { plan: { select: { code: true, name: true } } },
-    });
-
-    const dedicatedDomainsLimit = normalizeLimit(
-      DEDICATED_DOMAINS_BY_PLAN[org.plan.code],
-    );
+    const limits = (org.plan.limits ?? {}) as Record<string, unknown>;
+    const dedicatedDomainsLimit = normalizeLimit(limits.dedicatedDomains);
 
     return {
       planCode: org.plan.code,

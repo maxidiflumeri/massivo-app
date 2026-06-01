@@ -100,6 +100,32 @@ resource "aws_iam_role_policy" "ec2_ses" {
         ]
         Resource = "*"
       },
+      {
+        Sid    = "SesManageDomainIdentities"
+        Effect = "Allow"
+        Action = [
+          # Phase 1: registrar/borrar dominios de clientes en SES y leer su
+          # status de verificación (DKIM). Sin estas perms no podemos
+          # automatizar el alta de dominios desde el panel.
+          "ses:CreateEmailIdentity",
+          "ses:DeleteEmailIdentity",
+          "ses:PutEmailIdentityDkimAttributes",
+          "ses:PutEmailIdentityDkimSigningAttributes",
+          # Tagging para auditar qué org dueña de cada identity en SES.
+          "ses:TagResource",
+          "ses:UntagResource",
+          "ses:ListTagsForResource",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "SesGetAccount"
+        Effect = "Allow"
+        Action = [
+          "ses:GetAccount",
+        ]
+        Resource = "*"
+      },
     ]
   })
 }

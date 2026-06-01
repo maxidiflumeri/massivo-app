@@ -77,6 +77,11 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
   CMD curl -fsS http://localhost:3001/api/health || exit 1
 
-# Working dir y entrypoint relativos al backend
+# Working dir y entrypoint relativos al backend.
+#
+# Entrypoint corre `prisma migrate deploy` en cada boot. Idempotente: Prisma
+# sólo aplica las migrations pending por hash en `_prisma_migrations`. Si
+# falla, el container sale con código ≠ 0 y el healthcheck SSM del deploy
+# detecta el problema sin servir tráfico con schema viejo.
 WORKDIR /app/apps/backend
-CMD ["node", "dist/main.js"]
+CMD ["sh", "-c", "cd /app/packages/prisma && pnpm exec prisma migrate deploy && cd /app/apps/backend && exec node dist/main.js"]

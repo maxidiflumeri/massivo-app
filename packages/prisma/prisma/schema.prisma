@@ -126,6 +126,7 @@ model Organization {
   auditLogs     AuditLog[]
 
   smtpAccounts      SmtpAccount[]
+  emailDomains      EmailDomain[]
   emailTemplates    EmailTemplate[]
   emailCampaigns    EmailCampaign[]
   emailContacts     EmailContact[]
@@ -322,16 +323,62 @@ model SmtpAccount {
   // "ses" usa AWS SES con configuration set sesConfigSet.
   provider       String   @default("smtp")
   sesConfigSet   String?
+  // Dominio verificado en SES al que pertenece este sender (opcional). Si está
+  // seteado, el `fromEmail` debería estar bajo ese dominio. Nullable porque las
+  // cuentas SMTP de clientes externos (Mailpit, SMTP propio) no requieren
+  // verificación SES.
+  emailDomainId  String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team           Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  emailDomain    EmailDomain?    @relation(fields: [emailDomainId], references: [id], onDelete: SetNull)
   emailTemplates EmailTemplate[]
   emailCampaigns EmailCampaign[]
 
   @@index([organizationId])
   @@index([teamId])
+  @@index([emailDomainId])
+}
+
+enum EmailDomainStatus {
+  PENDING            // Recién creada en SES, esperando que el cliente agregue DNS
+  VERIFIED           // SES confirmó DKIM en el DNS del cliente
+  FAILED             // DKIM falló en SES (DNS mal configurado / records borrados)
+  TEMPORARY_FAILURE  // SES dice fallo transitorio — retry-able
+}
+
+/**
+ * Dominio de envío verificado en AWS SES bajo la account de Massivo.
+ * Cada org puede registrar sus propios dominios; el cliente agrega 3 CNAMEs
+ * DKIM al DNS de su dominio y SES los verifica.
+ *
+ * El nombre del dominio es único per-org (no globalmente) — un mismo dominio
+ * no puede ser registrado por dos orgs distintas en nuestra account porque SES
+ * rechaza el segundo CreateEmailIdentity. Esto se valida en backend antes de
+ * llamar a SES.
+ */
+model EmailDomain {
+  id              String            @id @default(cuid())
+  organizationId  String
+  domain          String            // lowercase, sin trailing dot
+  status          EmailDomainStatus @default(PENDING)
+  // 3 CNAMEs DKIM que el cliente debe agregar al DNS.
+  // Shape: [{ name: 'xxx._domainkey', value: 'xxx.dkim.amazonses.com' }, ...]
+  dkimTokens      Json              @default("[]")
+  lastCheckedAt   DateTime?
+  verifiedAt      DateTime?
+  failureReason   String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  smtpAccounts SmtpAccount[]
+
+  @@unique([organizationId, domain])
+  @@index([organizationId])
+  @@index([status])
 }
 
 model EmailTemplate {

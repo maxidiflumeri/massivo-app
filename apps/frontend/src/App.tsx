@@ -10,6 +10,9 @@ import { TemplateEditorPage } from './features/email/templates/TemplateEditorPag
 import { CampaignsListPage } from './features/email/campaigns/CampaignsListPage';
 import { CampaignDetailPage } from './features/email/campaigns/CampaignDetailPage';
 import { SmtpAccountsPage } from './features/email/smtp-accounts/SmtpAccountsPage';
+import { DomainsListPage } from './features/email/domains/DomainsListPage';
+import { AddDomainPage } from './features/email/domains/AddDomainPage';
+import { DomainDetailPage } from './features/email/domains/DomainDetailPage';
 import { SuppressionsPage } from './features/email/suppressions/SuppressionsPage';
 import { MetricsPage } from './features/email/metrics/MetricsPage';
 import { WapiCampaignsListPage } from './features/wapi/campaigns/WapiCampaignsListPage';
@@ -60,6 +63,9 @@ export function App() {
         <Route path="email/campaigns" element={<CampaignsListPage />} />
         <Route path="email/campaigns/:id" element={<CampaignDetailPage />} />
         <Route path="email/smtp-accounts" element={<SmtpAccountsPage />} />
+        <Route path="email/domains" element={<DomainsListPage />} />
+        <Route path="email/domains/new" element={<AddDomainPage />} />
+        <Route path="email/domains/:id" element={<DomainDetailPage />} />
         <Route path="email/suppressions" element={<SuppressionsPage />} />
         <Route path="email/metrics" element={<MetricsPage />} />
         <Route path="wapi/campaigns" element={<WapiCampaignsListPage />} />

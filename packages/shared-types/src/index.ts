@@ -85,6 +85,39 @@ export interface MeUsageLastCampaign {
   updatedAt: string;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Email Domains (Phase 1 — SES identity management)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type EmailDomainStatus =
+  | 'PENDING'
+  | 'VERIFIED'
+  | 'FAILED'
+  | 'TEMPORARY_FAILURE';
+
+export interface EmailDomainDkimRecord {
+  /** Nombre del CNAME relativo al dominio. Ej: `xxx._domainkey`. */
+  name: string;
+  /** Valor del CNAME. Ej: `xxx.dkim.amazonses.com`. */
+  value: string;
+}
+
+export interface EmailDomainSummary {
+  id: string;
+  domain: string;
+  status: EmailDomainStatus;
+  verifiedAt: string | null;
+  lastCheckedAt: string | null;
+  failureReason: string | null;
+  createdAt: string;
+}
+
+export interface EmailDomainDetail extends EmailDomainSummary {
+  dkimRecords: EmailDomainDkimRecord[];
+}
+
+export interface CreateEmailDomainResponse extends EmailDomainDetail {}
+
 export interface MeUsageResponse {
   /** Plan code para colorear/labelear en UI. */
   planCode: string;

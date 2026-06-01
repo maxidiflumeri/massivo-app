@@ -24,9 +24,10 @@ import { EmailMetricsController } from './metrics/email-metrics.controller';
 import { EmailMetricsService } from './metrics/email-metrics.service';
 import { ReportsController } from './reports/reports.controller';
 import { ReportGeneratorService } from './reports/report-generator.service';
+import { EmailDomainsModule } from './domains/email-domains.module';
 
 @Module({
-  imports: [EventsModule, ContactsModule],
+  imports: [EventsModule, ContactsModule, EmailDomainsModule],
   controllers: [
     SmtpAccountsController,
     EmailTemplatesController,

@@ -20,6 +20,7 @@ import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import ContactsIcon from '@mui/icons-material/Contacts';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DnsIcon from '@mui/icons-material/Dns';
+import LanguageIcon from '@mui/icons-material/Language';
 import BlockIcon from '@mui/icons-material/Block';
 import InsightsIcon from '@mui/icons-material/Insights';
 import HomeIcon from '@mui/icons-material/Home';
@@ -75,6 +76,11 @@ const NAV_GROUPS: NavGroupSpec[] = [
         to: '/dashboard/email/templates',
         label: 'Templates',
         icon: <DescriptionIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/email/domains',
+        label: 'Dominios',
+        icon: <LanguageIcon fontSize="small" />,
       },
       {
         to: '/dashboard/email/smtp-accounts',
