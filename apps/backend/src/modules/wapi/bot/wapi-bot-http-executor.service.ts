@@ -105,7 +105,18 @@ export class WapiBotHttpExecutor {
       return errorResult('invalid-scheme', 0, startedAt);
     }
     if (parsed.protocol === 'http:' && process.env.NODE_ENV === 'production') {
-      return errorResult('http-not-allowed-in-prod', 0, startedAt);
+      // Allowlist por hostname para integraciones legacy que solo exponen HTTP
+      // (típico: webservices gov.ar viejos en puertos no-estándar). El cliente
+      // setea `WAPI_BOT_HTTP_INSECURE_HOSTS=host1.x.com,host2.y.com` en env.
+      // Default: lista vacía → bloqueo total (comportamiento previo).
+      const allowlist = (process.env.WAPI_BOT_HTTP_INSECURE_HOSTS ?? '')
+        .split(',')
+        .map((h) => h.trim().toLowerCase())
+        .filter(Boolean);
+      const hostLower = parsed.hostname.toLowerCase();
+      if (!allowlist.includes(hostLower)) {
+        return errorResult('http-not-allowed-in-prod', 0, startedAt);
+      }
     }
 
     const allowPrivate = process.env.WAPI_BOT_HTTP_ALLOW_PRIVATE_IPS === 'true';

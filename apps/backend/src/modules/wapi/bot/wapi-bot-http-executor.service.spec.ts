@@ -337,6 +337,53 @@ describe('WapiBotHttpExecutor', () => {
     });
   });
 
+  describe('HTTP-en-prod allowlist (WAPI_BOT_HTTP_INSECURE_HOSTS)', () => {
+    it('NODE_ENV=production + host NO está en allowlist → http-not-allowed-in-prod', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      const originalAllow = process.env.WAPI_BOT_HTTP_INSECURE_HOSTS;
+      process.env.NODE_ENV = 'production';
+      process.env.WAPI_BOT_HTTP_INSECURE_HOSTS = 'allowed.example.com';
+      try {
+        const limiter = new WapiBotHttpRateLimiterService();
+        const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+        const r = await exec.execute(
+          makeNode({ url: `${baseUrl}/blocked` }),
+          {},
+          { mode: 'real', configId: 'c1', nodeId: 'n1', organizationId: 'org1' },
+        );
+        expect(r.ok).toBe(false);
+        expect(r.error).toBe('http-not-allowed-in-prod');
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+        if (originalAllow === undefined) delete process.env.WAPI_BOT_HTTP_INSECURE_HOSTS;
+        else process.env.WAPI_BOT_HTTP_INSECURE_HOSTS = originalAllow;
+      }
+    });
+
+    it('NODE_ENV=production + host SÍ está en allowlist → request pasa', async () => {
+      nextResponse = { status: 200, headers: { 'content-type': 'application/json' }, body: '{"ok":true}' };
+      const originalEnv = process.env.NODE_ENV;
+      const originalAllow = process.env.WAPI_BOT_HTTP_INSECURE_HOSTS;
+      process.env.NODE_ENV = 'production';
+      process.env.WAPI_BOT_HTTP_INSECURE_HOSTS = '127.0.0.1, another.example.com';
+      try {
+        const limiter = new WapiBotHttpRateLimiterService();
+        const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+        const r = await exec.execute(
+          makeNode({ url: `${baseUrl}/allowed` }),
+          {},
+          { mode: 'real', configId: 'c1', nodeId: 'n1', organizationId: 'org1' },
+        );
+        expect(r.ok).toBe(true);
+        expect(r.body).toEqual({ ok: true });
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+        if (originalAllow === undefined) delete process.env.WAPI_BOT_HTTP_INSECURE_HOSTS;
+        else process.env.WAPI_BOT_HTTP_INSECURE_HOSTS = originalAllow;
+      }
+    });
+  });
+
   describe('modo real — errores', () => {
     it('5xx → ok=false sin error sintético (es response real)', async () => {
       nextResponse = {
