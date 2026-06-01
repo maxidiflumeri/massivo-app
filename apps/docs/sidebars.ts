@@ -85,11 +85,51 @@ const sidebars: SidebarsConfig = {
         'whatsapp/opt-out-compliance',
       ],
     },
-    // {
-    //   type: 'category',
-    //   label: 'Bots',
-    //   items: [...]
-    // },
+    {
+      type: 'category',
+      label: 'Bots',
+      collapsed: false,
+      link: {type: 'generated-index', slug: '/bots'},
+      items: [
+        {
+          type: 'category',
+          label: 'Conceptos',
+          items: [
+            'bots/conceptos/que-es-un-bot',
+            'bots/conceptos/bot-sessions-variables',
+            'bots/conceptos/multi-tema-router',
+            'bots/conceptos/cuando-bot-vs-humano',
+            'bots/conceptos/draft-vs-published',
+          ],
+        },
+        'bots/crear-primer-bot',
+        'bots/editor-de-flujo',
+        {
+          type: 'category',
+          label: 'Tipos de nodos',
+          items: [
+            'bots/nodos/menu',
+            'bots/nodos/message',
+            'bots/nodos/handoff',
+            'bots/nodos/capture',
+            'bots/nodos/media',
+            'bots/nodos/condition',
+            'bots/nodos/set-var',
+            'bots/nodos/http',
+            'bots/nodos/foreach',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Recetas',
+          items: [
+            'bots/recetas/capturar-lead',
+            'bots/recetas/faq-con-handoff',
+            'bots/recetas/recordatorio-postventa',
+          ],
+        },
+      ],
+    },
   ],
 };
 
