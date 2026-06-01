@@ -36,6 +36,7 @@ export interface SmtpAccountListItem {
   isActive: boolean;
   provider: string;
   sesConfigSet: string | null;
+  emailDomainId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -51,6 +52,7 @@ function toListItem(row: {
   isActive: boolean;
   provider: string;
   sesConfigSet: string | null;
+  emailDomainId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): SmtpAccountListItem {
@@ -65,6 +67,7 @@ function toListItem(row: {
     isActive: row.isActive,
     provider: row.provider,
     sesConfigSet: row.sesConfigSet,
+    emailDomainId: row.emailDomainId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -98,19 +101,21 @@ export class SmtpAccountsService {
 
   async create(dto: CreateSmtpAccountDto): Promise<SmtpAccountWithVerify> {
     const ctx = this.requireContext();
+    const normalized = await this.normalizeForSesDomain(dto);
     const created = await this.prisma.scoped.smtpAccount.create({
       // organizationId + teamId are injected by the tenant-scope Prisma extension
       data: {
-        name: dto.name,
-        host: dto.host,
-        port: dto.port,
-        username: dto.username,
-        passwordEnc: dto.password,
-        fromName: dto.fromName,
-        fromEmail: dto.fromEmail,
+        name: normalized.name,
+        host: normalized.host,
+        port: normalized.port,
+        username: normalized.username,
+        passwordEnc: normalized.password,
+        fromName: normalized.fromName,
+        fromEmail: normalized.fromEmail,
         isActive: false, // se activa solo si verify pasa
-        ...(dto.provider !== undefined && { provider: dto.provider }),
-        ...(dto.sesConfigSet !== undefined && { sesConfigSet: dto.sesConfigSet }),
+        ...(normalized.provider !== undefined && { provider: normalized.provider }),
+        ...(normalized.sesConfigSet !== undefined && { sesConfigSet: normalized.sesConfigSet }),
+        ...(normalized.emailDomainId !== undefined && { emailDomainId: normalized.emailDomainId }),
       } as Prisma.SmtpAccountUncheckedCreateInput,
     });
     this.logger.log(`SmtpAccount created: ${created.id} in org ${ctx.organizationId} team ${ctx.teamId}`);
@@ -125,22 +130,141 @@ export class SmtpAccountsService {
       throw new NotFoundException('Cuenta SMTP no encontrada');
     }
 
+    // Si el update toca emailDomainId o pasa a provider='ses', revalidar.
+    // Para update parcial llenamos los gaps con los valores actuales antes
+    // de pasar por normalizeForSesDomain.
+    const merged = await this.normalizeForSesDomain({
+      ...dto,
+      // Defaults desde la row para que la validación funcione con patches parciales.
+      name: dto.name ?? existing.name,
+      fromName: dto.fromName ?? existing.fromName,
+      fromEmail: dto.fromEmail ?? existing.fromEmail,
+      provider: (dto.provider ?? (existing.provider as 'smtp' | 'ses')) as 'smtp' | 'ses',
+      emailDomainId:
+        dto.emailDomainId !== undefined
+          ? dto.emailDomainId
+          : existing.emailDomainId ?? undefined,
+    });
+
     // isActive es system-controlled (resultado del verify); ignoramos dto.isActive
     const updated = await this.prisma.scoped.smtpAccount.update({
       where: { id },
       data: {
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.host !== undefined && { host: dto.host }),
-        ...(dto.port !== undefined && { port: dto.port }),
-        ...(dto.username !== undefined && { username: dto.username }),
-        ...(dto.password !== undefined && { passwordEnc: dto.password }),
-        ...(dto.fromName !== undefined && { fromName: dto.fromName }),
-        ...(dto.fromEmail !== undefined && { fromEmail: dto.fromEmail }),
-        ...(dto.provider !== undefined && { provider: dto.provider }),
-        ...(dto.sesConfigSet !== undefined && { sesConfigSet: dto.sesConfigSet }),
+        ...(dto.name !== undefined && { name: merged.name }),
+        ...(merged.host !== undefined && { host: merged.host }),
+        ...(merged.port !== undefined && { port: merged.port }),
+        ...(merged.username !== undefined && { username: merged.username }),
+        ...(merged.password !== undefined && { passwordEnc: merged.password }),
+        ...(dto.fromName !== undefined && { fromName: merged.fromName }),
+        ...(dto.fromEmail !== undefined && { fromEmail: merged.fromEmail }),
+        ...(merged.provider !== undefined && { provider: merged.provider }),
+        ...(dto.sesConfigSet !== undefined && { sesConfigSet: merged.sesConfigSet }),
+        ...(dto.emailDomainId !== undefined && {
+          emailDomainId: merged.emailDomainId ?? null,
+        }),
       },
     });
     return this.runVerifyAndUpdate(updated);
+  }
+
+  /**
+   * Validación cross-field para SMTP vs SES + linkeo a EmailDomain:
+   *
+   *  - **smtp**: requiere host/port/username/password.
+   *  - **ses**: NO requiere SMTP creds. Si vino `emailDomainId`, valida que
+   *    pertenezca a esta org, esté VERIFIED, y que `fromEmail` termine
+   *    en `@<domain>`. Rellena host/port/username/password con placeholders
+   *    (el sender SES los ignora — usa SESv2 API con instance profile).
+   *
+   * Devuelve los campos efectivos a persistir.
+   */
+  private async normalizeForSesDomain(dto: {
+    name?: string;
+    host?: string;
+    port?: number;
+    username?: string;
+    password?: string;
+    fromName?: string;
+    fromEmail?: string;
+    provider?: 'smtp' | 'ses';
+    sesConfigSet?: string;
+    emailDomainId?: string;
+  }): Promise<{
+    name: string;
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+    fromName: string;
+    fromEmail: string;
+    provider?: 'smtp' | 'ses';
+    sesConfigSet?: string;
+    emailDomainId?: string | null;
+  }> {
+    const ctx = this.requireContext();
+    let provider = dto.provider ?? 'smtp';
+    let emailDomainId = dto.emailDomainId ?? undefined;
+
+    if (emailDomainId) {
+      const domain = await this.prisma.emailDomain.findFirst({
+        where: { id: emailDomainId, organizationId: ctx.organizationId },
+      });
+      if (!domain) {
+        throw new BadRequestException(`emailDomainId ${emailDomainId} no encontrado en tu organización.`);
+      }
+      if (domain.status !== 'VERIFIED') {
+        throw new BadRequestException(
+          `El dominio ${domain.domain} aún no está verificado (estado: ${domain.status}). Verificalo antes de vincularlo a una cuenta SMTP.`,
+        );
+      }
+      if (!dto.fromEmail) {
+        throw new BadRequestException('fromEmail es obligatorio cuando vinculás un dominio verificado.');
+      }
+      const fromDomain = dto.fromEmail.split('@')[1]?.toLowerCase();
+      if (fromDomain !== domain.domain) {
+        throw new BadRequestException(
+          `El fromEmail "${dto.fromEmail}" no pertenece al dominio verificado "${domain.domain}".`,
+        );
+      }
+      provider = 'ses';
+    }
+
+    if (provider === 'smtp') {
+      // SMTP: campos requeridos.
+      if (!dto.host || !dto.port || !dto.username || !dto.password) {
+        throw new BadRequestException(
+          'host, port, username y password son obligatorios para provider="smtp".',
+        );
+      }
+      return {
+        name: dto.name!,
+        host: dto.host,
+        port: dto.port,
+        username: dto.username,
+        password: dto.password,
+        fromName: dto.fromName!,
+        fromEmail: dto.fromEmail!,
+        provider: dto.provider,
+        sesConfigSet: dto.sesConfigSet,
+        emailDomainId: emailDomainId ?? null,
+      };
+    }
+
+    // SES: si no vinieron, rellenamos con placeholders. El sender SES no los
+    // lee — usa SESv2 con instance profile credentials. Mantenemos los valores
+    // del input si el usuario realmente quiere setearlos.
+    return {
+      name: dto.name!,
+      host: dto.host ?? 'ses.api',
+      port: dto.port ?? 465,
+      username: dto.username ?? 'SES_INSTANCE_PROFILE',
+      password: dto.password ?? 'UNUSED',
+      fromName: dto.fromName!,
+      fromEmail: dto.fromEmail!,
+      provider: 'ses',
+      sesConfigSet: dto.sesConfigSet,
+      emailDomainId: emailDomainId ?? null,
+    };
   }
 
   async verify(id: string): Promise<SmtpAccountWithVerify> {
@@ -219,6 +343,7 @@ export class SmtpAccountsService {
     fromEmail: string;
     provider: string;
     sesConfigSet: string | null;
+    emailDomainId: string | null;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;

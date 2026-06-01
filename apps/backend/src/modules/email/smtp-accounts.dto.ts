@@ -20,24 +20,29 @@ export class CreateSmtpAccountDto {
   @MaxLength(80)
   name!: string;
 
+  // host/port/username/password son opcionales: requeridos sólo para
+  // provider='smtp' (validación cross-field en el service). Para provider='ses'
+  // los rellenamos con placeholders porque el sender SES ignora esos campos
+  // (usa SESv2 API con instance profile, no SMTP).
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(255)
-  host!: string;
+  host?: string;
 
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(65535)
-  port!: number;
+  port?: number;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(255)
-  username!: string;
+  username?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  password!: string;
+  password?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -56,6 +61,13 @@ export class CreateSmtpAccountDto {
   @IsString()
   @MaxLength(64)
   sesConfigSet?: string;
+
+  // Si está seteado: backend valida que el EmailDomain (a) sea de esta org,
+  // (b) esté VERIFIED, y (c) que `fromEmail` termine en `@<domain>`. Setea
+  // `provider='ses'` automáticamente.
+  @IsOptional()
+  @IsString()
+  emailDomainId?: string;
 }
 
 export class TestSmtpAccountDto {
@@ -117,4 +129,8 @@ export class UpdateSmtpAccountDto {
   @IsString()
   @MaxLength(64)
   sesConfigSet?: string;
+
+  @IsOptional()
+  @IsString()
+  emailDomainId?: string;
 }

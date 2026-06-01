@@ -38,6 +38,7 @@ import type {
   SmtpProvider,
   UpdateSmtpAccountPayload,
 } from './types';
+import type { EmailDomainSummary } from '@massivo/shared-types';
 
 interface FormState {
   name: string;
@@ -49,6 +50,8 @@ interface FormState {
   fromName: string;
   fromEmail: string;
   sesConfigSet: string;
+  /** Empty string = no domain linked (modo SMTP/SES manual). */
+  emailDomainId: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -61,6 +64,7 @@ const EMPTY_FORM: FormState = {
   fromName: '',
   fromEmail: '',
   sesConfigSet: '',
+  emailDomainId: '',
 };
 
 export function SmtpAccountsPage() {
@@ -68,6 +72,7 @@ export function SmtpAccountsPage() {
   const notify = useNotify();
   const confirm = useConfirm();
   const [accounts, setAccounts] = useState<SmtpAccount[] | null>(null);
+  const [verifiedDomains, setVerifiedDomains] = useState<EmailDomainSummary[]>([]);
   const [verifyErrors, setVerifyErrors] = useState<Record<string, string>>({});
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
 
@@ -92,8 +97,19 @@ export function SmtpAccountsPage() {
     }
   }
 
+  async function loadVerifiedDomains() {
+    try {
+      const all = await api.get<EmailDomainSummary[]>('/api/email/domains');
+      setVerifiedDomains(all.filter((d) => d.status === 'VERIFIED'));
+    } catch {
+      // Si falla, dejamos verifiedDomains=[] — el form muestra el path SMTP normal.
+      setVerifiedDomains([]);
+    }
+  }
+
   useEffect(() => {
     void load();
+    void loadVerifiedDomains();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -115,6 +131,7 @@ export function SmtpAccountsPage() {
       fromName: acc.fromName,
       fromEmail: acc.fromEmail,
       sesConfigSet: acc.sesConfigSet ?? '',
+      emailDomainId: acc.emailDomainId ?? '',
     });
     setEditorOpen(true);
   }
@@ -154,14 +171,32 @@ export function SmtpAccountsPage() {
   }
 
   async function handleSave() {
-    const portNum = Number(form.port);
-    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
-      notify.error('Puerto inválido');
-      return;
+    const usingDomain = Boolean(form.emailDomainId);
+    // Cuando se vincula a un dominio verificado el backend setea provider='ses'
+    // y rellena host/port/user/pass con placeholders. No exigimos esos campos
+    // en el form.
+    const portNum = usingDomain ? null : Number(form.port);
+    if (!usingDomain) {
+      if (!Number.isInteger(portNum) || (portNum as number) < 1 || (portNum as number) > 65535) {
+        notify.error('Puerto inválido');
+        return;
+      }
+      if (!isEditing && !form.password) {
+        notify.error('La contraseña es obligatoria al crear');
+        return;
+      }
     }
-    if (!isEditing && !form.password) {
-      notify.error('La contraseña es obligatoria al crear');
-      return;
+    if (usingDomain) {
+      const dom = verifiedDomains.find((d) => d.id === form.emailDomainId);
+      if (!dom) {
+        notify.error('Dominio verificado no encontrado');
+        return;
+      }
+      const fromDomain = form.fromEmail.split('@')[1]?.toLowerCase();
+      if (fromDomain !== dom.domain) {
+        notify.error(`El email "From" debe terminar en @${dom.domain}`);
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -169,13 +204,18 @@ export function SmtpAccountsPage() {
       if (isEditing && editing) {
         const payload: UpdateSmtpAccountPayload = {
           name: form.name,
-          provider: form.provider,
-          host: form.host,
-          port: portNum,
-          username: form.username,
           fromName: form.fromName,
           fromEmail: form.fromEmail,
-          sesConfigSet: form.provider === 'ses' ? form.sesConfigSet || undefined : undefined,
+          ...(usingDomain
+            ? { emailDomainId: form.emailDomainId }
+            : {
+                provider: form.provider,
+                host: form.host,
+                port: portNum as number,
+                username: form.username,
+                sesConfigSet: form.provider === 'ses' ? form.sesConfigSet || undefined : undefined,
+                emailDomainId: '',
+              }),
         };
         if (form.password) payload.password = form.password;
         res = await api.patch<SmtpAccountWithVerify>(
@@ -186,14 +226,18 @@ export function SmtpAccountsPage() {
       } else {
         const payload: CreateSmtpAccountPayload = {
           name: form.name,
-          provider: form.provider,
-          host: form.host,
-          port: portNum,
-          username: form.username,
-          password: form.password,
           fromName: form.fromName,
           fromEmail: form.fromEmail,
-          sesConfigSet: form.provider === 'ses' ? form.sesConfigSet || undefined : undefined,
+          ...(usingDomain
+            ? { emailDomainId: form.emailDomainId }
+            : {
+                provider: form.provider,
+                host: form.host,
+                port: portNum as number,
+                username: form.username,
+                password: form.password,
+                sesConfigSet: form.provider === 'ses' ? form.sesConfigSet || undefined : undefined,
+              }),
         };
         res = await api.post<SmtpAccountWithVerify>('/api/email/smtp-accounts', payload);
         applyVerifyResult(res, 'created');
@@ -411,49 +455,96 @@ export function SmtpAccountsPage() {
               fullWidth
               required
             />
-            <TextField
-              select
-              label="Proveedor"
-              value={form.provider}
-              onChange={(e) => setForm({ ...form, provider: e.target.value as SmtpProvider })}
-              fullWidth
-              helperText="SMTP: servidor genérico vía nodemailer. SES: AWS SES API (recomendado para volumen)."
-            >
-              <MenuItem value="smtp">SMTP</MenuItem>
-              <MenuItem value="ses">AWS SES</MenuItem>
-            </TextField>
-            <Stack direction="row" spacing={2}>
+
+            {/* Selector de modo: dominio verificado vs SMTP/SES manual */}
+            {verifiedDomains.length > 0 && (
               <TextField
-                label="Host"
-                value={form.host}
-                onChange={(e) => setForm({ ...form, host: e.target.value })}
+                select
+                label="Origen del envío"
+                value={form.emailDomainId || '_manual'}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '_manual') {
+                    setForm({ ...form, emailDomainId: '' });
+                  } else {
+                    const dom = verifiedDomains.find((d) => d.id === v);
+                    setForm({
+                      ...form,
+                      emailDomainId: v,
+                      provider: 'ses',
+                      // Auto-sugerir noreply@<domain> si fromEmail no matchea
+                      fromEmail:
+                        dom && !form.fromEmail.endsWith(`@${dom.domain}`)
+                          ? `noreply@${dom.domain}`
+                          : form.fromEmail,
+                    });
+                  }
+                }}
                 fullWidth
-                required
-              />
-              <TextField
-                label="Puerto"
-                value={form.port}
-                onChange={(e) => setForm({ ...form, port: e.target.value })}
-                sx={{ width: 120 }}
-                required
-              />
-            </Stack>
-            <TextField
-              label="Usuario"
-              value={form.username}
-              onChange={(e) => setForm({ ...form, username: e.target.value })}
-              fullWidth
-              required
-            />
-            <TextField
-              label={isEditing ? 'Contraseña (dejar vacío para no cambiar)' : 'Contraseña'}
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              fullWidth
-              required={!isEditing}
-              autoComplete="new-password"
-            />
+                helperText={
+                  form.emailDomainId
+                    ? 'Va a usar AWS SES con el dominio verificado. No hace falta SMTP.'
+                    : 'Configurá host/usuario/contraseña SMTP manualmente.'
+                }
+              >
+                <MenuItem value="_manual">Cuenta SMTP propia (manual)</MenuItem>
+                {verifiedDomains.map((d) => (
+                  <MenuItem key={d.id} value={d.id}>
+                    Dominio verificado: {d.domain}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+
+            {/* SMTP / SES manual: campos completos */}
+            {!form.emailDomainId && (
+              <>
+                <TextField
+                  select
+                  label="Proveedor"
+                  value={form.provider}
+                  onChange={(e) => setForm({ ...form, provider: e.target.value as SmtpProvider })}
+                  fullWidth
+                  helperText="SMTP: servidor genérico vía nodemailer. SES: AWS SES API (recomendado para volumen)."
+                >
+                  <MenuItem value="smtp">SMTP</MenuItem>
+                  <MenuItem value="ses">AWS SES</MenuItem>
+                </TextField>
+                <Stack direction="row" spacing={2}>
+                  <TextField
+                    label="Host"
+                    value={form.host}
+                    onChange={(e) => setForm({ ...form, host: e.target.value })}
+                    fullWidth
+                    required
+                  />
+                  <TextField
+                    label="Puerto"
+                    value={form.port}
+                    onChange={(e) => setForm({ ...form, port: e.target.value })}
+                    sx={{ width: 120 }}
+                    required
+                  />
+                </Stack>
+                <TextField
+                  label="Usuario"
+                  value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label={isEditing ? 'Contraseña (dejar vacío para no cambiar)' : 'Contraseña'}
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  fullWidth
+                  required={!isEditing}
+                  autoComplete="new-password"
+                />
+              </>
+            )}
+
             <Stack direction="row" spacing={2}>
               <TextField
                 label="From (nombre)"
@@ -469,9 +560,23 @@ export function SmtpAccountsPage() {
                 onChange={(e) => setForm({ ...form, fromEmail: e.target.value })}
                 fullWidth
                 required
+                error={
+                  form.emailDomainId !== '' &&
+                  form.fromEmail !== '' &&
+                  !form.fromEmail
+                    .toLowerCase()
+                    .endsWith(
+                      `@${verifiedDomains.find((d) => d.id === form.emailDomainId)?.domain ?? ''}`,
+                    )
+                }
+                helperText={
+                  form.emailDomainId
+                    ? `Debe terminar en @${verifiedDomains.find((d) => d.id === form.emailDomainId)?.domain ?? '...'}`
+                    : undefined
+                }
               />
             </Stack>
-            {form.provider === 'ses' && (
+            {form.provider === 'ses' && !form.emailDomainId && (
               <TextField
                 label="SES Configuration Set (opcional)"
                 value={form.sesConfigSet}
@@ -481,9 +586,9 @@ export function SmtpAccountsPage() {
               />
             )}
             <Typography variant="caption" color="text.secondary">
-              El estado activa/inactiva se determina automáticamente al guardar:
-              si las credenciales verifican OK la cuenta queda activa, si no, queda
-              inactiva y podés reintentarla con el botón "Verificar".
+              {form.emailDomainId
+                ? 'La cuenta queda activa automáticamente si el dominio sigue VERIFIED al guardar.'
+                : 'El estado activa/inactiva se determina automáticamente al guardar: si las credenciales verifican OK la cuenta queda activa, si no, queda inactiva y podés reintentarla con el botón "Verificar".'}
             </Typography>
           </Stack>
         </DialogContent>
