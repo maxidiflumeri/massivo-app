@@ -150,7 +150,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
       // Control actions: si la campaña está PAUSED, el worker difiere el job sin
       // tocar el report. Si fue force-closed (status COMPLETED + report PENDING),
       // marca el report como CANCELED y exit-early.
-      const campaignStatus = report.campaign.status;
+      const campaignStatus = report.campaign!.status;
       if (campaignStatus === 'PAUSED' && report.status === 'PENDING') {
         await job.moveToDelayed(Date.now() + 30_000, job.token);
         this.logger.log(
@@ -166,36 +166,36 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           where: { id: reportId },
           data: { status: 'CANCELED', error: 'campaign-closed' },
         });
-        this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportUpdate(teamId, report.campaignId!);
         this.logger.log(
           `Report ${reportId} → CANCELED (campaign ${report.campaignId} cerrada)`,
         );
         return { canceled: true };
       }
 
-      const template = report.campaign.template;
-      const account = report.campaign.smtpAccount;
+      const template = report.campaign!.template;
+      const account = report.campaign!.smtpAccount;
       if (!template) throw new Error(`Campaign ${report.campaignId} has no template`);
       if (!account) throw new Error(`Campaign ${report.campaignId} has no smtpAccount`);
 
       const supp = await this.suppression.check({
-        email: report.contact.email,
-        campaignId: report.campaignId,
+        email: report.contact!.email,
+        campaignId: report.campaignId!!,
       });
       if (supp.suppressed) {
         await this.prisma.scoped.emailReport.update({
           where: { id: reportId },
           data: { status: 'SUPPRESSED', error: supp.reason ?? 'suppressed' },
         });
-        this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportUpdate(teamId, report.campaignId!);
         this.notifyReportLog(teamId, {
-          campaignId: report.campaignId,
+          campaignId: report.campaignId!!,
           reportId,
-          email: report.contact.email,
+          email: report.contact!.email,
           status: 'SUPPRESSED',
           error: supp.reason ?? 'suppressed',
         });
-        await this.maybeCompleteCampaign(report.campaignId, teamId);
+        await this.maybeCompleteCampaign(report.campaignId!, teamId);
         this.logger.log(`Report ${reportId} suprimido (${supp.reason}) — skip send`);
         return { suppressed: true, reason: supp.reason };
       }
@@ -210,22 +210,22 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           where: { id: reportId },
           data: { status: 'CANCELED', error: quotaError },
         });
-        this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportUpdate(teamId, report.campaignId!);
         this.notifyReportLog(teamId, {
-          campaignId: report.campaignId,
+          campaignId: report.campaignId!!,
           reportId,
-          email: report.contact.email,
+          email: report.contact!.email,
           status: 'FAILED',
           error: quotaError,
         });
-        await this.maybeCompleteCampaign(report.campaignId, teamId);
+        await this.maybeCompleteCampaign(report.campaignId!, teamId);
         this.logger.warn(
           `Report ${reportId} → CANCELED (quota exceeded plan=${quota.planCode}, used=${quota.used}, limit=${quota.limit})`,
         );
         return { canceled: true };
       }
 
-      const vars = (report.contact.data as Record<string, unknown> | null) ?? {};
+      const vars = (report.contact!.data as Record<string, unknown> | null) ?? {};
       const subject = Handlebars.compile(template.subject, { noEscape: false })(vars);
       const renderedHtml = Handlebars.compile(template.html, { noEscape: true })(vars);
 
@@ -233,7 +233,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
         r: report.id,
         o: report.organizationId,
         t: report.teamId,
-        c: report.campaignId,
+        c: report.campaignId!!,
       });
       const publicUrl = this.tokens.publicUrl();
       // Scope=campaign: el unsubscribe se persiste por campaña, no global.
@@ -265,7 +265,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
             replyTo: account.replyTo,
           },
           {
-            to: report.contact.email,
+            to: report.contact!.email,
             subject,
             html,
             // RFC 8058: header obligatorio para envíos bulk (Gmail/Yahoo 2024)
@@ -274,7 +274,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
               'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
             },
             // Override de campaign sobre account default; null/undefined → cae al account.
-            replyTo: report.campaign.replyTo ?? undefined,
+            replyTo: report.campaign!.replyTo ?? undefined,
           },
         );
 
@@ -290,15 +290,15 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
             error: null,
           },
         });
-        this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportUpdate(teamId, report.campaignId!);
         this.notifyReportLog(teamId, {
-          campaignId: report.campaignId,
+          campaignId: report.campaignId!!,
           reportId,
-          email: report.contact.email,
+          email: report.contact!.email,
           status: 'SENT',
           messageId: result.messageId,
         });
-        await this.maybeCompleteCampaign(report.campaignId, teamId);
+        await this.maybeCompleteCampaign(report.campaignId!, teamId);
         return { messageId: result.messageId };
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'unknown error';
@@ -306,15 +306,15 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           where: { id: reportId },
           data: { status: 'FAILED', error: msg.slice(0, 500) },
         });
-        this.notifyReportUpdate(teamId, report.campaignId);
+        this.notifyReportUpdate(teamId, report.campaignId!);
         this.notifyReportLog(teamId, {
-          campaignId: report.campaignId,
+          campaignId: report.campaignId!!,
           reportId,
-          email: report.contact.email,
+          email: report.contact!.email,
           status: 'FAILED',
           error: msg.slice(0, 500),
         });
-        await this.maybeCompleteCampaign(report.campaignId, teamId);
+        await this.maybeCompleteCampaign(report.campaignId!, teamId);
         throw err;
       }
     });

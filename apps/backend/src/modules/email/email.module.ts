@@ -25,6 +25,9 @@ import { EmailMetricsService } from './metrics/email-metrics.service';
 import { ReportsController } from './reports/reports.controller';
 import { ReportGeneratorService } from './reports/report-generator.service';
 import { EmailDomainsModule } from './domains/email-domains.module';
+import { TransactionalController } from './transactional/transactional.controller';
+import { TransactionalService } from './transactional/transactional.service';
+import { AttachmentsFetcherService } from './transactional/attachments-fetcher.service';
 
 @Module({
   imports: [EventsModule, ContactsModule, EmailDomainsModule],
@@ -38,6 +41,7 @@ import { EmailDomainsModule } from './domains/email-domains.module';
     EmailCampaignsController,
     EmailMetricsController,
     ReportsController,
+    TransactionalController,
   ],
   providers: [
     SmtpAccountsService,
@@ -54,6 +58,8 @@ import { EmailDomainsModule } from './domains/email-domains.module';
     EmailCampaignSchedulerService,
     EmailMetricsService,
     ReportGeneratorService,
+    TransactionalService,
+    AttachmentsFetcherService,
   ],
   exports: [EmailQueueService, EmailSenderService, TrackingTokenService, SuppressionService],
 })

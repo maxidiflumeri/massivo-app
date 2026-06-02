@@ -112,16 +112,20 @@ export class EmailMetricsService {
   }
 
   private async computeTopCampaigns(from: Date): Promise<MetricsOverview['topCampaigns']> {
+    // Top campañas: filtramos campaignId NOT NULL para excluir reports
+    // transaccionales (que no pertenecen a una campaña).
     const top = await this.prisma.scoped.emailReport.groupBy({
       by: ['campaignId'],
-      where: { status: 'SENT', sentAt: { gte: from } },
+      where: { status: 'SENT', sentAt: { gte: from }, campaignId: { not: null } },
       _count: { _all: true },
       orderBy: { _count: { campaignId: 'desc' } },
       take: 5,
     });
     if (top.length === 0) return [];
 
-    const ids = top.map((t) => t.campaignId);
+    const ids = top
+      .map((t) => t.campaignId)
+      .filter((id): id is string => id !== null);
     const campaigns = await this.prisma.scoped.emailCampaign.findMany({
       where: { id: { in: ids } },
       select: { id: true, name: true },
@@ -138,23 +142,29 @@ export class EmailMetricsService {
       where: { campaignId: { in: ids }, firstClickedAt: { gte: from } },
       _count: { _all: true },
     });
-    const opensMap = new Map(opensByCampaign.map((g) => [g.campaignId, g._count._all]));
-    const clicksMap = new Map(clicksByCampaign.map((g) => [g.campaignId, g._count._all]));
+    const opensMap = new Map(
+      opensByCampaign.map((g) => [g.campaignId, g._count?._all ?? 0]),
+    );
+    const clicksMap = new Map(
+      clicksByCampaign.map((g) => [g.campaignId, g._count?._all ?? 0]),
+    );
 
-    return top.map((t) => {
-      const sent = t._count._all;
-      const opens = opensMap.get(t.campaignId) ?? 0;
-      const clicks = clicksMap.get(t.campaignId) ?? 0;
-      return {
-        id: t.campaignId,
-        name: nameById.get(t.campaignId) ?? '(sin nombre)',
-        sent,
-        uniqueOpens: opens,
-        uniqueClicks: clicks,
-        openRate: rate(opens, sent),
-        clickRate: rate(clicks, sent),
-      };
-    });
+    return top
+      .filter((t): t is typeof t & { campaignId: string } => t.campaignId !== null)
+      .map((t) => {
+        const sent = t._count?._all ?? 0;
+        const opens = opensMap.get(t.campaignId) ?? 0;
+        const clicks = clicksMap.get(t.campaignId) ?? 0;
+        return {
+          id: t.campaignId,
+          name: nameById.get(t.campaignId) ?? '(sin nombre)',
+          sent,
+          uniqueOpens: opens,
+          uniqueClicks: clicks,
+          openRate: rate(opens, sent),
+          clickRate: rate(clicks, sent),
+        };
+      });
   }
 }
 

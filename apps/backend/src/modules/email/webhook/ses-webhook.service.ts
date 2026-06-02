@@ -59,34 +59,46 @@ export class SesWebhookService {
     await TenantContext.run(ctx, async () => {
       const report = await this.prisma.scoped.emailReport.findFirst({
         where: { smtpMessageId: event.mail.messageId },
-        select: { id: true, campaignId: true, contact: { select: { email: true } } },
+        select: {
+          id: true,
+          campaignId: true,
+          contact: { select: { email: true } },
+          recipientEmail: true,
+        },
       });
       if (!report) {
         this.logger.warn(`SES event para messageId ${event.mail.messageId} sin EmailReport en team ${tenant.teamId}`);
         return;
       }
+      // Email del destinatario: contact (campañas) o recipientEmail (transaccional).
+      const recipientEmail = report.contact?.email ?? report.recipientEmail ?? '';
+      // notify() solo aplica a reports de campaña — los transaccionales no
+      // tienen UI en la lista de campañas para refrescar.
+      const notifyCampaign = (): void => {
+        if (report.campaignId) this.notify(tenant.teamId, report.campaignId);
+      };
 
       switch (event.eventType) {
         case 'Bounce':
-          await this.handleBounce(report.id, report.contact.email, event);
-          this.notify(tenant.teamId, report.campaignId);
+          await this.handleBounce(report.id, recipientEmail, event);
+          notifyCampaign();
           break;
         case 'Complaint':
-          await this.handleComplaint(report.id, report.contact.email, event);
-          this.notify(tenant.teamId, report.campaignId);
+          await this.handleComplaint(report.id, recipientEmail, event);
+          notifyCampaign();
           break;
         case 'Delivery':
           await this.handleDelivery(report.id);
           break;
         case 'Open':
           await this.recordEvent(report.id, 'OPEN', event.open?.ipAddress, event.open?.userAgent);
-          this.notify(tenant.teamId, report.campaignId);
+          notifyCampaign();
           break;
         case 'Click':
           await this.recordEvent(
             report.id, 'CLICK', event.click?.ipAddress, event.click?.userAgent, event.click?.link,
           );
-          this.notify(tenant.teamId, report.campaignId);
+          notifyCampaign();
           break;
         default:
           this.logger.debug(`SES eventType ignorado: ${event.eventType}`);

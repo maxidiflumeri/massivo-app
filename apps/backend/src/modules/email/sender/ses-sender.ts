@@ -8,6 +8,7 @@ import {
   SendEmailCommand,
   SESv2Client,
 } from '@aws-sdk/client-sesv2';
+import MailComposer from 'nodemailer/lib/mail-composer';
 import type { EmailSender, SendEmailInput, SendEmailResult } from './email-sender';
 
 export interface SesSenderConfig {
@@ -118,6 +119,50 @@ export class SesSender implements EmailSender {
   }
 
   async send(input: SendEmailInput): Promise<SendEmailResult> {
+    const hasAttachments = !!input.attachments && input.attachments.length > 0;
+
+    // Camino A: con adjuntos → SES Content.Raw con MIME armado por MailComposer.
+    // SES v2 Simple no soporta attachments; Raw acepta MIME message completo
+    // base64-encoded. nodemailer's MailComposer ya genera MIME multipart con
+    // encoding, boundaries y charset correctos — evita escapeo manual.
+    if (hasAttachments) {
+      const composer = new MailComposer({
+        from: input.from,
+        to: input.to,
+        subject: input.subject,
+        html: input.html,
+        ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+        ...(input.headers ? { headers: input.headers } : {}),
+        attachments: input.attachments!.map((a) => ({
+          filename: a.filename,
+          content: a.content,
+          ...(a.contentType ? { contentType: a.contentType } : {}),
+        })),
+      });
+      const raw: Buffer = await new Promise((resolve, reject) => {
+        composer.compile().build((err, message) => {
+          if (err) reject(err);
+          else resolve(message);
+        });
+      });
+
+      const out = await this.client.send(
+        new SendEmailCommand({
+          FromEmailAddress: input.from,
+          Destination: { ToAddresses: [input.to] },
+          Content: { Raw: { Data: raw } },
+          ConfigurationSetName: input.configurationSet,
+        }),
+      );
+      if (!out.MessageId) throw new Error('SES SendEmail Raw returned no MessageId');
+      this.logger.debug(
+        `ses send (raw +${input.attachments!.length} attachments) → ${input.to}: ${out.MessageId}`,
+      );
+      return { messageId: out.MessageId, provider: 'ses' };
+    }
+
+    // Camino B (default): sin adjuntos → Content.Simple. Más liviano, más
+    // performante. Cubre el 99% de los casos (campañas bulk de marketing).
     // SES v2 SimpleContent acepta Headers como array {Name, Value}. Lo usamos
     // para inyectar List-Unsubscribe + List-Unsubscribe-Post (requeridos por
     // Gmail/Yahoo 2024 para envíos bulk > 5k/día) y cualquier header custom

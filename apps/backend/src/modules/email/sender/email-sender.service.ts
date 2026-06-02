@@ -78,6 +78,7 @@ export class EmailSenderService {
       // Resolución del Reply-To: campaign (input) → account default → undefined
       // (no se setea header, recipient cae al `from`).
       replyTo: input.replyTo ?? account.replyTo ?? undefined,
+      attachments: input.attachments,
     });
   }
 

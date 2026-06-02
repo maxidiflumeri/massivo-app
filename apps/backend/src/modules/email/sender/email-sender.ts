@@ -1,3 +1,12 @@
+export interface EmailAttachment {
+  /** Nombre del archivo como lo verá el destinatario. */
+  filename: string;
+  /** Contenido binario del adjunto ya descargado. */
+  content: Buffer;
+  /** MIME type. Si no se especifica, MailComposer lo infiere del filename. */
+  contentType?: string;
+}
+
 export interface SendEmailInput {
   from: string;
   to: string;
@@ -11,6 +20,13 @@ export interface SendEmailInput {
    * null/undefined, no se setea y el cliente cae al `from`.
    */
   replyTo?: string;
+  /**
+   * Adjuntos al mail. Si está presente y no vacío, el provider construye un
+   * MIME multipart con los adjuntos. Para SES se usa Content.Raw via
+   * MailComposer de nodemailer. Cap del tamaño total + por adjunto es
+   * responsabilidad del caller.
+   */
+  attachments?: EmailAttachment[];
 }
 
 export interface SendEmailResult {

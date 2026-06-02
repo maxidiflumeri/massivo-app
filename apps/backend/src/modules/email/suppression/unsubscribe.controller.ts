@@ -56,14 +56,22 @@ export class UnsubscribeController {
       await TenantContext.run(ctx, async () => {
         const report = await this.prisma.scoped.emailReport.findFirst({
           where: { id: payload.r },
-          select: { contact: { select: { email: true } } },
+          select: {
+            contact: { select: { email: true } },
+            recipientEmail: true,
+          },
         });
         if (!report) {
           this.logger.warn(`Unsubscribe: report ${payload.r} no encontrado en tenant`);
           return;
         }
+        const email = report.contact?.email ?? report.recipientEmail;
+        if (!email) {
+          this.logger.warn(`Unsubscribe: report ${payload.r} sin email asociado`);
+          return;
+        }
         await this.suppression.addUnsubscribe({
-          email: report.contact.email,
+          email,
           scope,
           campaignId: scope === 'CAMPAIGN' ? payload.c : null,
           source: 'link',

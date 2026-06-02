@@ -172,14 +172,15 @@ export class ReportGeneratorService {
         smtpMessageId: true,
         error: true,
         contact: { select: { email: true, name: true } },
+        recipientEmail: true,
         _count: { select: { events: true } },
       },
     });
 
     const rows = reports.map((r) => ({
       reportId: r.id,
-      email: r.contact.email,
-      contactName: r.contact.name ?? '',
+      email: r.contact?.email ?? r.recipientEmail ?? '',
+      contactName: r.contact?.name ?? '',
       status: r.status,
       sentAt: r.sentAt?.toISOString() ?? '',
       firstOpenedAt: r.firstOpenedAt?.toISOString() ?? '',
@@ -240,6 +241,7 @@ export class ReportGeneratorService {
         smtpMessageId: true,
         campaignId: true,
         contact: { select: { email: true } },
+        recipientEmail: true,
       },
     });
 
@@ -266,9 +268,9 @@ export class ReportGeneratorService {
     for (const c of complaints) {
       rows.push({
         type: 'COMPLAINT',
-        email: c.contact.email,
+        email: c.contact?.email ?? c.recipientEmail ?? '',
         occurredAt: c.updatedAt.toISOString(),
-        campaignId: c.campaignId,
+        campaignId: c.campaignId ?? '',
         code: '',
         description: '',
         smtpMessageId: c.smtpMessageId ?? '',
