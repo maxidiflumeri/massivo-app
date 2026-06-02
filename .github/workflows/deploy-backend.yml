@@ -94,14 +94,30 @@ jobs:
           ACCOUNT_ID=\$(aws sts get-caller-identity --query Account --output text --region "\$AWS_REGION")
           aws ecr get-login-password --region "\$AWS_REGION" | \
             docker login --username AWS --password-stdin "\${ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com"
+          # ===== Limpieza PRE-pull =====
+          # Antes hacíamos prune después del pull → si el disco de 20GB estaba
+          # arriba del 85% el pull (~2.6GB) lo llenaba y el SSM agent crasheaba
+          # con "ipc messaging received timeout signal" (OOM/buffer write fail).
+          # Ahora liberamos espacio primero. La imagen en uso por el container
+          # corriendo está protegida (Docker no la borra), así que el rollback
+          # rápido sigue disponible hasta que el up -d traiga la nueva.
+          echo "=== disk PRE-cleanup ==="
+          df -h /
+          docker system df || true
+          docker image prune -a -f || true
+          docker builder prune -a -f || true
+          echo "=== disk POST-cleanup ==="
+          df -h /
           docker compose -f infra/docker-compose.yml pull api
           docker compose -f infra/docker-compose.yml up -d api
-          # Limpieza:
-          #   - imágenes sin contenedor > 24h (mantiene una para rollback rápido)
-          #   - build cache de buildx > 72h (acumula GBs si no se purga)
-          # Sin esto el disco de 20GB se llena cada ~5 deploys (imagen ~2.6GB).
-          docker image prune -a -f --filter "until=24h"
-          docker builder prune -a -f --filter "until=72h"
+          # ===== Limpieza POST-up =====
+          # La imagen vieja quedó sin container que la use; la barremos pero
+          # respetamos until=24h para mantener una para rollback manual si
+          # algo en la nueva versión sale mal (docker tag <prev-sha> + up).
+          docker image prune -a -f --filter "until=24h" || true
+          docker builder prune -a -f --filter "until=72h" || true
+          echo "=== disk FINAL ==="
+          df -h /
           docker compose -f infra/docker-compose.yml ps
           EOSH
           )
