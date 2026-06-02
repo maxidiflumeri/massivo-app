@@ -14,7 +14,8 @@ export type BotNodeKind =
   | 'CONDITION'
   | 'SET_VAR'
   | 'HTTP'
-  | 'FOREACH';
+  | 'FOREACH'
+  | 'DELAY';
 
 export interface BotNodePosition {
   x: number;
@@ -189,6 +190,14 @@ export interface BotForeachNode {
   position?: BotNodePosition;
 }
 
+// 4.Q.1 — DELAY: pausa N ms para resolver ordering issues de Meta. Clamp 100..10000.
+export interface BotDelayNode {
+  kind: 'DELAY';
+  ms: number;
+  nextNodeId: string;
+  position?: BotNodePosition;
+}
+
 export type BotNode =
   | BotMenuNode
   | BotMessageNode
@@ -199,7 +208,8 @@ export type BotNode =
   | BotConditionNode
   | BotSetVarNode
   | BotHttpNode
-  | BotForeachNode;
+  | BotForeachNode
+  | BotDelayNode;
 
 export interface BotFlow {
   startNodeId: string;

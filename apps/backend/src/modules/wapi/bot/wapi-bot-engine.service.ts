@@ -373,6 +373,15 @@ export class WapiBotEngineService {
         currentId = node.nextNodeId ?? null;
         continue;
       }
+      if (node.kind === 'DELAY') {
+        // 4.Q.1 — Pausa N ms para resolver problemas de ordering de Meta
+        // (media pesado vs texto liviano enviados consecutivos llegan en
+        // orden invertido al cliente). Clamp defensivo 100..10000ms.
+        const ms = Math.max(100, Math.min(node.ms, 10_000));
+        await new Promise((resolve) => setTimeout(resolve, ms));
+        currentId = node.nextNodeId ?? null;
+        continue;
+      }
       if (node.kind === 'HTTP') {
         httpCallsInChain += 1;
         if (httpCallsInChain > BOT_MAX_HTTP_PER_CHAIN) {
@@ -725,7 +734,8 @@ export class WapiBotEngineService {
       node.kind === 'SET_VAR' ||
       node.kind === 'HTTP' ||
       node.kind === 'FOREACH' ||
-      node.kind === 'MEDIA_FROM_URL'
+      node.kind === 'MEDIA_FROM_URL' ||
+      node.kind === 'DELAY'
     ) {
       return;
     }

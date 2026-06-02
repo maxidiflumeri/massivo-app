@@ -31,6 +31,7 @@ import type {
   BotConditionBranch,
   BotConditionNode,
   BotConditionWhen,
+  BotDelayNode,
   BotFlow,
   BotForeachNode,
   BotHandoffNode,
@@ -105,7 +106,8 @@ export function NodeEditorDrawer({
     node.kind !== 'CONDITION' &&
     node.kind !== 'SET_VAR' &&
     node.kind !== 'HTTP' &&
-    node.kind !== 'FOREACH';
+    node.kind !== 'FOREACH' &&
+    node.kind !== 'DELAY';
 
   return (
     <Drawer
@@ -300,11 +302,70 @@ export function NodeEditorDrawer({
                   currentNodeId={selectedId}
                 />
               )}
+
+              {node.kind === 'DELAY' && (
+                <DelayEditor
+                  node={node}
+                  allIds={allIds}
+                  selfId={selectedId}
+                  onPatch={onPatch}
+                />
+              )}
             </Stack>
           </Box>
         </Box>
       )}
     </Drawer>
+  );
+}
+
+/**
+ * 4.Q.1 — Editor del nodo DELAY. Solo 2 campos: ms (input numérico con clamp
+ * visual 100..10000) y nextNodeId (selector de nodo destino).
+ */
+function DelayEditor({
+  node,
+  allIds,
+  selfId,
+  onPatch,
+}: {
+  node: BotDelayNode;
+  allIds: string[];
+  selfId: string;
+  onPatch: (patch: Partial<BotDelayNode>) => void;
+}) {
+  return (
+    <Stack spacing={2}>
+      <TextField
+        label="Tiempo de pausa (ms)"
+        type="number"
+        size="small"
+        value={node.ms ?? ''}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          onPatch({ ms: Number.isFinite(n) ? n : 0 } as Partial<BotDelayNode>);
+        }}
+        inputProps={{ min: 100, max: 10000, step: 100 }}
+        helperText="Entre 100 y 10000 ms (1 ms = 0.001 s). Resuelve ordering issues de Meta al mandar media + texto consecutivos."
+        fullWidth
+      />
+      <TextField
+        select
+        label="Siguiente nodo"
+        size="small"
+        value={node.nextNodeId ?? ''}
+        onChange={(e) => onPatch({ nextNodeId: e.target.value } as Partial<BotDelayNode>)}
+        fullWidth
+      >
+        {allIds
+          .filter((id) => id !== selfId)
+          .map((id) => (
+            <MenuItem key={id} value={id}>
+              {id}
+            </MenuItem>
+          ))}
+      </TextField>
+    </Stack>
   );
 }
 

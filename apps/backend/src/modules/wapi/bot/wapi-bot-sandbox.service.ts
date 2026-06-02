@@ -457,6 +457,13 @@ export class WapiBotSandboxService {
         currentId = node.nextNodeId ?? null;
         continue;
       }
+      if (node.kind === 'DELAY') {
+        // 4.Q.1 — En el sandbox NO esperamos: el operador quiere iterar
+        // rápido y la simulación no tiene problema de ordering con Meta.
+        // Solo registramos el "skip" para debugging y avanzamos.
+        currentId = node.nextNodeId ?? null;
+        continue;
+      }
       if (node.kind === 'HTTP') {
         httpCallsInChain += 1;
         if (httpCallsInChain > BOT_MAX_HTTP_PER_CHAIN) {
@@ -789,7 +796,8 @@ async function buildOutMessage(
     node.kind === 'SET_VAR' ||
     node.kind === 'HTTP' ||
     node.kind === 'FOREACH' ||
-    node.kind === 'MEDIA_FROM_URL'
+    node.kind === 'MEDIA_FROM_URL' ||
+    node.kind === 'DELAY'
   ) {
     return null;
   }

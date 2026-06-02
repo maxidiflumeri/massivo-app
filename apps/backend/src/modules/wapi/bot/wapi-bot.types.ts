@@ -69,7 +69,8 @@ export type BotNodeKind =
   | 'CONDITION'
   | 'SET_VAR'
   | 'HTTP'
-  | 'FOREACH';
+  | 'FOREACH'
+  | 'DELAY';
 
 export interface BotNodePosition {
   x: number;
@@ -359,6 +360,24 @@ export interface BotMediaFromUrlNode {
   position?: BotNodePosition;
 }
 
+/**
+ * 4.Q.1 — Nodo DELAY. Espera N milisegundos y avanza a `nextNodeId`. Útil
+ * para resolver problemas de ordering en mensajes secuenciales (Meta entrega
+ * un texto antes que un media pesado que se envió primero) sin tener que
+ * recurrir a interactive messages con media headers.
+ *
+ * Clamp obligatorio en runtime: 100..10000 ms. Más de 10s y se bloquea el
+ * worker de BullMQ por demasiado tiempo; menos de 100 no resuelve el race
+ * típico de Meta.
+ */
+export interface BotDelayNode {
+  kind: 'DELAY';
+  /** Milisegundos a esperar antes de avanzar. Clamp 100..10000 en runtime. */
+  ms: number;
+  nextNodeId: string;
+  position?: BotNodePosition;
+}
+
 export type BotNode =
   | BotMenuNode
   | BotMessageNode
@@ -369,7 +388,8 @@ export type BotNode =
   | BotConditionNode
   | BotSetVarNode
   | BotHttpNode
-  | BotForeachNode;
+  | BotForeachNode
+  | BotDelayNode;
 
 export interface BotFlow {
   startNodeId: string;
@@ -445,7 +465,11 @@ const VALID_KINDS: ReadonlySet<BotNodeKind> = new Set([
   'SET_VAR',
   'HTTP',
   'FOREACH',
+  'DELAY',
 ]);
+
+const DELAY_MIN_MS = 100;
+const DELAY_MAX_MS = 10_000;
 
 const VALID_HTTP_METHODS: ReadonlySet<BotHttpMethod> = new Set([
   'GET',
@@ -573,14 +597,15 @@ export function validateBotFlow(input: unknown): {
       continue;
     }
     // text requerido para todos menos MEDIA, MEDIA_FROM_URL, CONDITION, SET_VAR,
-    // HTTP y FOREACH (internos o sin texto propio del nodo)
+    // HTTP, FOREACH y DELAY (internos o sin texto propio del nodo)
     if (
       node.kind !== 'MEDIA' &&
       node.kind !== 'MEDIA_FROM_URL' &&
       node.kind !== 'CONDITION' &&
       node.kind !== 'SET_VAR' &&
       node.kind !== 'HTTP' &&
-      node.kind !== 'FOREACH'
+      node.kind !== 'FOREACH' &&
+      node.kind !== 'DELAY'
     ) {
       if (typeof node.text !== 'string' || !node.text.trim()) {
         errors.push({ path: `nodes.${id}.text`, message: 'requerido' });
@@ -589,6 +614,17 @@ export function validateBotFlow(input: unknown): {
     if (node.kind === 'MESSAGE') {
       validateNextRef(nodesMap, id, node.nextNodeId, `nodes.${id}.nextNodeId`, errors, false);
       validateGotoTopic(node.gotoTopic, `nodes.${id}.gotoTopic`, errors);
+    }
+    if (node.kind === 'DELAY') {
+      if (typeof node.ms !== 'number' || !Number.isFinite(node.ms)) {
+        errors.push({ path: `nodes.${id}.ms`, message: `número entre ${DELAY_MIN_MS} y ${DELAY_MAX_MS}` });
+      } else if (node.ms < DELAY_MIN_MS || node.ms > DELAY_MAX_MS) {
+        errors.push({
+          path: `nodes.${id}.ms`,
+          message: `entero ${DELAY_MIN_MS}..${DELAY_MAX_MS} ms`,
+        });
+      }
+      validateNextRef(nodesMap, id, node.nextNodeId, `nodes.${id}.nextNodeId`, errors, true);
     }
     if (node.kind === 'MENU') {
       const opts = Array.isArray(node.options) ? node.options : [];

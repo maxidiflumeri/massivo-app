@@ -471,6 +471,37 @@ describe('WapiBotEngineService', () => {
     expect(prismaScoped.wapiBotSession.upsert).not.toHaveBeenCalled();
   });
 
+  it('DELAY pausa el tiempo configurado y avanza al siguiente nodo sin enviar mensaje', async () => {
+    const delayMs = 150;
+    const flow: BotFlow = {
+      startNodeId: 'm1',
+      nodes: {
+        m1: { kind: 'MESSAGE', text: 'Uno', nextNodeId: 'wait' },
+        wait: { kind: 'DELAY', ms: delayMs, nextNodeId: 'fin' },
+        fin: { kind: 'HANDOFF', text: 'Fin.', escalate: false },
+      },
+    };
+    const t0 = Date.now();
+    const out = await withTenant(() =>
+      svc.handle(
+        { ...cfg, botFlow: flow },
+        {
+          configId: 'cfg-1',
+          conversationId: 'conv-1',
+          phone: '5491100',
+          inbound: { kind: 'text', body: 'go' },
+        },
+      ),
+    );
+    const elapsed = Date.now() - t0;
+    expect(out.handled).toBe(true);
+    expect(out.ended).toBe(true);
+    // El DELAY pausa al menos `delayMs`; tolerancia de 100ms por overhead del runtime.
+    expect(elapsed).toBeGreaterThanOrEqual(delayMs);
+    // DELAY no envía mensaje propio: solo m1 + fin.
+    expect(sender.sendText).toHaveBeenCalledTimes(2);
+  });
+
   it('MESSAGE terminal (sin nextNodeId) entrega y deja sesión en ese nodo', async () => {
     const chainFlow: BotFlow = {
       startNodeId: 'thanks',

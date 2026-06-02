@@ -285,4 +285,68 @@ describe('validateBotFlow', () => {
     });
     expect(r.ok).toBe(false);
   });
+
+  it('DELAY acepta ms en rango 100..10000 con nextNodeId válido', () => {
+    const r = v({
+      startNodeId: 'd',
+      nodes: {
+        d: { kind: 'DELAY', ms: 2000, nextNodeId: 'h' },
+        h: { kind: 'HANDOFF', text: 'fin' },
+      },
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('DELAY rechaza ms fuera de rango (50 o 20000)', () => {
+    const r1 = v({
+      startNodeId: 'd',
+      nodes: {
+        d: { kind: 'DELAY', ms: 50, nextNodeId: 'h' },
+        h: { kind: 'HANDOFF', text: 'x' },
+      },
+    });
+    expect(r1.ok).toBe(false);
+    expect(r1.errors.some((e) => e.path.endsWith('.ms'))).toBe(true);
+
+    const r2 = v({
+      startNodeId: 'd',
+      nodes: {
+        d: { kind: 'DELAY', ms: 20000, nextNodeId: 'h' },
+        h: { kind: 'HANDOFF', text: 'x' },
+      },
+    });
+    expect(r2.ok).toBe(false);
+  });
+
+  it('DELAY rechaza ms no numérico', () => {
+    const r = v({
+      startNodeId: 'd',
+      nodes: {
+        d: { kind: 'DELAY', ms: 'fast', nextNodeId: 'h' } as never,
+        h: { kind: 'HANDOFF', text: 'x' },
+      },
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it('DELAY rechaza nextNodeId faltante (es requerido)', () => {
+    const r = v({
+      startNodeId: 'd',
+      nodes: {
+        d: { kind: 'DELAY', ms: 1000 } as never,
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.endsWith('.nextNodeId'))).toBe(true);
+  });
+
+  it('DELAY rechaza nextNodeId a node inexistente', () => {
+    const r = v({
+      startNodeId: 'd',
+      nodes: {
+        d: { kind: 'DELAY', ms: 1000, nextNodeId: 'fantasma' },
+      },
+    });
+    expect(r.ok).toBe(false);
+  });
 });

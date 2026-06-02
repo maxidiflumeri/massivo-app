@@ -29,6 +29,7 @@ import CallSplitIcon from '@mui/icons-material/CallSplit';
 import FunctionsIcon from '@mui/icons-material/Functions';
 import HttpIcon from '@mui/icons-material/Http';
 import LoopIcon from '@mui/icons-material/Loop';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import EditIcon from '@mui/icons-material/Edit';
 import RouteIcon from '@mui/icons-material/Route';
@@ -121,6 +122,7 @@ function defaultNodeFor(kind: BotNodeKind): BotNode {
     };
   if (kind === 'FOREACH')
     return { kind: 'FOREACH', items: '', itemVar: 'item', bodyNodeId: '' };
+  if (kind === 'DELAY') return { kind: 'DELAY', ms: 2000, nextNodeId: '' };
   return { kind: 'HANDOFF', text: 'Te derivamos.', escalate: true };
 }
 
@@ -133,6 +135,7 @@ function nodeIdPrefix(kind: BotNodeKind): string {
   if (kind === 'SET_VAR') return 'set';
   if (kind === 'HTTP') return 'http';
   if (kind === 'FOREACH') return 'loop';
+  if (kind === 'DELAY') return 'delay';
   return 'handoff';
 }
 
@@ -270,6 +273,7 @@ function BotsEditorInner() {
       let rfType: string;
       if (node.kind === 'SET_VAR') rfType = 'setvar';
       else if (node.kind === 'FOREACH') rfType = 'foreach';
+      else if (node.kind === 'DELAY') rfType = 'delay';
       else rfType = node.kind.toLowerCase();
       return {
         id,
@@ -1172,6 +1176,17 @@ function BotsEditorInner() {
               variant="outlined"
             >
               FOREACH
+            </Button>
+          </Tooltip>
+          <Tooltip title="Agregar DELAY (pausa entre mensajes — fix ordering Meta)">
+            <Button
+              size="small"
+              startIcon={<HourglassEmptyIcon />}
+              onClick={() => addNode('DELAY')}
+              variant="outlined"
+              color="warning"
+            >
+              DELAY
             </Button>
           </Tooltip>
           <Tooltip title="Agregar HANDOFF">

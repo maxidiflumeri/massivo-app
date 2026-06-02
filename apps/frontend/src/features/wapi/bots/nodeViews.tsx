@@ -10,10 +10,12 @@ import CallSplitIcon from '@mui/icons-material/CallSplit';
 import FunctionsIcon from '@mui/icons-material/Functions';
 import HttpIcon from '@mui/icons-material/Http';
 import LoopIcon from '@mui/icons-material/Loop';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import type {
   BotCaptureNode,
   BotConditionNode,
   BotConditionWhen,
+  BotDelayNode,
   BotForeachNode,
   BotHandoffNode,
   BotHttpNode,
@@ -581,6 +583,65 @@ export const ForeachNodeView = memo(function ForeachNodeView(
   );
 });
 
+// 4.Q.1 — DELAY (interno, no entrega mensaje; pausa N ms para fix de ordering)
+export const DelayNodeView = memo(function DelayNodeView(
+  props: NodeProps<{ id: string; node: BotDelayNode; isStart: boolean } & BaseNodeData> & {
+    selected?: boolean;
+  },
+) {
+  const { data, selected } = props;
+  const node = data.node;
+  return (
+    <Box
+      sx={{
+        ...wrapperSx,
+        borderColor: selected ? 'primary.main' : 'divider',
+        borderWidth: selected ? 2 : 1,
+        borderStyle: 'dashed',
+      }}
+    >
+      <Handle type="target" position={Position.Left} style={handleSx} />
+      <Box sx={{ ...headerSx, bgcolor: 'warning.dark', color: 'common.white' }}>
+        <HourglassEmptyIcon fontSize="small" />
+        <Typography variant="caption" fontWeight={700}>
+          DELAY
+        </Typography>
+        <Box sx={{ flex: 1 }} />
+        <Chip
+          size="small"
+          label="interno"
+          sx={{ height: 18, bgcolor: 'rgba(255,255,255,0.25)', color: 'common.white', fontSize: 10 }}
+        />
+        {data.isStart && (
+          <Chip
+            size="small"
+            label="START"
+            sx={{ height: 18, bgcolor: 'success.main', color: 'common.white', fontSize: 10 }}
+          />
+        )}
+      </Box>
+      <Box sx={{ px: 1.25, py: 1 }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ fontFamily: 'monospace', display: 'block' }}
+        >
+          {data.id}
+        </Typography>
+        <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 600 }}>
+          ⏱ {typeof node.ms === 'number' ? `${node.ms} ms` : '— ms'}
+        </Typography>
+        {!node.nextNodeId && (
+          <Typography variant="caption" color="warning.main" sx={{ mt: 0.5, display: 'block' }}>
+            sin salida
+          </Typography>
+        )}
+      </Box>
+      <Handle type="source" position={Position.Right} style={handleSx} />
+    </Box>
+  );
+});
+
 export const nodeTypes = {
   menu: MenuNodeView,
   message: MessageNodeView,
@@ -591,4 +652,5 @@ export const nodeTypes = {
   setvar: SetVarNodeView,
   http: HttpNodeView,
   foreach: ForeachNodeView,
+  delay: DelayNodeView,
 };

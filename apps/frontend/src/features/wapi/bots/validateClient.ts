@@ -70,7 +70,8 @@ export function validateClient(
       node.kind !== 'CONDITION' &&
       node.kind !== 'SET_VAR' &&
       node.kind !== 'HTTP' &&
-      node.kind !== 'FOREACH'
+      node.kind !== 'FOREACH' &&
+      node.kind !== 'DELAY'
     ) {
       if (!(node as { text?: string }).text || (node as { text: string }).text.trim().length === 0) {
         errors.push({ path: `nodes.${id}.text`, message: 'Texto vacío' });
@@ -321,6 +322,13 @@ export function validateClient(
       }
       checkRef(flow, id, node.doneNodeId, `nodes.${id}.doneNodeId`, errors, false);
       checkGoto(node.gotoTopic, topicIds, `nodes.${id}.gotoTopic`, errors);
+    } else if (node.kind === 'DELAY') {
+      if (typeof node.ms !== 'number' || !Number.isFinite(node.ms)) {
+        errors.push({ path: `nodes.${id}.ms`, message: 'entero requerido' });
+      } else if (node.ms < 100 || node.ms > 10000) {
+        errors.push({ path: `nodes.${id}.ms`, message: 'entero 100..10000 ms' });
+      }
+      checkRef(flow, id, node.nextNodeId, `nodes.${id}.nextNodeId`, errors, true);
     }
   }
   return { ok: errors.length === 0, errors };
