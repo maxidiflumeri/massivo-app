@@ -40,3 +40,12 @@ export interface SendTestTemplateResponse {
   smtpAccountId: string;
   messageId?: string;
 }
+
+/** Listado de cuentas SMTP para el selector del editor. Espejo del shape
+ * que devuelve GET /api/email/smtp-accounts. */
+export interface SmtpAccountSummary {
+  id: string;
+  provider: string;
+  fromEmail: string;
+  fromName: string | null;
+}

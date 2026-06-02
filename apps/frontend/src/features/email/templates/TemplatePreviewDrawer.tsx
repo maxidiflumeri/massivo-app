@@ -22,6 +22,8 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SendIcon from '@mui/icons-material/Send';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useApi, ApiError } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import type {
@@ -59,16 +61,24 @@ export function TemplatePreviewDrawer({
   const api = useApi();
   const notify = useNotify();
 
-  // Filas { key, value } construidas del catálogo. Estado editable.
-  const initialRows = useMemo(() => {
-    if (!catalog) return [] as { key: string; value: string; isBase: boolean }[];
+  // Filas { key, value, source } construidas del catálogo. Estado editable.
+  // - base: del catálogo built-in (key fija)
+  // - catalogCustom: del catálogo "custom" descubierto de campañas previas
+  // - ad-hoc: agregadas por el usuario en este dialog (key + value editables)
+  type Row = { key: string; value: string; source: 'base' | 'catalogCustom' | 'ad-hoc' };
+  const initialRows = useMemo<Row[]>(() => {
+    if (!catalog) return [];
     return [
-      ...catalog.base.map((v) => ({ key: v.key, value: v.sample, isBase: true })),
-      ...catalog.custom.map((v) => ({ key: v.key, value: v.sample ?? '', isBase: false })),
+      ...catalog.base.map((v) => ({ key: v.key, value: v.sample, source: 'base' as const })),
+      ...catalog.custom.map((v) => ({
+        key: v.key,
+        value: v.sample ?? '',
+        source: 'catalogCustom' as const,
+      })),
     ];
   }, [catalog]);
 
-  const [rows, setRows] = useState(initialRows);
+  const [rows, setRows] = useState<Row[]>(initialRows);
   const [rendering, setRendering] = useState(false);
   const [preview, setPreview] = useState<PreviewTemplateResponse | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -136,13 +146,21 @@ export function TemplatePreviewDrawer({
     }
   }
 
-  function updateRow(idx: number, value: string) {
+  function updateRow(idx: number, patch: Partial<Pick<Row, 'key' | 'value'>>) {
     setRows((prev) => {
       const next = [...prev];
       const target = next[idx];
-      if (target) next[idx] = { ...target, value };
+      if (target) next[idx] = { ...target, ...patch };
       return next;
     });
+  }
+
+  function addAdHocRow() {
+    setRows((prev) => [...prev, { key: '', value: '', source: 'ad-hoc' }]);
+  }
+
+  function removeRow(idx: number) {
+    setRows((prev) => prev.filter((_, i) => i !== idx));
   }
 
   return (
@@ -151,6 +169,10 @@ export function TemplatePreviewDrawer({
         anchor="right"
         open={open}
         onClose={onClose}
+        // El AppBar está fixed con zIndex.drawer+1 (1201). Sin override, el
+        // Drawer queda detrás de él en algunos navegadores; lo levantamos
+        // arriba del AppBar pero por debajo del Dialog "Enviar prueba" (1300).
+        sx={{ zIndex: (theme) => theme.zIndex.appBar + 2 }}
         PaperProps={{ sx: { width: { xs: '100%', md: '90vw' }, maxWidth: 1400 } }}
       >
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -199,14 +221,20 @@ export function TemplatePreviewDrawer({
                 p: 2,
               }}
             >
-              <Typography variant="subtitle2" gutterBottom>
-                Datos de prueba
-              </Typography>
+              <Stack direction="row" alignItems="center" sx={{ mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ flex: 1 }}>
+                  Datos de prueba
+                </Typography>
+                <Button size="small" startIcon={<AddIcon />} onClick={addAdHocRow}>
+                  Agregar
+                </Button>
+              </Stack>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
                 Editá los valores para ver cómo se interpola cada variable.
+                Usá "Agregar" para probar con una variable nueva sin tocar el catálogo.
               </Typography>
               {rows.length === 0 && (
-                <Alert severity="info">No hay variables definidas todavía.</Alert>
+                <Alert severity="info">No hay variables definidas. Apretá "Agregar" para probar con una.</Alert>
               )}
               {rows.length > 0 && (
                 <Table size="small">
@@ -214,17 +242,30 @@ export function TemplatePreviewDrawer({
                     <TableRow>
                       <TableCell>Variable</TableCell>
                       <TableCell>Valor sample</TableCell>
+                      <TableCell sx={{ width: 32 }} />
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {rows.map((r, idx) => (
-                      <TableRow key={r.key}>
+                      <TableRow key={r.source === 'ad-hoc' ? `ad-${idx}` : r.key}>
                         <TableCell sx={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                          <code>{`{{${r.key}}}`}</code>
-                          {!r.isBase && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                              custom
-                            </Typography>
+                          {r.source === 'ad-hoc' ? (
+                            <TextField
+                              size="small"
+                              placeholder="nombre"
+                              value={r.key}
+                              onChange={(e) => updateRow(idx, { key: e.target.value })}
+                              sx={{ width: 130 }}
+                            />
+                          ) : (
+                            <>
+                              <code>{`{{${r.key}}}`}</code>
+                              {r.source === 'catalogCustom' && (
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                  custom
+                                </Typography>
+                              )}
+                            </>
                           )}
                         </TableCell>
                         <TableCell>
@@ -232,8 +273,17 @@ export function TemplatePreviewDrawer({
                             size="small"
                             fullWidth
                             value={r.value}
-                            onChange={(e) => updateRow(idx, e.target.value)}
+                            onChange={(e) => updateRow(idx, { value: e.target.value })}
                           />
+                        </TableCell>
+                        <TableCell>
+                          {r.source === 'ad-hoc' && (
+                            <Tooltip title="Eliminar fila">
+                              <IconButton size="small" onClick={() => removeRow(idx)}>
+                                <DeleteOutlineIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

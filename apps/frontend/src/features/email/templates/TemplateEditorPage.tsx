@@ -4,10 +4,13 @@ import {
   Alert,
   Box,
   Button,
+  FormControl,
   IconButton,
+  InputLabel,
   ListSubheader,
   Menu,
   MenuItem,
+  Select,
   Skeleton,
   Stack,
   TextField,
@@ -25,6 +28,7 @@ import type {
   CreateTemplatePayload,
   EmailTemplate,
   EmailTemplateVariablesCatalog,
+  SmtpAccountSummary,
 } from './types';
 import { TemplatePreviewDrawer } from './TemplatePreviewDrawer';
 
@@ -53,6 +57,8 @@ export function TemplateEditorPage() {
   const [varsCatalog, setVarsCatalog] = useState<EmailTemplateVariablesCatalog | null>(null);
   const [subjectMenuAnchor, setSubjectMenuAnchor] = useState<null | HTMLElement>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [smtpAccounts, setSmtpAccounts] = useState<SmtpAccountSummary[]>([]);
+  const [smtpAccountId, setSmtpAccountId] = useState<string>('');
 
   useEffect(() => {
     if (isNew) return;
@@ -61,6 +67,7 @@ export function TemplateEditorPage() {
         const t = await api.get<EmailTemplate>(`/api/email/templates/${id}`);
         setName(t.name);
         setSubject(t.subject);
+        setSmtpAccountId(t.smtpAccountId ?? '');
         setPendingDesign(t.design);
         setLoaded(true);
       } catch (e) {
@@ -69,6 +76,21 @@ export function TemplateEditorPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Cuentas SMTP del team para el selector del template. Igual para nuevo y
+  // existente; si la lista falla no bloqueamos la edición.
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await api.get<SmtpAccountSummary[]>('/api/email/smtp-accounts');
+        setSmtpAccounts(list);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('No se pudo cargar smtp-accounts:', e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch del catálogo de variables (base + custom descubierto de campañas
   // previas). Solo aplica a templates existentes — para "new" no hay id.
@@ -141,7 +163,13 @@ export function TemplateEditorPage() {
     setError(null);
     try {
       const { design, html } = await exportHtml();
-      const payload: CreateTemplatePayload = { name, subject, html, design };
+      const payload: CreateTemplatePayload = {
+        name,
+        subject,
+        html,
+        design,
+        smtpAccountId: smtpAccountId || undefined,
+      };
       if (isNew) {
         const created = await api.post<EmailTemplate>('/api/email/templates', payload);
         notify.success('Template creado');
@@ -235,6 +263,23 @@ export function TemplateEditorPage() {
           sx={{ flex: 1 }}
           inputProps={{ maxLength: 120 }}
         />
+        <FormControl size="small" sx={{ flex: 1, minWidth: 220 }}>
+          <InputLabel>Cuenta SMTP</InputLabel>
+          <Select
+            label="Cuenta SMTP"
+            value={smtpAccountId}
+            onChange={(e) => setSmtpAccountId(e.target.value)}
+          >
+            <MenuItem value="">
+              <em>Default del team</em>
+            </MenuItem>
+            {smtpAccounts.map((s) => (
+              <MenuItem key={s.id} value={s.id}>
+                {s.fromName ? `${s.fromName} <${s.fromEmail}>` : s.fromEmail} ({s.provider})
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
         <Box sx={{ flex: 2, display: 'flex', alignItems: 'flex-start', gap: 1 }}>
           <TextField
             label="Subject (asunto del email)"
