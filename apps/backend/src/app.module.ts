@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TerminusModule } from '@nestjs/terminus';
 import { WinstonModule } from 'nest-winston';
@@ -6,6 +6,8 @@ import { winstonConfig } from './common/logger/winston.config';
 import { HealthController } from './common/health/health.controller';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { ClerkModule } from './common/clerk/clerk.module';
+import { ObservabilityModule } from './common/observability/observability.module';
+import { ObservabilityMiddleware } from './common/observability/observability.middleware';
 import { AuthModule } from './common/auth/auth.module';
 import { AuditLogModule } from './common/audit/audit-log.module';
 import { SecurityModule } from './common/security/security.module';
@@ -31,6 +33,7 @@ import { DevModule } from './modules/dev/dev.module';
     WinstonModule.forRoot(winstonConfig),
     TerminusModule,
     PrismaModule,
+    ObservabilityModule,
     ClerkModule,
     AuthModule,
     AuditLogModule,
@@ -51,5 +54,12 @@ import { DevModule } from './modules/dev/dev.module';
   controllers: [HealthController],
   providers: [],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  // 4.R — Middleware global para abrir un scope de ObservabilityContext con
+  // traceId en cada HTTP request. Todos los logs emitidos vía EventLogger
+  // dentro del request comparten el mismo traceId automáticamente.
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(ObservabilityMiddleware).forRoutes('*');
+  }
+}
 

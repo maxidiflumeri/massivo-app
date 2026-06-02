@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventLogger } from '../../../common/observability/event-logger.service';
 import {
   META_AUTH_CODES,
   META_RATE_LIMIT_CODES,
@@ -43,7 +44,10 @@ interface GraphSendOk {
 export class WapiSenderService {
   private readonly logger = new Logger(WapiSenderService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly eventLogger: EventLogger,
+  ) {}
 
   private baseUrl(cfg: WapiSenderConfig): string {
     const apiBase = this.config.get<string>('WAPI_GRAPH_BASE_URL') || 'https://graph.facebook.com';
@@ -142,28 +146,69 @@ export class WapiSenderService {
   }
 
   private async post(cfg: WapiSenderConfig, body: Record<string, unknown>): Promise<SendResult> {
+    const phone = String(body.to ?? '?');
+    const type = String(body.type ?? '?');
+    const preview = outboundPreview(body);
+    const startedAt = Date.now();
     if (cfg.isTestMode) {
       const simId = `wamid.SIM_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
       this.logger.debug(`[isTestMode] short-circuit phoneNumberId=${cfg.phoneNumberId} → ${simId}`);
+      this.eventLogger.wapiOutbound({
+        phone,
+        type,
+        body: preview,
+        success: true,
+        durationMs: Date.now() - startedAt,
+        metaMessageId: simId,
+      });
       return { metaMessageId: simId, raw: { simulated: true, body } };
     }
-    const res = await fetch(this.baseUrl(cfg), {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${cfg.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(this.baseUrl(cfg), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${cfg.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      this.eventLogger.wapiOutbound({
+        phone,
+        type,
+        body: preview,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        error: `network: ${(err as Error).message}`,
+      });
+      throw err;
+    }
     const json = (await res.json().catch(() => ({}))) as unknown;
     if (!res.ok) {
       const err = this.normalizeError(res.status, json);
       this.logger.warn(`Graph API ${res.status} code=${err.code ?? 'n/a'}: ${err.message}`);
+      this.eventLogger.wapiOutbound({
+        phone,
+        type,
+        body: preview,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        error: `${res.status} ${err.code ?? ''} ${err.message}`.trim(),
+      });
       throw new WapiSendException(err);
     }
     const ok = json as GraphSendOk;
     const id = ok.messages?.[0]?.id;
     if (!id) {
+      this.eventLogger.wapiOutbound({
+        phone,
+        type,
+        body: preview,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        error: 'graph-200-no-id',
+      });
       throw new WapiSendException({
         code: null,
         subCode: null,
@@ -174,6 +219,14 @@ export class WapiSenderService {
         raw: json,
       });
     }
+    this.eventLogger.wapiOutbound({
+      phone,
+      type,
+      body: preview,
+      success: true,
+      durationMs: Date.now() - startedAt,
+      metaMessageId: id,
+    });
     return { metaMessageId: id, raw: json };
   }
 
@@ -188,4 +241,22 @@ export class WapiSenderService {
     const retryable = isRateLimit || httpStatus >= 500;
     return { code, subCode, message, isRateLimit, isAuth, retryable, raw: body };
   }
+}
+
+/** 4.R — preview corto del body que vamos a mandar (lo que se ve en Dozzle). */
+function outboundPreview(body: Record<string, unknown>): string | undefined {
+  const b = body as Record<string, any>;
+  if (b.type === 'text') return b.text?.body;
+  if (b.type === 'interactive') {
+    return b.interactive?.body?.text ?? b.interactive?.action?.button;
+  }
+  if (b.type === 'template') {
+    const tplName = b.template?.name;
+    return tplName ? `template:${tplName}` : undefined;
+  }
+  if (b.type === 'image' || b.type === 'video' || b.type === 'document' || b.type === 'audio') {
+    const media = b[b.type as string];
+    return media?.caption ?? (media?.filename ? `[${b.type}] ${media.filename}` : `[${b.type}]`);
+  }
+  return undefined;
 }

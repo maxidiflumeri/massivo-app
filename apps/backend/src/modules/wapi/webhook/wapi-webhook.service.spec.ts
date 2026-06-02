@@ -16,6 +16,8 @@
 import { WapiWebhookService, type ResolvedWebhookConfig } from './wapi-webhook.service';
 import type { WapiWebhookPayload } from './wapi-webhook.types';
 
+const noopEventLogger = new Proxy({}, { get: () => () => undefined }) as never;
+
 describe('WapiWebhookService', () => {
   const PHONE_ID_A = 'pn-A';
   const cfgA: ResolvedWebhookConfig = {
@@ -94,6 +96,7 @@ describe('WapiWebhookService', () => {
       botEngine as never,
       botFeature as never,
       botRouter as never,
+      noopEventLogger,
     );
   });
 

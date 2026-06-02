@@ -10,13 +10,15 @@ import { ConfigService } from '@nestjs/config';
 import { WapiSenderService } from './wapi-sender.service';
 import { WapiSendException } from './wapi-sender.types';
 
+const noopEventLogger = new Proxy({}, { get: () => () => undefined }) as never;
+
 describe('WapiSenderService', () => {
   let svc: WapiSenderService;
   let originalFetch: typeof fetch;
   let fetchMock: jest.Mock;
 
   beforeEach(() => {
-    svc = new WapiSenderService(new ConfigService({}));
+    svc = new WapiSenderService(new ConfigService({}), noopEventLogger);
     originalFetch = global.fetch;
     fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -130,6 +132,7 @@ describe('WapiSenderService', () => {
   it('respeta WAPI_GRAPH_BASE_URL para staging/mocks', async () => {
     const stagingSvc = new WapiSenderService(
       new ConfigService({ WAPI_GRAPH_BASE_URL: 'http://localhost:9999' }),
+      noopEventLogger,
     );
     fetchMock.mockResolvedValueOnce(mkResponse(200, { messages: [{ id: 'm1' }] }));
     await stagingSvc.sendText(

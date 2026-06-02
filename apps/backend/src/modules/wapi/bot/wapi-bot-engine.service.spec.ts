@@ -17,6 +17,10 @@ import { TenantContext } from '../../../common/auth/tenant-context';
 import { WapiBotEngineService } from './wapi-bot-engine.service';
 import type { BotFlow } from './wapi-bot.types';
 
+// 4.R — EventLogger no se asserta en estos tests; Proxy noop para autocompletar
+// cualquier método llamado por el engine (botNodeEntered, botSetVar, etc).
+const noopEventLogger = new Proxy({}, { get: () => () => undefined }) as never;
+
 const flow: BotFlow = {
   startNodeId: 'menu1',
   nodes: {
@@ -119,6 +123,7 @@ describe('WapiBotEngineService', () => {
       router as never,
       httpExecutor as never,
       { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
+      noopEventLogger,
     );
   });
 
@@ -941,6 +946,7 @@ describe('WapiBotEngineService', () => {
         }),
       } as never,
       { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
+      noopEventLogger,
     );
     const cfgMulti = {
       ...cfg,
@@ -1032,6 +1038,7 @@ describe('WapiBotEngineService', () => {
         }),
       } as never,
       { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
+      noopEventLogger,
     );
     const out = await withTenant(() =>
       localSvc.handle(cfg, {

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@massivo/prisma';
 import type { RequestContext } from '@massivo/shared-types';
 import { TenantContext } from '../../../common/auth/tenant-context';
+import { EventLogger } from '../../../common/observability/event-logger.service';
+import { ObservabilityContext } from '../../../common/observability/observability-context';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
@@ -98,6 +100,7 @@ export class WapiWebhookService {
     private readonly botEngine: WapiBotEngineService,
     private readonly botFeature: WapiBotFeatureService,
     private readonly botRouter: WapiBotRouterService,
+    private readonly eventLogger: EventLogger,
   ) {}
 
   async process(
@@ -214,6 +217,18 @@ export class WapiWebhookService {
     const tsMs = Number(msg.timestamp) * 1000;
     const ts = Number.isFinite(tsMs) ? new Date(tsMs) : new Date();
 
+    // 4.R — enriquecer el ObservabilityContext con phone/configId apenas los
+    // conocemos. Todo lo que se logue downstream (bot engine, http executor,
+    // sender) hereda estos IDs sin que haya que pasarlos manualmente.
+    ObservabilityContext.augment({ phone, configId: tenant.configId });
+    this.eventLogger.wapiInbound({
+      phone,
+      configId: tenant.configId,
+      type: msg.type,
+      body: inboundBodyPreview(msg),
+      metaMessageId: msg.id,
+    });
+
     // findFirst + create/update en vez de upsert para detectar primera
     // conversación (necesario para 4.I welcome message). El race entre dos
     // webhooks del mismo phone+config en simultáneo es muy raro y, si ocurre,
@@ -272,6 +287,9 @@ export class WapiWebhookService {
         conversation = refetched;
       }
     }
+
+    // 4.R — ya tenemos la conv; agregar al scope para los logs downstream
+    ObservabilityContext.augment({ conversationId: conversation.id });
 
     // Si el mensaje trae media (image/audio/video/document/sticker), descargamos
     // el binario de Meta y lo cacheamos local. Las URLs de Meta expiran en ~5min;
@@ -837,6 +855,27 @@ function extractMediaInfo(msg: WapiWebhookMessage): InboundMediaInfo | null {
     default:
       return null;
   }
+}
+
+/** 4.R — Preview corto del cuerpo para logs. No reemplaza extractContent
+ *  (que persiste todo el subobjeto raw); solo da un summary humano para Dozzle. */
+function inboundBodyPreview(msg: WapiWebhookMessage): string | undefined {
+  const m = msg as unknown as Record<string, any>;
+  if (msg.type === 'text') return m.text?.body;
+  if (msg.type === 'button') return m.button?.text ?? m.button?.payload;
+  if (msg.type === 'interactive') {
+    return (
+      m.interactive?.button_reply?.title ??
+      m.interactive?.list_reply?.title ??
+      m.interactive?.nfm_reply?.body
+    );
+  }
+  if (msg.type === 'reaction') return m.reaction?.emoji;
+  if (m.image?.caption || m.video?.caption || m.document?.caption) {
+    return m.image?.caption ?? m.video?.caption ?? m.document?.caption;
+  }
+  if (m.document?.filename) return `[${msg.type}] ${m.document.filename}`;
+  return undefined;
 }
 
 function extractContent(msg: WapiWebhookMessage): Record<string, unknown> {

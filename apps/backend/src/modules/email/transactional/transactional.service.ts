@@ -8,6 +8,7 @@ import {
 import Handlebars from 'handlebars';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
+import { EventLogger } from '../../../common/observability/event-logger.service';
 import { QuotaService } from '../../../common/quota/quota.service';
 import { EmailSenderService } from '../sender/email-sender.service';
 import { TrackingTokenService } from '../tracking/tracking-token.service';
@@ -53,6 +54,7 @@ export class TransactionalService {
     private readonly quota: QuotaService,
     private readonly fetcher: AttachmentsFetcherService,
     private readonly tokens: TrackingTokenService,
+    private readonly eventLogger: EventLogger,
   ) {}
 
   async send(dto: TransactionalSendDto): Promise<TransactionalSendResult> {
@@ -164,6 +166,7 @@ export class TransactionalService {
     });
 
     // 8. Enviar.
+    const sendStartedAt = Date.now();
     try {
       const sendResult = await this.senders.sendForAccount(
         {
@@ -205,6 +208,15 @@ export class TransactionalService {
       this.logger.log(
         `Transactional sent ${report.id} → ${dto.toEmail} via ${sendResult.provider} (${sendResult.messageId})`,
       );
+      this.eventLogger.emailSend({
+        to: dto.toEmail,
+        templateId: dto.templateId,
+        smtpAccountId: account.id,
+        success: true,
+        smtpMessageId: sendResult.messageId,
+        durationMs: Date.now() - sendStartedAt,
+        transactional: true,
+      });
       return {
         reportId: report.id,
         messageId: sendResult.messageId,
@@ -217,6 +229,15 @@ export class TransactionalService {
         data: { status: 'FAILED', error: error.slice(0, 1000) },
       });
       this.logger.warn(`Transactional FAILED ${report.id} → ${dto.toEmail}: ${error}`);
+      this.eventLogger.emailSend({
+        to: dto.toEmail,
+        templateId: dto.templateId,
+        smtpAccountId: account.id,
+        success: false,
+        error,
+        durationMs: Date.now() - sendStartedAt,
+        transactional: true,
+      });
       // Clasificar el error para que el caller pueda mostrar mensajes
       // amigables (en particular el caso típico de SES sandbox donde el
       // destinatario no está verificado).

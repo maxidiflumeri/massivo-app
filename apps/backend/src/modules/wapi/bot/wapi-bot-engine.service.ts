@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@massivo/prisma';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
+import { EventLogger } from '../../../common/observability/event-logger.service';
+import { ObservabilityContext } from '../../../common/observability/observability-context';
 import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
@@ -98,6 +100,7 @@ export class WapiBotEngineService {
     private readonly router: WapiBotRouterService,
     private readonly httpExecutor: WapiBotHttpExecutor,
     private readonly mediaFetch: WapiBotMediaFetchService,
+    private readonly eventLogger: EventLogger,
   ) {}
 
   isBotButtonId(buttonId: string | null | undefined): boolean {
@@ -122,6 +125,7 @@ export class WapiBotEngineService {
     if (!resolved) return { handled: false };
 
     let session = await this.findActiveSession(cfg.id, input.phone);
+    if (session) ObservabilityContext.augment({ sessionId: session.id });
     let data: BotData = sessionData(session);
     let currentTopicId: string = session?.currentTopicId ?? DEFAULT_TOPIC_ID;
     let currentTopic = resolved.topics.get(currentTopicId);
@@ -200,11 +204,22 @@ export class WapiBotEngineService {
           if (result.ok) {
             data = result.data;
             await this.persistSessionData(session.id, data);
+            this.eventLogger.botCapture({
+              nodeId: session.currentNodeId,
+              varName: node.saveAs,
+              value: data[node.saveAs],
+            });
             const target = this.followGoto(node.gotoTopic, node.nextNodeId, currentTopicId, resolved);
             if (!target) return { handled: true };
             nextNodeId = target.nodeId;
             nextTopicId = target.topicId;
           } else if (node.retryNodeId) {
+            this.eventLogger.custom('warn', 'bot.capture.invalid', `🤖 bot.capture.invalid node=${session.currentNodeId} → retry`, {
+              channel: 'bot',
+              nodeId: session.currentNodeId,
+              varName: node.saveAs,
+              input: input.inbound.body,
+            });
             nextNodeId = node.retryNodeId;
           } else {
             await this.deliverNode(
@@ -347,6 +362,8 @@ export class WapiBotEngineService {
         this.logger.warn(`Bot nextNodeId no existe: ${currentId} (configId=${cfg.id} topic=${topicId})`);
         break;
       }
+      // 4.R — trazabilidad: cada paso visible en logs.
+      this.eventLogger.botNodeEntered({ nodeId: currentId, nodeKind: node.kind, topicId });
       if (node.kind === 'CONDITION') {
         const target = pickConditionBranch(node, data);
         if (target?.gotoTopic) {
@@ -362,6 +379,11 @@ export class WapiBotEngineService {
       }
       if (node.kind === 'SET_VAR') {
         data = await applySetVar(node, data, resolved.variableTypes);
+        this.eventLogger.botSetVar({
+          nodeId: currentId,
+          varName: node.varName,
+          value: data[node.varName],
+        });
         if (node.gotoTopic) {
           const next = resolved.topics.get(node.gotoTopic);
           if (!next) break;
@@ -395,6 +417,15 @@ export class WapiBotEngineService {
           configId: cfg.id,
           nodeId: currentId,
           organizationId: ctx?.organizationId ?? '',
+        });
+        this.eventLogger.botHttpCall({
+          nodeId: currentId,
+          method: node.method,
+          url: node.url,
+          status: result.status,
+          durationMs: result.durationMs,
+          error: result.ok ? undefined : result.error,
+          mode: 'real',
         });
         data = applyHttpResult(node, data, result);
         if (result.ok) {
@@ -434,6 +465,14 @@ export class WapiBotEngineService {
           configId: cfg.id,
           nodeId: currentId,
           organizationId: ctx?.organizationId ?? '',
+        });
+        this.eventLogger.botMediaFetch({
+          nodeId: currentId,
+          url: node.url,
+          mediaType: node.mediaType,
+          status: fetchResult.status,
+          durationMs: fetchResult.durationMs,
+          error: fetchResult.ok ? undefined : fetchResult.error,
         });
         if (!fetchResult.ok) {
           this.logger.warn(
@@ -539,6 +578,7 @@ export class WapiBotEngineService {
     if (!finalNode || !finalId) return { handled: true };
 
     if (finalNode.kind === 'HANDOFF') {
+      this.eventLogger.botHandoff({ nodeId: finalId, escalate: !!finalNode.escalate });
       if (session) await this.endSession(session.id, 'handoff');
       // 4.O.6 — escalar al inbox y suspender el bot. El operador toma la
       // conversación (UNASSIGNED → ASSIGNED) y al resolver/expirar el bot
@@ -661,7 +701,7 @@ export class WapiBotEngineService {
     const ttlMs = Math.max(1, cfg.botSessionTtlMin) * 60_000;
     const now = new Date();
     const expiresAt = new Date(now.getTime() + ttlMs);
-    await this.prismaSession.upsert({
+    const result = await this.prismaSession.upsert({
       where: { configId_phone: { configId: cfg.id, phone } },
       update: {
         currentNodeId: nodeId,
@@ -685,7 +725,16 @@ export class WapiBotEngineService {
         expiresAt,
         data: data as Prisma.InputJsonValue,
       },
+      select: { id: true, startedAt: true, lastInboundAt: true },
     });
+    // 4.R — augmentamos el sessionId al scope. Si era una sesión nueva
+    // (startedAt = lastInboundAt instante mismo), también emitimos session.started.
+    ObservabilityContext.augment({ sessionId: result.id });
+    const startedAt = result.startedAt;
+    const lastInboundAt = result.lastInboundAt;
+    if (startedAt && lastInboundAt && startedAt.getTime() === lastInboundAt.getTime()) {
+      this.eventLogger.botSessionStarted({ sessionId: result.id, topicId, phone });
+    }
   }
 
   private async persistSessionData(sessionId: string, data: BotData): Promise<void> {
@@ -700,6 +749,7 @@ export class WapiBotEngineService {
       where: { id },
       data: { endedAt: new Date(), endedReason: reason.slice(0, 80) },
     });
+    this.eventLogger.botSessionEnded({ sessionId: id, reason });
   }
 
   /**
