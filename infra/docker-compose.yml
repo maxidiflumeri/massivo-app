@@ -58,6 +58,29 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Visor de logs vía web (logs.massivo.app).
+  # Lee el socket de Docker read-only y stream logs por WebSocket — sin DB,
+  # sin persistencia (lo que aguante el log driver json-file de cada container).
+  # Sin auth propia: nginx hace basic_auth antes de proxear (htpasswd en EC2).
+  # Bound a 127.0.0.1:8888 para que solo nginx pueda alcanzarlo.
+  dozzle:
+    image: amir20/dozzle:v8
+    container_name: massivo-dozzle
+    environment:
+      DOZZLE_NO_ANALYTICS: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:8888:8080"
+    restart: unless-stopped
+    networks:
+      - internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
 volumes:
   redis-data:
     name: massivo-redis-data
