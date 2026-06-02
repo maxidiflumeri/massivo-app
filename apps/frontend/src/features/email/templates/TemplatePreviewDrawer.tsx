@@ -169,11 +169,19 @@ export function TemplatePreviewDrawer({
         anchor="right"
         open={open}
         onClose={onClose}
-        // El AppBar está fixed con zIndex.drawer+1 (1201). Sin override, el
-        // Drawer queda detrás de él en algunos navegadores; lo levantamos
-        // arriba del AppBar pero por debajo del Dialog "Enviar prueba" (1300).
-        sx={{ zIndex: (theme) => theme.zIndex.appBar + 2 }}
-        PaperProps={{ sx: { width: { xs: '100%', md: '90vw' }, maxWidth: 1400 } }}
+        // El AppBar de AppLayout usa zIndex.drawer+1 (1201). MUI Drawer en
+        // modo modal arranca en zIndex.modal (1300), arriba del AppBar — el
+        // override previo bajaba esto a 1102 y rompía la jerarquía. Forzamos
+        // a 1300 explícito y lo replicamos en el Paper para que el panel
+        // visible no quede tapado por elementos sticky/fixed de la página.
+        sx={{ zIndex: (theme) => theme.zIndex.modal }}
+        PaperProps={{
+          sx: {
+            width: { xs: '100%', md: '90vw' },
+            maxWidth: 1400,
+            zIndex: (theme) => theme.zIndex.modal,
+          },
+        }}
       >
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           <Box

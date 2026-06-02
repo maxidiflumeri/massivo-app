@@ -280,7 +280,10 @@ export function TemplateEditorPage() {
             ))}
           </Select>
         </FormControl>
-        <Box sx={{ flex: 2, display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+      </Stack>
+
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'flex-start' }}>
+        <Box sx={{ flex: 1, display: 'flex', alignItems: 'flex-start', gap: 1 }}>
           <TextField
             label="Subject (asunto del email)"
             value={subject}
