@@ -30,6 +30,7 @@ import FunctionsIcon from '@mui/icons-material/Functions';
 import HttpIcon from '@mui/icons-material/Http';
 import LoopIcon from '@mui/icons-material/Loop';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import CloudDownloadIcon from '@mui/icons-material/CloudDownload';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import EditIcon from '@mui/icons-material/Edit';
 import RouteIcon from '@mui/icons-material/Route';
@@ -110,6 +111,8 @@ function defaultNodeFor(kind: BotNodeKind): BotNode {
   if (kind === 'CAPTURE')
     return { kind: 'CAPTURE', text: 'Tu respuesta?', saveAs: 'respuesta', nextNodeId: '' };
   if (kind === 'MEDIA') return { kind: 'MEDIA', mediaType: 'image', mediaId: '' };
+  if (kind === 'MEDIA_FROM_URL')
+    return { kind: 'MEDIA_FROM_URL', mediaType: 'document', url: '', timeoutMs: 5000 };
   if (kind === 'CONDITION') return { kind: 'CONDITION', branches: [] };
   if (kind === 'SET_VAR') return { kind: 'SET_VAR', varName: '', value: '' };
   if (kind === 'HTTP')
@@ -131,6 +134,7 @@ function nodeIdPrefix(kind: BotNodeKind): string {
   if (kind === 'MESSAGE') return 'msg';
   if (kind === 'CAPTURE') return 'cap';
   if (kind === 'MEDIA') return 'media';
+  if (kind === 'MEDIA_FROM_URL') return 'media_url';
   if (kind === 'CONDITION') return 'cond';
   if (kind === 'SET_VAR') return 'set';
   if (kind === 'HTTP') return 'http';
@@ -1181,6 +1185,17 @@ function BotsEditorInner() {
               color="success"
             >
               MEDIA
+            </Button>
+          </Tooltip>
+          <Tooltip title="Agregar MEDIA URL (descarga + reenvía como adjunto)">
+            <Button
+              size="small"
+              startIcon={<CloudDownloadIcon />}
+              onClick={() => addNode('MEDIA_FROM_URL')}
+              variant="outlined"
+              color="success"
+            >
+              MEDIA URL
             </Button>
           </Tooltip>
           <Tooltip title="Agregar CONDITION">

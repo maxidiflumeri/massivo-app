@@ -381,9 +381,10 @@ function DelayEditor({
 }
 
 /**
- * 4.P.3 — Editor mínimo del nodo MEDIA_FROM_URL. URL/headers/caption se siguen
- * administrando por seed/API; el panel expone solo lo necesario para rewirearlo
- * desde la UI sin tocar SQL: nextNodeId (ok) y errorNodeId.
+ * 4.P.3 — Editor del nodo MEDIA_FROM_URL: descarga binario externo y lo
+ * reenvía a Meta. Headers + mockMediaId se siguen manejando por seed/API;
+ * el panel cubre lo común: mediaType, url, caption, filename, timeoutMs y
+ * destinos ok/error.
  */
 function MediaFromUrlEditor({
   node,
@@ -399,26 +400,67 @@ function MediaFromUrlEditor({
   const others = allIds.filter((id) => id !== selfId);
   return (
     <Stack spacing={2}>
-      <Typography variant="caption" color="text.secondary">
-        Tipo: <b>{node.mediaType}</b>
-      </Typography>
+      <TextField
+        select
+        label="Tipo de adjunto"
+        size="small"
+        value={node.mediaType}
+        onChange={(e) =>
+          onPatch({ mediaType: e.target.value as BotMediaKind } as Partial<BotMediaFromUrlNode>)
+        }
+        fullWidth
+      >
+        <MenuItem value="document">document (PDF, etc)</MenuItem>
+        <MenuItem value="image">image</MenuItem>
+        <MenuItem value="video">video</MenuItem>
+        <MenuItem value="audio">audio</MenuItem>
+      </TextField>
       <TextField
         label="URL"
         size="small"
         value={node.url ?? ''}
+        onChange={(e) => onPatch({ url: e.target.value } as Partial<BotMediaFromUrlNode>)}
         fullWidth
-        InputProps={{ readOnly: true }}
-        helperText="Configurada por seed/API. Acepta {{var}} en runtime."
+        helperText="https:// o http://. Acepta {{var}} y {{= JSONata }} en runtime."
       />
-      {node.caption !== undefined && (
-        <TextField
-          label="Caption"
-          size="small"
-          value={node.caption}
-          fullWidth
-          InputProps={{ readOnly: true }}
-        />
-      )}
+      <TextField
+        label="Caption (opcional)"
+        size="small"
+        value={node.caption ?? ''}
+        onChange={(e) =>
+          onPatch({ caption: e.target.value || undefined } as Partial<BotMediaFromUrlNode>)
+        }
+        fullWidth
+        multiline
+        minRows={2}
+        maxRows={4}
+        helperText="Texto que acompaña al adjunto."
+      />
+      <TextField
+        label="Filename (opcional)"
+        size="small"
+        value={node.filename ?? ''}
+        onChange={(e) =>
+          onPatch({ filename: e.target.value || undefined } as Partial<BotMediaFromUrlNode>)
+        }
+        fullWidth
+        helperText="Nombre visible para document/audio. Si no, lo deriva de la URL."
+      />
+      <TextField
+        label="Timeout (ms)"
+        type="number"
+        size="small"
+        value={node.timeoutMs ?? ''}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          onPatch({
+            timeoutMs: Number.isFinite(n) && n > 0 ? n : undefined,
+          } as Partial<BotMediaFromUrlNode>);
+        }}
+        inputProps={{ min: 100, max: 30000, step: 500 }}
+        helperText="Entre 100 y 30000 ms. Default 5000."
+        fullWidth
+      />
       <TextField
         select
         label="Siguiente nodo (ok)"

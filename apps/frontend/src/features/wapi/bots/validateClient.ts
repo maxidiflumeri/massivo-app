@@ -322,6 +322,39 @@ export function validateClient(
       }
       checkRef(flow, id, node.doneNodeId, `nodes.${id}.doneNodeId`, errors, false);
       checkGoto(node.gotoTopic, topicIds, `nodes.${id}.gotoTopic`, errors);
+    } else if (node.kind === 'MEDIA_FROM_URL') {
+      if (!['image', 'video', 'document', 'audio'].includes(node.mediaType)) {
+        errors.push({ path: `nodes.${id}.mediaType`, message: 'tipo inválido' });
+      }
+      if (!node.url || !node.url.trim()) {
+        errors.push({ path: `nodes.${id}.url`, message: 'requerido' });
+      } else {
+        const hasTokens = /\{\{/.test(node.url);
+        if (!hasTokens) {
+          try {
+            const u = new URL(node.url);
+            if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+              errors.push({ path: `nodes.${id}.url`, message: 'esperado http:// o https://' });
+            }
+          } catch {
+            errors.push({ path: `nodes.${id}.url`, message: 'URL absoluta inválida' });
+          }
+        }
+      }
+      if (node.timeoutMs !== undefined && node.timeoutMs !== null) {
+        if (
+          typeof node.timeoutMs !== 'number' ||
+          !Number.isInteger(node.timeoutMs) ||
+          node.timeoutMs < 100 ||
+          node.timeoutMs > 30_000
+        ) {
+          errors.push({ path: `nodes.${id}.timeoutMs`, message: 'entero 100..30000 ms' });
+        }
+      }
+      checkRef(flow, id, node.nextNodeId, `nodes.${id}.nextNodeId`, errors, false);
+      checkRef(flow, id, node.errorNodeId, `nodes.${id}.errorNodeId`, errors, false);
+      checkGoto(node.gotoTopic, topicIds, `nodes.${id}.gotoTopic`, errors);
+      checkGoto(node.errorGotoTopic, topicIds, `nodes.${id}.errorGotoTopic`, errors);
     } else if (node.kind === 'DELAY') {
       if (typeof node.ms !== 'number' || !Number.isFinite(node.ms)) {
         errors.push({ path: `nodes.${id}.ms`, message: 'entero requerido' });
