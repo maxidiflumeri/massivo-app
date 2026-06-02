@@ -9,8 +9,10 @@ function nodeHeight(node: BotNode): number {
   if (node.kind === 'CAPTURE') return NODE_H_BASE + 60; // saveAs/validate/retry
   if (node.kind === 'CONDITION') return NODE_H_BASE + (node.branches.length + 1) * 22;
   if (node.kind === 'MEDIA') return NODE_H_BASE + (node.caption ? 30 : 0);
+  if (node.kind === 'MEDIA_FROM_URL') return NODE_H_BASE + 50; // url + 2 ramas
   if (node.kind === 'HTTP') return NODE_H_BASE + 50; // url + 2 ramas
   if (node.kind === 'FOREACH') return NODE_H_BASE + 40; // items + 2 ramas
+  if (node.kind === 'DELAY') return NODE_H_BASE - 30; // compacto
   return NODE_H_BASE;
 }
 
@@ -51,6 +53,11 @@ export function autoLayout(flow: BotFlow): BotFlow {
     } else if (node.kind === 'FOREACH') {
       if (node.bodyNodeId && flow.nodes[node.bodyNodeId]) g.setEdge(id, node.bodyNodeId);
       if (node.doneNodeId && flow.nodes[node.doneNodeId]) g.setEdge(id, node.doneNodeId);
+    } else if (node.kind === 'MEDIA_FROM_URL') {
+      if (node.nextNodeId && flow.nodes[node.nextNodeId]) g.setEdge(id, node.nextNodeId);
+      if (node.errorNodeId && flow.nodes[node.errorNodeId]) g.setEdge(id, node.errorNodeId);
+    } else if (node.kind === 'DELAY' && node.nextNodeId && flow.nodes[node.nextNodeId]) {
+      g.setEdge(id, node.nextNodeId);
     }
   }
   dagre.layout(g);

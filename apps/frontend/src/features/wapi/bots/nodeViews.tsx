@@ -11,6 +11,7 @@ import FunctionsIcon from '@mui/icons-material/Functions';
 import HttpIcon from '@mui/icons-material/Http';
 import LoopIcon from '@mui/icons-material/Loop';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import CloudDownloadIcon from '@mui/icons-material/CloudDownload';
 import type {
   BotCaptureNode,
   BotConditionNode,
@@ -19,6 +20,7 @@ import type {
   BotForeachNode,
   BotHandoffNode,
   BotHttpNode,
+  BotMediaFromUrlNode,
   BotMediaNode,
   BotMenuNode,
   BotMessageNode,
@@ -258,6 +260,97 @@ export const MediaNodeView = memo(function MediaNodeView(
         )}
       </Box>
       <Handle type="source" position={Position.Right} id="next" style={handleSx} />
+    </Box>
+  );
+});
+
+// 4.P.3 — MEDIA_FROM_URL (descarga + upload + envía como MEDIA). Igual que HTTP
+// expone ramas next (ok) y error.
+export const MediaFromUrlNodeView = memo(function MediaFromUrlNodeView(
+  props: NodeProps<{ id: string; node: BotMediaFromUrlNode; isStart: boolean } & BaseNodeData> & {
+    selected?: boolean;
+  },
+) {
+  const { data, selected } = props;
+  const node = data.node;
+  return (
+    <Box
+      sx={{
+        ...wrapperSx,
+        borderColor: selected ? 'primary.main' : 'divider',
+        borderWidth: selected ? 2 : 1,
+      }}
+    >
+      <Handle type="target" position={Position.Left} style={handleSx} />
+      <Box sx={{ ...headerSx, bgcolor: 'success.dark', color: 'common.white' }}>
+        <CloudDownloadIcon fontSize="small" />
+        <Typography variant="caption" fontWeight={700}>
+          MEDIA URL · {node.mediaType.toUpperCase()}
+        </Typography>
+        <Box sx={{ flex: 1 }} />
+        {data.isStart && (
+          <Chip
+            size="small"
+            label="START"
+            sx={{ height: 18, bgcolor: 'success.main', color: 'common.white', fontSize: 10 }}
+          />
+        )}
+      </Box>
+      <Box sx={{ px: 1.25, py: 1 }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ fontFamily: 'monospace', display: 'block' }}
+        >
+          {data.id}
+        </Typography>
+        <Typography
+          variant="caption"
+          sx={{ mt: 0.5, display: 'block', fontFamily: 'monospace', wordBreak: 'break-all' }}
+        >
+          {truncate(node.url || 'sin URL', 60)}
+        </Typography>
+        {node.caption && (
+          <Typography variant="body2" sx={{ mt: 0.5, whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
+            {truncate(node.caption, 60)}
+          </Typography>
+        )}
+        <Box
+          sx={{
+            position: 'relative',
+            mt: 1,
+            py: 0.5,
+            px: 1,
+            bgcolor: 'success.light',
+            color: 'success.contrastText',
+            borderRadius: 1,
+            fontSize: 11,
+          }}
+        >
+          ✓ ok → next
+          <Handle type="source" position={Position.Right} id="next" style={{ ...handleSx, top: '50%' }} />
+        </Box>
+        <Box
+          sx={{
+            position: 'relative',
+            mt: 0.5,
+            py: 0.5,
+            px: 1,
+            bgcolor: 'error.light',
+            color: 'error.contrastText',
+            borderRadius: 1,
+            fontSize: 11,
+          }}
+        >
+          ✗ error → error
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="error"
+            style={{ ...handleSx, top: '50%' }}
+          />
+        </Box>
+      </Box>
     </Box>
   );
 });
@@ -637,7 +730,7 @@ export const DelayNodeView = memo(function DelayNodeView(
           </Typography>
         )}
       </Box>
-      <Handle type="source" position={Position.Right} style={handleSx} />
+      <Handle type="source" position={Position.Right} id="next" style={handleSx} />
     </Box>
   );
 });
@@ -648,6 +741,7 @@ export const nodeTypes = {
   handoff: HandoffNodeView,
   capture: CaptureNodeView,
   media: MediaNodeView,
+  media_from_url: MediaFromUrlNodeView,
   condition: ConditionNodeView,
   setvar: SetVarNodeView,
   http: HttpNodeView,

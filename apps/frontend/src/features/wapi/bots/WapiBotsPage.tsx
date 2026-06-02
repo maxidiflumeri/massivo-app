@@ -274,6 +274,7 @@ function BotsEditorInner() {
       if (node.kind === 'SET_VAR') rfType = 'setvar';
       else if (node.kind === 'FOREACH') rfType = 'foreach';
       else if (node.kind === 'DELAY') rfType = 'delay';
+      else if (node.kind === 'MEDIA_FROM_URL') rfType = 'media_from_url';
       else rfType = node.kind.toLowerCase();
       return {
         id,
@@ -452,6 +453,43 @@ function BotsEditorInner() {
             labelStyle: { fontSize: 11 },
           });
         }
+      } else if (node.kind === 'MEDIA_FROM_URL') {
+        // ok → next (verde), error → error (rojo) — mismo patrón que HTTP.
+        if (node.nextNodeId && !node.gotoTopic && flow.nodes[node.nextNodeId]) {
+          out.push({
+            id: `${id}__next__${node.nextNodeId}`,
+            source: id,
+            sourceHandle: 'next',
+            target: node.nextNodeId,
+            label: 'ok',
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: '#2e7d32' },
+            labelStyle: { fontSize: 11 },
+          });
+        }
+        if (node.errorNodeId && !node.errorGotoTopic && flow.nodes[node.errorNodeId]) {
+          out.push({
+            id: `${id}__error__${node.errorNodeId}`,
+            source: id,
+            sourceHandle: 'error',
+            target: node.errorNodeId,
+            label: 'error',
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: '#d32f2f' },
+            labelStyle: { fontSize: 11 },
+          });
+        }
+      } else if (node.kind === 'DELAY') {
+        if (node.nextNodeId && flow.nodes[node.nextNodeId]) {
+          out.push({
+            id: `${id}__next__${node.nextNodeId}`,
+            source: id,
+            sourceHandle: 'next',
+            target: node.nextNodeId,
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: '#ed6c02', strokeDasharray: '4 3' },
+          });
+        }
       }
     }
     return out;
@@ -602,6 +640,14 @@ function BotsEditorInner() {
           if (body !== node.bodyNodeId || done !== node.doneNodeId) {
             cleaned[id] = { ...node, bodyNodeId: body, doneNodeId: done };
           } else cleaned[id] = node;
+        } else if (node.kind === 'MEDIA_FROM_URL') {
+          const next = node.nextNodeId === selectedNodeId ? undefined : node.nextNodeId;
+          const err = node.errorNodeId === selectedNodeId ? undefined : node.errorNodeId;
+          if (next !== node.nextNodeId || err !== node.errorNodeId) {
+            cleaned[id] = { ...node, nextNodeId: next, errorNodeId: err };
+          } else cleaned[id] = node;
+        } else if (node.kind === 'DELAY' && node.nextNodeId === selectedNodeId) {
+          cleaned[id] = { ...node, nextNodeId: '' };
         } else {
           cleaned[id] = node;
         }
@@ -1624,6 +1670,17 @@ function disconnectEdges(flow: BotFlow, edgeIds: Set<string>): BotFlow {
         nextNodes[source] = { ...node, doneNodeId: undefined };
         changed = true;
       }
+    } else if (node.kind === 'MEDIA_FROM_URL') {
+      if (handle === 'next') {
+        nextNodes[source] = { ...node, nextNodeId: undefined };
+        changed = true;
+      } else if (handle === 'error') {
+        nextNodes[source] = { ...node, errorNodeId: undefined };
+        changed = true;
+      }
+    } else if (node.kind === 'DELAY' && handle === 'next') {
+      nextNodes[source] = { ...node, nextNodeId: '' };
+      changed = true;
     }
   }
   return changed ? { ...flow, nodes: nextNodes } : flow;
@@ -1651,6 +1708,13 @@ function rewriteGotoTopic(flow: BotFlow, oldId: string, newId: string): BotFlow 
         nodes[id] = { ...node, gotoTopic: newId } as BotNode;
       } else nodes[id] = node;
     } else if (node.kind === 'HTTP') {
+      const newGoto = node.gotoTopic === oldId ? newId : node.gotoTopic;
+      const newErrGoto = node.errorGotoTopic === oldId ? newId : node.errorGotoTopic;
+      if (newGoto !== node.gotoTopic || newErrGoto !== node.errorGotoTopic) {
+        changed = true;
+        nodes[id] = { ...node, gotoTopic: newGoto, errorGotoTopic: newErrGoto };
+      } else nodes[id] = node;
+    } else if (node.kind === 'MEDIA_FROM_URL') {
       const newGoto = node.gotoTopic === oldId ? newId : node.gotoTopic;
       const newErrGoto = node.errorGotoTopic === oldId ? newId : node.errorGotoTopic;
       if (newGoto !== node.gotoTopic || newErrGoto !== node.errorGotoTopic) {

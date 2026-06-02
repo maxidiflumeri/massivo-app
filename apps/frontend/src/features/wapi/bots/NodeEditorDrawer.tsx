@@ -37,6 +37,7 @@ import type {
   BotHandoffNode,
   BotHttpMethod,
   BotHttpNode,
+  BotMediaFromUrlNode,
   BotMediaKind,
   BotMediaNode,
   BotMenuNode,
@@ -103,6 +104,7 @@ export function NodeEditorDrawer({
   const showText =
     node &&
     node.kind !== 'MEDIA' &&
+    node.kind !== 'MEDIA_FROM_URL' &&
     node.kind !== 'CONDITION' &&
     node.kind !== 'SET_VAR' &&
     node.kind !== 'HTTP' &&
@@ -311,6 +313,15 @@ export function NodeEditorDrawer({
                   onPatch={onPatch}
                 />
               )}
+
+              {node.kind === 'MEDIA_FROM_URL' && (
+                <MediaFromUrlEditor
+                  node={node}
+                  allIds={allIds}
+                  selfId={selectedId}
+                  onPatch={onPatch}
+                />
+              )}
             </Stack>
           </Box>
         </Box>
@@ -364,6 +375,84 @@ function DelayEditor({
               {id}
             </MenuItem>
           ))}
+      </TextField>
+    </Stack>
+  );
+}
+
+/**
+ * 4.P.3 — Editor mínimo del nodo MEDIA_FROM_URL. URL/headers/caption se siguen
+ * administrando por seed/API; el panel expone solo lo necesario para rewirearlo
+ * desde la UI sin tocar SQL: nextNodeId (ok) y errorNodeId.
+ */
+function MediaFromUrlEditor({
+  node,
+  allIds,
+  selfId,
+  onPatch,
+}: {
+  node: BotMediaFromUrlNode;
+  allIds: string[];
+  selfId: string;
+  onPatch: (patch: Partial<BotMediaFromUrlNode>) => void;
+}) {
+  const others = allIds.filter((id) => id !== selfId);
+  return (
+    <Stack spacing={2}>
+      <Typography variant="caption" color="text.secondary">
+        Tipo: <b>{node.mediaType}</b>
+      </Typography>
+      <TextField
+        label="URL"
+        size="small"
+        value={node.url ?? ''}
+        fullWidth
+        InputProps={{ readOnly: true }}
+        helperText="Configurada por seed/API. Acepta {{var}} en runtime."
+      />
+      {node.caption !== undefined && (
+        <TextField
+          label="Caption"
+          size="small"
+          value={node.caption}
+          fullWidth
+          InputProps={{ readOnly: true }}
+        />
+      )}
+      <TextField
+        select
+        label="Siguiente nodo (ok)"
+        size="small"
+        value={node.nextNodeId ?? ''}
+        onChange={(e) =>
+          onPatch({ nextNodeId: e.target.value || undefined } as Partial<BotMediaFromUrlNode>)
+        }
+        fullWidth
+      >
+        <MenuItem value="">— sin destino —</MenuItem>
+        {others.map((id) => (
+          <MenuItem key={id} value={id}>
+            {id}
+          </MenuItem>
+        ))}
+      </TextField>
+      <TextField
+        select
+        label="Nodo de error"
+        size="small"
+        value={node.errorNodeId ?? ''}
+        onChange={(e) =>
+          onPatch({ errorNodeId: e.target.value || undefined } as Partial<BotMediaFromUrlNode>)
+        }
+        fullWidth
+        helperText="Adónde caer si la descarga falla (HTTP error / redirect bloqueado / timeout)."
+      >
+        <MenuItem value="">— sin destino —</MenuItem>
+        {others.map((id) => (
+          <MenuItem key={id} value={id}>
+            {id}
+          </MenuItem>
+        ))}
       </TextField>
     </Stack>
   );
