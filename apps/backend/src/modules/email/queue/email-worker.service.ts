@@ -4,6 +4,8 @@ import { Worker, type Job } from 'bullmq';
 import Handlebars from 'handlebars';
 import type { RequestContext } from '@massivo/shared-types';
 import { TenantContext } from '../../../common/auth/tenant-context';
+import { ObservabilityContext } from '../../../common/observability/observability-context';
+import { EventLogger } from '../../../common/observability/event-logger.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EventsService } from '../../events/events.service';
 import { EmailSenderService } from '../sender/email-sender.service';
@@ -35,6 +37,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly suppression: SuppressionService,
     private readonly events: EventsService,
     private readonly quota: QuotaService,
+    private readonly eventLogger: EventLogger,
   ) {}
 
   private notifyReportUpdate(teamId: string, campaignId: string): void {
@@ -136,7 +139,10 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
       teamRole: 'ADMIN',
     };
 
-    return TenantContext.run(ctx, async () => {
+    const traceId = ObservabilityContext.newTraceId();
+    return ObservabilityContext.run(
+      { traceId, organizationId, teamId },
+      () => TenantContext.run(ctx, async () => {
       const report = await this.prisma.scoped.emailReport.findFirst({
         where: { id: reportId },
         include: {
@@ -146,6 +152,12 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
         },
       });
       if (!report) throw new Error(`EmailReport ${reportId} not found in tenant`);
+      // Augment context con identificadores del envío para que cualquier log
+      // descendiente (sender SMTP, suppression, tracking) salga correlacionado.
+      ObservabilityContext.augment({
+        reportId,
+        ...(report.campaignId ? { campaignId: report.campaignId } : {}),
+      });
 
       // Control actions: si la campaña está PAUSED, el worker difiere el job sin
       // tocar el report. Si fue force-closed (status COMPLETED + report PENDING),
@@ -194,6 +206,10 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           email: report.contact!.email,
           status: 'SUPPRESSED',
           error: supp.reason ?? 'suppressed',
+        });
+        this.eventLogger.emailEvent({
+          type: 'SUPPRESSED',
+          email: report.contact!.email,
         });
         await this.maybeCompleteCampaign(report.campaignId!, teamId);
         this.logger.log(`Report ${reportId} suprimido (${supp.reason}) — skip send`);
@@ -249,6 +265,7 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
         senderLabel,
       });
 
+      const sendStartedAt = Date.now();
       try {
         const result = await this.senders.sendForAccount(
           {
@@ -298,6 +315,15 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           status: 'SENT',
           messageId: result.messageId,
         });
+        this.eventLogger.emailSend({
+          to: report.contact!.email,
+          templateId: template.id,
+          campaignId: report.campaignId!,
+          smtpAccountId: account.id,
+          success: true,
+          smtpMessageId: result.messageId,
+          durationMs: Date.now() - sendStartedAt,
+        });
         await this.maybeCompleteCampaign(report.campaignId!, teamId);
         return { messageId: result.messageId };
       } catch (err) {
@@ -314,9 +340,19 @@ export class EmailWorkerService implements OnModuleInit, OnModuleDestroy {
           status: 'FAILED',
           error: msg.slice(0, 500),
         });
+        this.eventLogger.emailSend({
+          to: report.contact!.email,
+          templateId: template.id,
+          campaignId: report.campaignId!,
+          smtpAccountId: account.id,
+          success: false,
+          error: msg.slice(0, 200),
+          durationMs: Date.now() - sendStartedAt,
+        });
         await this.maybeCompleteCampaign(report.campaignId!, teamId);
         throw err;
       }
-    });
+    }),
+    );
   }
 }

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { RequestContext } from '@massivo/shared-types';
 import { TenantContext } from '../../../common/auth/tenant-context';
+import { ObservabilityContext } from '../../../common/observability/observability-context';
+import { EventLogger } from '../../../common/observability/event-logger.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EventsService } from '../../events/events.service';
 import { SuppressionService } from '../suppression/suppression.service';
@@ -30,6 +32,7 @@ export class SesWebhookService {
     private readonly prisma: PrismaService,
     private readonly suppression: SuppressionService,
     private readonly events: EventsService,
+    private readonly eventLogger: EventLogger,
   ) {}
 
   private notify(teamId: string, campaignId: string): void {
@@ -42,11 +45,16 @@ export class SesWebhookService {
   }
 
   async process(event: SesEventNotification): Promise<void> {
+    ObservabilityContext.augment({ webhookEventId: event.mail.messageId });
     const tenant = await this.resolveTenant(event);
     if (!tenant) {
       this.logger.warn(`SES event sin tenant resoluble (messageId=${event.mail.messageId}, type=${event.eventType})`);
       return;
     }
+    ObservabilityContext.augment({
+      organizationId: tenant.organizationId,
+      teamId: tenant.teamId,
+    });
 
     const ctx: RequestContext = {
       userId: 'system:ses-webhook',
@@ -70,6 +78,10 @@ export class SesWebhookService {
         this.logger.warn(`SES event para messageId ${event.mail.messageId} sin EmailReport en team ${tenant.teamId}`);
         return;
       }
+      ObservabilityContext.augment({
+        reportId: report.id,
+        ...(report.campaignId ? { campaignId: report.campaignId } : {}),
+      });
       // Email del destinatario: contact (campañas) o recipientEmail (transaccional).
       const recipientEmail = report.contact?.email ?? report.recipientEmail ?? '';
       // notify() solo aplica a reports de campaña — los transaccionales no
@@ -81,23 +93,52 @@ export class SesWebhookService {
       switch (event.eventType) {
         case 'Bounce':
           await this.handleBounce(report.id, recipientEmail, event);
+          this.eventLogger.emailEvent({
+            type: 'BOUNCED',
+            email: recipientEmail,
+            smtpMessageId: event.mail.messageId,
+          });
           notifyCampaign();
           break;
         case 'Complaint':
           await this.handleComplaint(report.id, recipientEmail, event);
+          this.eventLogger.emailEvent({
+            type: 'COMPLAINED',
+            email: recipientEmail,
+            smtpMessageId: event.mail.messageId,
+          });
           notifyCampaign();
           break;
         case 'Delivery':
           await this.handleDelivery(report.id);
+          this.eventLogger.emailEvent({
+            type: 'DELIVERY',
+            email: recipientEmail,
+            smtpMessageId: event.mail.messageId,
+          });
           break;
         case 'Open':
           await this.recordEvent(report.id, 'OPEN', event.open?.ipAddress, event.open?.userAgent);
+          this.eventLogger.emailEvent({
+            type: 'OPEN',
+            email: recipientEmail,
+            smtpMessageId: event.mail.messageId,
+            ip: event.open?.ipAddress,
+            userAgent: event.open?.userAgent,
+          });
           notifyCampaign();
           break;
         case 'Click':
           await this.recordEvent(
             report.id, 'CLICK', event.click?.ipAddress, event.click?.userAgent, event.click?.link,
           );
+          this.eventLogger.emailEvent({
+            type: 'CLICK',
+            email: recipientEmail,
+            smtpMessageId: event.mail.messageId,
+            ip: event.click?.ipAddress,
+            userAgent: event.click?.userAgent,
+          });
           notifyCampaign();
           break;
         default:

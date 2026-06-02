@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { SkipTenantScope } from '../../../common/auth/skip-tenant-scope.decorator';
+import { ObservabilityContext } from '../../../common/observability/observability-context';
+import { EventLogger } from '../../../common/observability/event-logger.service';
 import { SesWebhookService } from './ses-webhook.service';
 import { SnsValidatorAdapter } from './sns-validator.adapter';
 import type { SesEventNotification, SnsMessage } from './sns-types';
@@ -35,6 +37,7 @@ export class SesWebhookController {
   constructor(
     private readonly validator: SnsValidatorAdapter,
     private readonly webhook: SesWebhookService,
+    private readonly eventLogger: EventLogger,
   ) {}
 
   @Post()
@@ -67,11 +70,13 @@ export class SesWebhookController {
         this.logger.warn(`SubscribeURL fetch falló: ${err instanceof Error ? err.message : err}`);
       });
       this.logger.log(`SNS subscription confirmada: topic=${body.TopicArn}`);
+      this.eventLogger.webhookReceived({ provider: 'ses', eventType: 'SubscriptionConfirmation' });
       return { ok: true };
     }
 
     if (body.Type === 'UnsubscribeConfirmation') {
       this.logger.warn(`SNS topic ${body.TopicArn} se desuscribió`);
+      this.eventLogger.webhookReceived({ provider: 'ses', eventType: 'UnsubscribeConfirmation' });
       return { ok: true };
     }
 
@@ -81,7 +86,30 @@ export class SesWebhookController {
     } catch {
       throw new BadRequestException('Message no es JSON válido');
     }
-    await this.webhook.process(event);
+    this.eventLogger.webhookReceived({
+      provider: 'ses',
+      eventType: event.eventType,
+      eventId: event.mail.messageId,
+    });
+    const startedAt = Date.now();
+    try {
+      await this.webhook.process(event);
+      this.eventLogger.webhookProcessed({
+        provider: 'ses',
+        eventType: event.eventType,
+        success: true,
+        durationMs: Date.now() - startedAt,
+      });
+    } catch (err) {
+      this.eventLogger.webhookProcessed({
+        provider: 'ses',
+        eventType: event.eventType,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        error: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+      });
+      throw err;
+    }
     return { ok: true };
   }
 }

@@ -2,6 +2,8 @@ import { ConfigService } from '@nestjs/config';
 import { SesWebhookService } from './ses-webhook.service';
 import type { SesEventNotification } from './sns-types';
 
+const noopEventLogger = new Proxy({}, { get: () => () => undefined }) as never;
+
 describe('SesWebhookService', () => {
   let prisma: {
     team: { findUnique: jest.Mock };
@@ -37,6 +39,7 @@ describe('SesWebhookService', () => {
       prisma as never,
       suppression as never,
       events as never,
+      noopEventLogger,
     );
   });
 

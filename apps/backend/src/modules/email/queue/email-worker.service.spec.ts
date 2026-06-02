@@ -12,6 +12,8 @@ import { ConfigService } from '@nestjs/config';
 import { EmailWorkerService } from './email-worker.service';
 import type { EmailSendJob } from './email-queue.types';
 
+const noopEventLogger = new Proxy({}, { get: () => () => undefined }) as never;
+
 describe('EmailWorkerService.process', () => {
   let prismaScoped: {
     emailReport: { findFirst: jest.Mock; update: jest.Mock; count: jest.Mock };
@@ -61,6 +63,7 @@ describe('EmailWorkerService.process', () => {
       suppression as never,
       events as never,
       quota as never,
+      noopEventLogger,
     );
   });
 

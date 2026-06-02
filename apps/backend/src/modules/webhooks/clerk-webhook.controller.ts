@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { Webhook } from 'svix';
 import { ClerkWebhookService } from './clerk-webhook.service';
 import { Request, Response } from 'express';
+import { ObservabilityContext } from '../../common/observability/observability-context';
+import { EventLogger } from '../../common/observability/event-logger.service';
 
 @Controller('webhooks/clerk')
 export class ClerkWebhookController {
@@ -11,6 +13,7 @@ export class ClerkWebhookController {
   constructor(
     private readonly configService: ConfigService,
     private readonly clerkWebhookService: ClerkWebhookService,
+    private readonly eventLogger: EventLogger,
   ) {}
 
   @Post()
@@ -52,6 +55,16 @@ export class ClerkWebhookController {
 
     const { type } = evt;
 
+    // svix-id es el identificador único del delivery — útil para correlar
+    // recibido vs procesado y para deduplicar manualmente si hace falta.
+    ObservabilityContext.augment({ webhookEventId: svixId });
+    this.eventLogger.webhookReceived({
+      provider: 'clerk',
+      eventType: type,
+      eventId: svixId,
+    });
+    const startedAt = Date.now();
+
     try {
       switch (type) {
         case 'user.created':
@@ -85,9 +98,22 @@ export class ClerkWebhookController {
           this.logger.log(`Evento de Clerk ignorado: ${type}`);
       }
 
+      this.eventLogger.webhookProcessed({
+        provider: 'clerk',
+        eventType: type,
+        success: true,
+        durationMs: Date.now() - startedAt,
+      });
       return res.status(200).json({ success: true });
     } catch (error) {
       this.logger.error(`Error procesando evento ${type}`, error);
+      this.eventLogger.webhookProcessed({
+        provider: 'clerk',
+        eventType: type,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
+      });
       return res.status(500).json({ error: 'Error interno procesando webhook' });
     }
   }

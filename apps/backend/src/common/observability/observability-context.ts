@@ -18,6 +18,14 @@ export interface ObsFields {
   sessionId?: string;
   conversationId?: string;
   configId?: string;
+  // Email-specific — campaña y report individual. Permiten buscar todos los
+  // eventos de un envío puntual o de una campaña entera (incluso descendiente
+  // de SES webhooks vía resolveTenant).
+  campaignId?: string;
+  reportId?: string;
+  // Webhook receivers — identifica el evento externo (svix/SNS/messageId
+  // según provider) para que receive + process queden unidos.
+  webhookEventId?: string;
   // Tenant info — opcional cuando el entry point es un webhook público
   // (Meta/SES/Clerk) que aún no resolvió a qué org/team pertenece.
   organizationId?: string;

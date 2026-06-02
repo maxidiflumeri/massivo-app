@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { SesWebhookController } from './ses-webhook.controller';
 
+const noopEventLogger = new Proxy({}, { get: () => () => undefined }) as never;
+
 describe('SesWebhookController', () => {
   let validator: { validate: jest.Mock };
   let webhook: { process: jest.Mock };
@@ -10,7 +12,7 @@ describe('SesWebhookController', () => {
   beforeEach(() => {
     validator = { validate: jest.fn().mockResolvedValue(undefined) };
     webhook = { process: jest.fn().mockResolvedValue(undefined) };
-    controller = new SesWebhookController(validator as never, webhook as never);
+    controller = new SesWebhookController(validator as never, webhook as never, noopEventLogger);
     (globalThis as { fetch: unknown }).fetch = fetchMock;
     fetchMock.mockClear();
   });
