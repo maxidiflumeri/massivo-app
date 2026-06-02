@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import type { OrgRole, TeamRole } from '@massivo/prisma';
+import { ClerkSyncService } from '../../common/clerk/clerk-sync.service';
+import type { OrgRole } from '@massivo/prisma';
 
 /** 4.P: slug opaco URL-safe para webhooks. 18 bytes → 24 chars base64url. */
 function generateWebhookSlug(): string {
@@ -18,7 +19,10 @@ interface ClerkWebhookEvent {
 export class ClerkWebhookService {
   private readonly logger = new Logger(ClerkWebhookService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clerkSync: ClerkSyncService,
+  ) {}
 
   async handleUserCreated(evt: ClerkWebhookEvent): Promise<void> {
     const { id, email_addresses, first_name, last_name, image_url } = evt.data as Record<string, unknown>;
@@ -96,47 +100,24 @@ export class ClerkWebhookService {
       });
     }
 
-    // Si created_by está presente, asegurar que el creador sea OWNER en la org
+    // Si created_by está presente, asegurar que el creador sea OWNER en la org.
+    // Self-healing: si el User local todavía no existe (race: organization.created
+    // arribó antes que user.created del creator) lo traemos del SDK de Clerk.
     if (created_by) {
-      const creator = await this.prisma.user.findUnique({
+      let creator = await this.prisma.user.findUnique({
         where: { clerkUserId: created_by as string },
       });
+      if (!creator) {
+        creator = await this.clerkSync.backfillUser(created_by as string);
+      }
       if (creator) {
-        await this.prisma.orgMembership.upsert({
-          where: {
-            userId_organizationId: {
-              userId: creator.id,
-              organizationId: org.id,
-            },
-          },
-          update: { role: 'OWNER' },
-          create: {
-            userId: creator.id,
-            organizationId: org.id,
-            role: 'OWNER',
-          },
-        });
-
-        // Auto-asignar al team General como ADMIN
-        const generalTeam = await this.prisma.team.findFirst({
-          where: { organizationId: org.id, isDefault: true },
-        });
-        if (generalTeam) {
-          await this.prisma.teamMembership.upsert({
-            where: {
-              userId_teamId: {
-                userId: creator.id,
-                teamId: generalTeam.id,
-              },
-            },
-            update: { role: 'ADMIN' },
-            create: {
-              userId: creator.id,
-              teamId: generalTeam.id,
-              role: 'ADMIN',
-            },
-          });
-        }
+        await this.clerkSync.ensureOrgAndTeamMembership(creator.id, org.id, 'OWNER');
+      } else {
+        // Sin SDK key configurada o user inexistente en Clerk → log y seguimos.
+        // No tiramos throw porque el webhook de membership posterior puede recuperar.
+        this.logger.warn(
+          `organization.created creator ${created_by as string} no encontrado en Clerk — se reconciliará vía /me/context`,
+        );
       }
     }
 
@@ -174,77 +155,38 @@ export class ClerkWebhookService {
     }
   }
 
-  private mapOrgRoleToTeamRole(orgRole: OrgRole): TeamRole {
-    return orgRole === 'ADMIN' || orgRole === 'OWNER' ? 'ADMIN' : 'MEMBER';
-  }
-
   async handleOrganizationMembershipCreated(evt: ClerkWebhookEvent): Promise<void> {
     const { organization, public_user_data, role } = evt.data as Record<string, unknown>;
     const orgData = organization as { id: string };
     const userData = public_user_data as { user_id: string };
     const clerkRole = role as string;
 
-    const org = await this.prisma.organization.findUnique({
+    // Self-healing: si user u org no existen localmente (race condition entre
+    // user.created / organization.created / organizationMembership.created),
+    // los traemos del SDK de Clerk. Esto elimina la dependencia de orden:
+    // el evento ya no se pierde aunque llegue antes que sus prerrequisitos.
+    let org = await this.prisma.organization.findUnique({
       where: { clerkOrgId: orgData.id },
     });
+    if (!org) org = await this.clerkSync.backfillOrganization(orgData.id);
 
-    const user = await this.prisma.user.findUnique({
+    let user = await this.prisma.user.findUnique({
       where: { clerkUserId: userData.user_id },
     });
+    if (!user) user = await this.clerkSync.backfillUser(userData.user_id);
 
     if (!org || !user) {
-      this.logger.warn(
-        `Membership created pero org o user no existe localmente todavía: ${orgData.id} - ${userData.user_id}`,
+      // SDK deshabilitado o entidad inexistente en Clerk (caso muy raro).
+      // Tiramos throw para que Svix reintente con backoff.
+      throw new Error(
+        `Membership backfill incompleto: clerkOrg=${orgData.id} clerkUser=${userData.user_id} — SDK no configurado o entidad inexistente`,
       );
-      return;
     }
 
-    // Si el user ya es OWNER, no degradar su rol por un webhook de membership
-    const existingMembership = await this.prisma.orgMembership.findUnique({
-      where: { userId_organizationId: { userId: user.id, organizationId: org.id } },
-    });
     const mappedRole = this.mapClerkRoleToOrgRole(clerkRole);
-    const finalRole: OrgRole = existingMembership?.role === 'OWNER' ? 'OWNER' : mappedRole;
+    await this.clerkSync.ensureOrgAndTeamMembership(user.id, org.id, mappedRole);
 
-    await this.prisma.orgMembership.upsert({
-      where: {
-        userId_organizationId: {
-          userId: user.id,
-          organizationId: org.id,
-        },
-      },
-      update: { role: finalRole },
-      create: {
-        userId: user.id,
-        organizationId: org.id,
-        role: finalRole,
-      },
-    });
-
-    // Auto-asignar al team General por defecto
-    const generalTeam = await this.prisma.team.findFirst({
-      where: { organizationId: org.id, isDefault: true },
-    });
-
-    if (generalTeam) {
-      const teamRole = this.mapOrgRoleToTeamRole(finalRole);
-      await this.prisma.teamMembership.upsert({
-        where: {
-          userId_teamId: {
-            userId: user.id,
-            teamId: generalTeam.id,
-          },
-        },
-        update: {},
-        create: {
-          userId: user.id,
-          teamId: generalTeam.id,
-          role: teamRole,
-        },
-      });
-    }
-
-    this.logger.log(`Membership created for user ${user.id} in org ${org.id} as ${finalRole}`);
+    this.logger.log(`Membership created for user ${user.id} in org ${org.id} as ${mappedRole}`);
   }
 
   async handleOrganizationMembershipUpdated(evt: ClerkWebhookEvent): Promise<void> {

@@ -5,6 +5,7 @@ import { WinstonModule } from 'nest-winston';
 import { winstonConfig } from './common/logger/winston.config';
 import { HealthController } from './common/health/health.controller';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { ClerkModule } from './common/clerk/clerk.module';
 import { AuthModule } from './common/auth/auth.module';
 import { AuditLogModule } from './common/audit/audit-log.module';
 import { SecurityModule } from './common/security/security.module';
@@ -30,6 +31,7 @@ import { DevModule } from './modules/dev/dev.module';
     WinstonModule.forRoot(winstonConfig),
     TerminusModule,
     PrismaModule,
+    ClerkModule,
     AuthModule,
     AuditLogModule,
     SecurityModule,

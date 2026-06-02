@@ -3,19 +3,23 @@ import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MeService } from './me.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ClerkSyncService } from '../../common/clerk/clerk-sync.service';
 
 describe('MeService', () => {
   let service: MeService;
   let prismaMock: { user: { findUnique: jest.Mock } };
+  let clerkSyncMock: { reconcileUserMemberships: jest.Mock };
 
   beforeEach(async () => {
     prismaMock = { user: { findUnique: jest.fn() } };
+    clerkSyncMock = { reconcileUserMemberships: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         MeService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(undefined) } },
+        { provide: ClerkSyncService, useValue: clerkSyncMock },
       ],
     }).compile();
 
@@ -25,6 +29,22 @@ describe('MeService', () => {
   it('throws 404 si el usuario no existe localmente', async () => {
     prismaMock.user.findUnique.mockResolvedValue(null);
     await expect(service.getContext('clerk-missing')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('llama a reconcileUserMemberships antes de leer la DB local', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(null);
+    await expect(service.getContext('clerk-x')).rejects.toBeInstanceOf(NotFoundException);
+    expect(clerkSyncMock.reconcileUserMemberships).toHaveBeenCalledWith('clerk-x');
+  });
+
+  it('degrada gracefully si reconcile falla (Clerk down) y sigue con data local', async () => {
+    clerkSyncMock.reconcileUserMemberships.mockRejectedValueOnce(new Error('clerk timeout'));
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'u1', email: 'a@b.com', name: null, avatarUrl: null, orgMemberships: [],
+    });
+    const result = await service.getContext('clerk_u1');
+    expect(result.organizations).toEqual([]);
+    expect(result.user.id).toBe('u1');
   });
 
   it('mapea user + 2 orgs (una con 2 teams) + roles + plan', async () => {

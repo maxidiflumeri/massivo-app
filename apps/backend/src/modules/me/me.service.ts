@@ -1,17 +1,38 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ClerkSyncService } from '../../common/clerk/clerk-sync.service';
 import { MeContextResponse } from '@massivo/shared-types';
 import { computePlanFlags } from '@massivo/permissions';
 
 @Injectable()
 export class MeService {
+  private readonly logger = new Logger(MeService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly clerkSync: ClerkSyncService,
   ) {}
 
+  /**
+   * Safety net 4.R: incluso si los webhooks de Clerk fallaron (race o outage
+   * de Svix), reconciliamos contra el SDK antes de armar la respuesta. El
+   * path feliz es no-op (todas las memberships ya están sincronizadas); el
+   * costo real solo aplica cuando hay un faltante, lo cual es muy raro.
+   * No tiramos errores hacia el frontend si Clerk está down — la sesión se
+   * abrió con el JWT, así que el user es válido; degradamos a "lo que
+   * tengamos local".
+   */
   async getContext(clerkUserId: string): Promise<MeContextResponse> {
+    try {
+      await this.clerkSync.reconcileUserMemberships(clerkUserId);
+    } catch (err) {
+      this.logger.warn(
+        `reconcileUserMemberships falló para clerkUserId=${clerkUserId}, sigo con la data local: ${(err as Error).message}`,
+      );
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { clerkUserId },
       include: {
