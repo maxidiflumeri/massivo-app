@@ -177,7 +177,42 @@ export class TransactionalService {
         data: { status: 'FAILED', error: error.slice(0, 1000) },
       });
       this.logger.warn(`Transactional FAILED ${report.id} → ${dto.toEmail}: ${error}`);
-      throw new BadRequestException(`Error enviando mail: ${error}`);
+      // Clasificar el error para que el caller pueda mostrar mensajes
+      // amigables (en particular el caso típico de SES sandbox donde el
+      // destinatario no está verificado).
+      const code = classifySesError(error);
+      throw new BadRequestException({
+        message: `Error enviando mail: ${error}`,
+        code,
+        recipient: dto.toEmail,
+      });
     }
   }
+}
+
+/**
+ * Identifica códigos típicos del envío SES para que el cliente (bot, etc.)
+ * pueda ramificar el mensaje de UX sin parsear strings libres.
+ *  - `recipient-not-verified`: SES sandbox + destino no agregado como identity.
+ *  - `sender-not-verified`: el `From` no es una identidad verificada.
+ *  - `rate-limited`: tope per-second o per-24h del SES.
+ *  - `quota-exceeded`: app-level quota (este service ya throw 403 antes,
+ *     pero por si SES lo devuelve también).
+ *  - `unknown`: fallback genérico.
+ */
+function classifySesError(msg: string): string {
+  const lower = msg.toLowerCase();
+  if (lower.includes('not verified') && lower.includes('email address')) {
+    return 'recipient-not-verified';
+  }
+  if (lower.includes('mailfromdomainnotverified') || lower.includes('sender')) {
+    return 'sender-not-verified';
+  }
+  if (lower.includes('throttling') || lower.includes('maximum sending rate')) {
+    return 'rate-limited';
+  }
+  if (lower.includes('quota')) {
+    return 'quota-exceeded';
+  }
+  return 'unknown';
 }
