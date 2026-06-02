@@ -1,11 +1,13 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   NotFoundException,
   Param,
   Post,
+  Query,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -18,7 +20,10 @@ import { Audit } from '../../../common/audit/audit.decorator';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { TransactionalService } from './transactional.service';
-import { TransactionalSendDto } from './transactional.dto';
+import {
+  TransactionalSendDto,
+  ListTransactionalReportsDto,
+} from './transactional.dto';
 import type { AppAbility } from '@massivo/permissions';
 
 /**
@@ -54,6 +59,41 @@ export class TransactionalController {
   })
   send(@Body() dto: TransactionalSendDto) {
     return this.service.send(dto);
+  }
+
+  /**
+   * Lista paginada de reports transaccionales (EmailReport WHERE campaignId
+   * IS NULL). Filtros: rango de fechas y status. Para la pantalla de
+   * "Email → Transaccionales" del panel.
+   */
+  @Get('reports')
+  @UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
+  @UseInterceptors(TenantContextInterceptor)
+  @CheckPolicies((ability: AppAbility) => ability.can('read', 'Campaign'))
+  async listReports(@Query() q: ListTransactionalReportsDto) {
+    return this.service.listReports(q);
+  }
+
+  /**
+   * Detalle de un report transaccional con timeline de eventos.
+   */
+  @Get('reports/:id')
+  @UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
+  @UseInterceptors(TenantContextInterceptor)
+  @CheckPolicies((ability: AppAbility) => ability.can('read', 'Campaign'))
+  async getReport(@Param('id') id: string) {
+    return this.service.getReportDetail(id);
+  }
+
+  /**
+   * Métricas agregadas de transaccionales en una ventana temporal.
+   */
+  @Get('metrics')
+  @UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
+  @UseInterceptors(TenantContextInterceptor)
+  @CheckPolicies((ability: AppAbility) => ability.can('read', 'Campaign'))
+  async metrics(@Query('days') days?: string) {
+    return this.service.getMetrics(days ? Number(days) : 30);
   }
 
   @Post('by-slug/:slug')

@@ -5,13 +5,13 @@ import jwt from 'jsonwebtoken';
 /**
  * Payload del JWT de tracking. Mantenido corto (claves de 1 char) para que las URLs
  * inline en email no sean enormes.
- *   r = reportId, o = orgId, t = teamId, c = campaignId
+ *   r = reportId, o = orgId, t = teamId, c = campaignId (vacío para transaccionales)
  */
 export interface TrackingPayload {
   r: string;
   o: string;
   t: string;
-  c: string;
+  c: string; // Vacío "" para envíos transaccionales (sin campaña asociada).
 }
 
 @Injectable()

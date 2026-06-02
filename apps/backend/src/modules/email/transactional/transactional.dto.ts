@@ -2,12 +2,17 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsDateString,
   IsEmail,
+  IsIn,
+  IsInt,
   IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -61,4 +66,42 @@ export class TransactionalSendDto {
   @IsOptional()
   @IsString()
   smtpAccountId?: string;
+}
+
+const REPORT_STATUSES = ['PENDING', 'SENT', 'FAILED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED'] as const;
+type ReportStatus = (typeof REPORT_STATUSES)[number];
+
+export class ListTransactionalReportsDto {
+  /** ISO date inclusive (ej. "2026-06-01"). Default: 7 días atrás. */
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  /** ISO date inclusive. Default: hoy. */
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+
+  @IsOptional()
+  @IsIn(REPORT_STATUSES)
+  status?: ReportStatus;
+
+  /** Filtra por substring del recipient (LIKE %query%). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  recipient?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  page?: number = 1;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @Type(() => Number)
+  pageSize?: number = 50;
 }

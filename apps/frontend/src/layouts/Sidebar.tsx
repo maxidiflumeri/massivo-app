@@ -98,6 +98,11 @@ const NAV_GROUPS: NavGroupSpec[] = [
         icon: <BlockIcon fontSize="small" />,
       },
       {
+        to: '/dashboard/email/transactional',
+        label: 'Transaccionales',
+        icon: <BoltIcon fontSize="small" />,
+      },
+      {
         to: '/dashboard/email/metrics',
         label: 'Métricas',
         icon: <InsightsIcon fontSize="small" />,

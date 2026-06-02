@@ -15,6 +15,7 @@ import { AddDomainPage } from './features/email/domains/AddDomainPage';
 import { DomainDetailPage } from './features/email/domains/DomainDetailPage';
 import { SuppressionsPage } from './features/email/suppressions/SuppressionsPage';
 import { MetricsPage } from './features/email/metrics/MetricsPage';
+import { TransactionalListPage } from './features/email/transactional/TransactionalListPage';
 import { WapiCampaignsListPage } from './features/wapi/campaigns/WapiCampaignsListPage';
 import { WapiCampaignDetailPage } from './features/wapi/campaigns/WapiCampaignDetailPage';
 import { WapiConfigsPage } from './features/wapi/configs/WapiConfigsPage';
@@ -68,6 +69,7 @@ export function App() {
         <Route path="email/domains/:id" element={<DomainDetailPage />} />
         <Route path="email/suppressions" element={<SuppressionsPage />} />
         <Route path="email/metrics" element={<MetricsPage />} />
+        <Route path="email/transactional" element={<TransactionalListPage />} />
         <Route path="wapi/campaigns" element={<WapiCampaignsListPage />} />
         <Route path="wapi/campaigns/:id" element={<WapiCampaignDetailPage />} />
         <Route path="wapi/configs" element={<WapiConfigsPage />} />

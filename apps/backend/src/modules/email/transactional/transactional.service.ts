@@ -10,11 +10,16 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { QuotaService } from '../../../common/quota/quota.service';
 import { EmailSenderService } from '../sender/email-sender.service';
+import { TrackingTokenService } from '../tracking/tracking-token.service';
+import { prepareHtmlForTracking } from '../tracking/prepare-html';
 import {
   AttachmentFetchError,
   AttachmentsFetcherService,
 } from './attachments-fetcher.service';
-import type { TransactionalSendDto } from './transactional.dto';
+import type {
+  TransactionalSendDto,
+  ListTransactionalReportsDto,
+} from './transactional.dto';
 
 export interface TransactionalSendResult {
   reportId: string;
@@ -30,11 +35,13 @@ export interface TransactionalSendResult {
  *
  * Diferencias vs. email-campaigns:
  *  - Síncrono: no se encola en BullMQ, se envía y persiste en la misma llamada.
- *  - Sin tracking: no rewriting de links ni pixel de open (transaccional
- *    históricamente no usa marketing tracking; lo agregamos si lo piden).
  *  - Sin EmailContact: el destinatario se guarda en EmailReport.recipientEmail.
  *  - Cuenta contra la misma quota de plan (`emailsPerMonth`): un report
  *    transaccional con `sentAt` set cuenta igual que uno de campaña.
+ *  - Tracking de opens/clicks aplicado (mismo prepareHtmlForTracking que
+ *    campañas) para que los reports muestren engagement. El `c` del
+ *    trackingToken queda vacío para distinguir transaccionales del lado
+ *    consumer del payload.
  */
 @Injectable()
 export class TransactionalService {
@@ -45,6 +52,7 @@ export class TransactionalService {
     private readonly senders: EmailSenderService,
     private readonly quota: QuotaService,
     private readonly fetcher: AttachmentsFetcherService,
+    private readonly tokens: TrackingTokenService,
   ) {}
 
   async send(dto: TransactionalSendDto): Promise<TransactionalSendResult> {
@@ -117,7 +125,8 @@ export class TransactionalService {
     }
 
     // 6. Crear EmailReport en estado PENDING (sin campaignId/contactId, con
-    //    recipientEmail). Si el send falla, lo dejamos en FAILED con error.
+    //    recipientEmail). El trackingToken se firma con el id del report y
+    //    queda persistido para que open/click endpoints lo resuelvan.
     const report = await this.prisma.emailReport.create({
       data: {
         organizationId: ctx.organizationId,
@@ -129,7 +138,32 @@ export class TransactionalService {
       },
     });
 
-    // 7. Enviar.
+    const trackingToken = this.tokens.sign({
+      r: report.id,
+      o: ctx.organizationId,
+      t: account.teamId,
+      c: '', // Transaccional sin campaña — el consumer ramea por c vacío.
+    });
+    await this.prisma.emailReport.update({
+      where: { id: report.id },
+      data: { trackingToken },
+    });
+
+    // 7. Aplicar tracking (pixel + click rewrite). El unsubscribe scope queda
+    //    como `scope=transactional` para distinguir del CAMPAIGN scope; el
+    //    handler de unsubscribe lo marca como global del recipiente.
+    const publicUrl = this.tokens.publicUrl();
+    const unsubscribeUrl = `${publicUrl}/api/unsubscribe?t=${encodeURIComponent(trackingToken)}&scope=transactional`;
+    const senderLabel = account.fromName;
+    const htmlTracked = prepareHtmlForTracking({
+      html,
+      token: trackingToken,
+      publicUrl,
+      unsubscribeUrl,
+      senderLabel,
+    });
+
+    // 8. Enviar.
     try {
       const sendResult = await this.senders.sendForAccount(
         {
@@ -148,8 +182,14 @@ export class TransactionalService {
         {
           to: dto.toEmail,
           subject,
-          html,
+          html: htmlTracked,
           attachments,
+          // RFC 8058: header obligatorio para envíos masivos (Gmail/Yahoo 2024)
+          // pero también aplica a transaccionales si pasamos el límite.
+          headers: {
+            'List-Unsubscribe': `<${unsubscribeUrl}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          },
         },
       );
 
@@ -187,6 +227,146 @@ export class TransactionalService {
         recipient: dto.toEmail,
       });
     }
+  }
+
+  /**
+   * Lista paginada de reports transaccionales con filtros opcionales.
+   * Filtra por `campaignId IS NULL` para no mezclar con campañas.
+   */
+  async listReports(q: ListTransactionalReportsDto) {
+    const ctx = TenantContext.current();
+    if (!ctx) throw new ForbiddenException('No hay contexto de tenant');
+
+    const toDate = q.toDate ? new Date(q.toDate) : new Date();
+    const fromDate = q.fromDate
+      ? new Date(q.fromDate)
+      : new Date(toDate.getTime() - 7 * 24 * 3600 * 1000);
+    // Incluir todo el día final
+    toDate.setUTCHours(23, 59, 59, 999);
+
+    const page = q.page ?? 1;
+    const pageSize = q.pageSize ?? 50;
+
+    const where = {
+      organizationId: ctx.organizationId,
+      campaignId: null,
+      createdAt: { gte: fromDate, lte: toDate },
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.recipient ? { recipientEmail: { contains: q.recipient, mode: 'insensitive' as const } } : {}),
+    };
+
+    const [total, items] = await Promise.all([
+      this.prisma.emailReport.count({ where }),
+      this.prisma.emailReport.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          recipientEmail: true,
+          status: true,
+          subject: true,
+          createdAt: true,
+          sentAt: true,
+          firstOpenedAt: true,
+          firstClickedAt: true,
+          smtpMessageId: true,
+          error: true,
+        },
+      }),
+    ]);
+
+    return { items, total, page, pageSize };
+  }
+
+  /**
+   * Detalle de un report transaccional incluyendo timeline de eventos.
+   */
+  async getReportDetail(id: string) {
+    const ctx = TenantContext.current();
+    if (!ctx) throw new ForbiddenException('No hay contexto de tenant');
+
+    const report = await this.prisma.emailReport.findFirst({
+      where: { id, organizationId: ctx.organizationId, campaignId: null },
+      select: {
+        id: true,
+        recipientEmail: true,
+        status: true,
+        subject: true,
+        html: true,
+        createdAt: true,
+        sentAt: true,
+        firstOpenedAt: true,
+        firstClickedAt: true,
+        smtpMessageId: true,
+        error: true,
+        events: {
+          orderBy: { occurredAt: 'desc' },
+          select: {
+            id: true,
+            type: true,
+            occurredAt: true,
+            ip: true,
+            userAgent: true,
+            targetUrl: true,
+            deviceFamily: true,
+            osName: true,
+            browserName: true,
+          },
+        },
+      },
+    });
+    if (!report) {
+      throw new NotFoundException(`Report transaccional ${id} no encontrado`);
+    }
+    return report;
+  }
+
+  /**
+   * Métricas agregadas de transaccionales en una ventana de N días.
+   * Devuelve totales y tasas de open/click/bounce.
+   */
+  async getMetrics(days: number) {
+    const ctx = TenantContext.current();
+    if (!ctx) throw new ForbiddenException('No hay contexto de tenant');
+
+    const clampedDays = Math.max(1, Math.min(days || 30, 365));
+    const from = new Date(Date.now() - clampedDays * 24 * 3600 * 1000);
+    const where = {
+      organizationId: ctx.organizationId,
+      campaignId: null,
+      createdAt: { gte: from },
+    };
+
+    const [sent, failed, opens, clicks, bounces] = await Promise.all([
+      this.prisma.emailReport.count({ where: { ...where, status: 'SENT' } }),
+      this.prisma.emailReport.count({ where: { ...where, status: 'FAILED' } }),
+      this.prisma.emailReport.count({
+        where: { ...where, firstOpenedAt: { not: null } },
+      }),
+      this.prisma.emailReport.count({
+        where: { ...where, firstClickedAt: { not: null } },
+      }),
+      this.prisma.emailReport.count({
+        where: { ...where, status: 'BOUNCED' },
+      }),
+    ]);
+
+    const rate = (n: number, d: number) =>
+      d === 0 ? 0 : Math.round((n / d) * 10000) / 100;
+
+    return {
+      days: clampedDays,
+      sent,
+      failed,
+      opens,
+      clicks,
+      bounces,
+      openRate: rate(opens, sent),
+      clickRate: rate(clicks, sent),
+      bounceRate: rate(bounces, sent),
+    };
   }
 }
 
