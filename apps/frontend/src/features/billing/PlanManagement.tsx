@@ -255,7 +255,16 @@ export function PlanManagement() {
         })}
       </Stack>
 
-      <Dialog open={!!targetPlan} onClose={() => !submitting && setTargetPlan(null)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={!!targetPlan}
+        onClose={() => !submitting && setTargetPlan(null)}
+        maxWidth="xs"
+        fullWidth
+        // Clerk pone su <OrganizationProfile> modal con zIndex ~9999;
+        // sin esto, el Dialog MUI default (zIndex 1300) queda detrás del
+        // modal de Clerk y el click parece "no hacer nada".
+        sx={{ zIndex: 10500 }}
+      >
         <DialogTitle>Cambiar a {targetPlan?.name}</DialogTitle>
         <DialogContent>
           <DialogContentText>
