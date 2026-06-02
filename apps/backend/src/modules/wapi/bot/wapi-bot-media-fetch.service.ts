@@ -206,6 +206,9 @@ export class WapiBotMediaFetchService {
       status = res.status;
 
       if (res.status >= 300 && res.status < 400) {
+        this.logger.warn(
+          `MEDIA_FROM_URL redirect status=${res.status} url=${urlInterp} config=${options.configId} node=${options.nodeId}`,
+        );
         return {
           ok: false,
           status: res.status,
@@ -214,6 +217,9 @@ export class WapiBotMediaFetchService {
         };
       }
       if (res.status < 200 || res.status >= 300) {
+        this.logger.warn(
+          `MEDIA_FROM_URL http-error status=${res.status} url=${urlInterp} config=${options.configId} node=${options.nodeId}`,
+        );
         return {
           ok: false,
           status: res.status,
