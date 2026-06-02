@@ -34,8 +34,11 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: "10m"
-        max-file: "5"
+        # Retención ~30+ días de logs estructurados (asumiendo ~40 MB/día con
+        # observabilidad activa). Dozzle scrollea sobre todo este histórico.
+        # Si el volumen crece a 200+ MB/día, evaluar mover a CloudWatch Logs.
+        max-size: "100m"
+        max-file: "14"
 
   redis:
     image: redis:7-alpine
@@ -56,7 +59,7 @@ services:
       driver: json-file
       options:
         max-size: "10m"
-        max-file: "3"
+        max-file: "5"
 
   # Visor de logs vía web (logs.massivo.app).
   # Lee el socket de Docker read-only y stream logs por WebSocket — sin DB,
