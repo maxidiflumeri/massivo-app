@@ -6,6 +6,8 @@ export interface WapiConfigListItem {
   isActive: boolean;
   isTestMode: boolean;
   createdAt: string;
+  /** Phase 0b (multi-canal): bot conectado a este canal (null si ninguno). */
+  botId: string | null;
 }
 
 export interface WapiConfigDetail extends WapiConfigListItem {

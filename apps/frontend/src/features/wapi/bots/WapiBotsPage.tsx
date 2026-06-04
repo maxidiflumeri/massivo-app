@@ -58,22 +58,23 @@ import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useConfirm } from '../../../feedback/ConfirmProvider';
 import { useColorMode } from '../../../theme/ThemeProvider';
-import type { WapiConfigListItem } from '../configs/types';
-import { botApi } from './api';
+import { botsApi } from './api';
 import type {
   BotCaptureNode,
   BotConditionNode,
-  BotConfigSnapshot,
   BotFlow,
+  BotListItem,
   BotMediaNode,
   BotMenuNode,
   BotMessageNode,
   BotNode,
   BotNodeKind,
   BotRouter,
+  BotSnapshot,
   BotTopic,
   BotVariable,
 } from './types';
+import AddIcon from '@mui/icons-material/Add';
 import { autoLayout } from './flowLayout';
 import { nodeTypes } from './nodeViews';
 import { NodeEditorDrawer } from './NodeEditorDrawer';
@@ -143,7 +144,7 @@ function nodeIdPrefix(kind: BotNodeKind): string {
   return 'handoff';
 }
 
-function materializeTopics(snap: BotConfigSnapshot): BotTopic[] {
+function materializeTopics(snap: BotSnapshot): BotTopic[] {
   // 4.O.3 — preferimos draft. El editor SIEMPRE arranca en el último estado
   // de borrador para no perder cambios; si no hay draft cargamos publicado.
   if (snap.botTopicsDraft && snap.botTopicsDraft.length > 0) return snap.botTopicsDraft;
@@ -182,9 +183,10 @@ function BotsEditorInner() {
   const api = useApi();
   const notify = useNotify();
   const confirm = useConfirm();
-  const [configs, setConfigs] = useState<WapiConfigListItem[] | null>(null);
-  const [selectedConfigId, setSelectedConfigId] = useState<string>('');
-  const [snapshot, setSnapshot] = useState<BotConfigSnapshot | null>(null);
+  const [bots, setBots] = useState<BotListItem[] | null>(null);
+  const [selectedBotId, setSelectedBotId] = useState<string>('');
+  const [snapshot, setSnapshot] = useState<BotSnapshot | null>(null);
+  const [creating, setCreating] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [ttl, setTtl] = useState(30);
   const [topics, setTopics] = useState<BotTopic[]>([
@@ -213,29 +215,33 @@ function BotsEditorInner() {
   const activeTopic = activeIdx >= 0 ? topics[activeIdx] : topics[0];
   const flow = activeTopic?.flow ?? EMPTY_FLOW;
 
-  // Cargar lista de configs.
+  // Para subir media de nodos necesitamos un canal WhatsApp conectado (los
+  // mediaId de Meta son por-WABA). Usamos el primero conectado al bot.
+  const mediaConfigId = snapshot?.connectedChannels[0]?.configId ?? '';
+
+  // Cargar lista de bots.
   useEffect(() => {
     void (async () => {
       try {
-        const list = await api.get<WapiConfigListItem[]>('/api/wapi/configs');
-        setConfigs(list);
-        if (list.length > 0) setSelectedConfigId(list[0].id);
+        const list = await botsApi.list(api);
+        setBots(list);
+        if (list.length > 0) setSelectedBotId(list[0].botId);
       } catch (e) {
-        notify.error((e as Error).message || 'No se pudo cargar la lista de números');
-        setConfigs([]);
+        notify.error((e as Error).message || 'No se pudo cargar la lista de bots');
+        setBots([]);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cargar snapshot al cambiar de config.
+  // Cargar snapshot al cambiar de bot.
   useEffect(() => {
-    if (!selectedConfigId) return;
+    if (!selectedBotId) return;
     setLoading(true);
     setError(null);
     void (async () => {
       try {
-        const snap = await botApi.get(api, selectedConfigId);
+        const snap = await botsApi.get(api, selectedBotId);
         setSnapshot(snap);
         setEnabled(snap.botEnabled);
         setTtl(snap.botSessionTtlMin);
@@ -249,7 +255,7 @@ function BotsEditorInner() {
         setVariables(snap.botVariablesDraft ?? snap.botVariables ?? []);
         setActiveTopicId(laidOut[0]?.id ?? 'default');
         setView('list');
-        layoutAppliedFor.current = selectedConfigId;
+        layoutAppliedFor.current = selectedBotId;
         setSelectedNodeId(null);
         setDrawerOpen(false);
         setSandboxOpen(false);
@@ -260,7 +266,7 @@ function BotsEditorInner() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedConfigId]);
+  }, [selectedBotId]);
 
   const updateActiveFlow = useCallback(
     (updater: (prev: BotFlow) => BotFlow) => {
@@ -781,6 +787,50 @@ function BotsEditorInner() {
     });
   }
 
+  /** Crea un bot nuevo (Phase 0b) y lo selecciona en el editor. */
+  async function handleCreateBot() {
+    const name = window.prompt('Nombre del nuevo bot:')?.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      const snap = await botsApi.create(api, name);
+      const list = await botsApi.list(api);
+      setBots(list);
+      setSelectedBotId(snap.botId);
+      notify.success('Bot creado');
+    } catch (e) {
+      notify.error((e as Error).message || 'No se pudo crear el bot');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  /** Borra el bot seleccionado. Los canales conectados quedan sin bot. */
+  async function handleDeleteBot() {
+    if (!selectedBotId || !snapshot) return;
+    const connected = snapshot.connectedChannels.length;
+    const ok = await confirm({
+      title: 'Borrar bot',
+      message:
+        `Vas a borrar el bot "${snapshot.name}".` +
+        (connected > 0 ? ` Está conectado a ${connected} canal(es); quedarán sin bot.` : '') +
+        ' Esta acción no se puede deshacer.',
+      destructive: true,
+      confirmText: 'Borrar',
+    });
+    if (!ok) return;
+    try {
+      await botsApi.remove(api, selectedBotId);
+      const list = await botsApi.list(api);
+      setBots(list);
+      setSelectedBotId(list[0]?.botId ?? '');
+      if (list.length === 0) setSnapshot(null);
+      notify.success('Bot borrado');
+    } catch (e) {
+      notify.error((e as Error).message || 'No se pudo borrar el bot');
+    }
+  }
+
   /**
    * 4.O.3 — Guarda el bot como BORRADOR. El motor de prod NO ve estos cambios
    * hasta que el usuario haga clic en "Publicar". Los flags de runtime
@@ -788,7 +838,7 @@ function BotsEditorInner() {
    * porque no son contenido del flow — son knobs de operación.
    */
   async function handleSaveDraft() {
-    if (!selectedConfigId) return;
+    if (!selectedBotId) return;
     if (!topicsValidation.ok) {
       notify.error('Hay temas con errores. Revisá antes de guardar el borrador.');
       return;
@@ -804,7 +854,7 @@ function BotsEditorInner() {
     setSaving(true);
     setError(null);
     try {
-      const snap = await botApi.saveDraft(api, selectedConfigId, {
+      const snap = await botsApi.saveDraft(api, selectedBotId, {
         botTopics: topics,
         botRouter: router,
         botVariables: variables,
@@ -814,7 +864,7 @@ function BotsEditorInner() {
       const ttlChanged = snapshot ? snap.botSessionTtlMin !== ttl : true;
       let final = snap;
       if (enabledChanged || ttlChanged) {
-        final = await botApi.update(api, selectedConfigId, {
+        final = await botsApi.update(api, selectedBotId, {
           ...(enabledChanged ? { botEnabled: enabled } : {}),
           ...(ttlChanged ? { botSessionTtlMin: ttl } : {}),
         });
@@ -836,7 +886,7 @@ function BotsEditorInner() {
    * está empujando live.
    */
   async function handlePublish() {
-    if (!selectedConfigId || !snapshot) return;
+    if (!selectedBotId || !snapshot) return;
     if (!fullyValid) {
       notify.error('Hay errores en el bot. No se puede publicar.');
       return;
@@ -860,7 +910,7 @@ function BotsEditorInner() {
     setPublishing(true);
     setError(null);
     try {
-      const snap = await botApi.publish(api, selectedConfigId);
+      const snap = await botsApi.publish(api, selectedBotId);
       setSnapshot(snap);
       notify.success('Bot publicado');
     } catch (e) {
@@ -876,7 +926,7 @@ function BotsEditorInner() {
    * 4.O.3 — Descarta el borrador y recarga el editor con la versión publicada.
    */
   async function handleDiscardDraft() {
-    if (!selectedConfigId || !snapshot) return;
+    if (!selectedBotId || !snapshot) return;
     const ok = await confirm({
       title: 'Descartar borrador',
       message:
@@ -888,7 +938,7 @@ function BotsEditorInner() {
     setSaving(true);
     setError(null);
     try {
-      const snap = await botApi.discardDraft(api, selectedConfigId);
+      const snap = await botsApi.discardDraft(api, selectedBotId);
       setSnapshot(snap);
       const incomingTopics = materializeTopics(snap);
       const laidOut = incomingTopics.map((t) => {
@@ -943,30 +993,58 @@ function BotsEditorInner() {
           </Typography>
         </Stack>
         <FormControl size="small" sx={{ minWidth: 220 }}>
-          <InputLabel id="bot-config-label">Número</InputLabel>
+          <InputLabel id="bot-select-label">Bot</InputLabel>
           <Select
-            labelId="bot-config-label"
-            label="Número"
-            value={selectedConfigId}
-            onChange={(e) => setSelectedConfigId(e.target.value)}
-            disabled={configs === null}
+            labelId="bot-select-label"
+            label="Bot"
+            value={selectedBotId}
+            onChange={(e) => setSelectedBotId(e.target.value)}
+            disabled={bots === null || bots.length === 0}
           >
-            {configs?.map((c) => (
-              <MenuItem key={c.id} value={c.id}>
-                {c.name ?? c.phoneNumberId}
-                {c.isTestMode && (
-                  <Chip size="small" label="TEST" sx={{ ml: 1 }} color="warning" />
+            {bots?.map((b) => (
+              <MenuItem key={b.botId} value={b.botId}>
+                {b.name}
+                {b.connectedChannels.length > 0 && (
+                  <Chip
+                    size="small"
+                    label={`${b.connectedChannels.length} canal${b.connectedChannels.length > 1 ? 'es' : ''}`}
+                    sx={{ ml: 1 }}
+                    color="info"
+                    variant="outlined"
+                  />
                 )}
               </MenuItem>
             ))}
           </Select>
         </FormControl>
+        <Tooltip title="Crear un bot nuevo">
+          <span>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={creating ? <CircularProgress size={14} color="inherit" /> : <AddIcon />}
+              onClick={handleCreateBot}
+              disabled={creating}
+            >
+              Crear bot
+            </Button>
+          </span>
+        </Tooltip>
+        {selectedBotId && (
+          <Tooltip title="Borrar este bot">
+            <span>
+              <IconButton size="small" color="error" onClick={handleDeleteBot} disabled={loading}>
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        )}
         <FormControlLabel
           control={
             <Switch
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
-              disabled={loading || !selectedConfigId}
+              disabled={loading || !selectedBotId}
             />
           }
           label={enabled ? 'ON' : 'OFF'}
@@ -979,7 +1057,7 @@ function BotsEditorInner() {
           onChange={(e) => setTtl(Math.max(1, Math.min(1440, Number(e.target.value) || 0)))}
           inputProps={{ min: 1, max: 1440 }}
           sx={{ width: 110 }}
-          disabled={loading || !selectedConfigId}
+          disabled={loading || !selectedBotId}
         />
         {snapshot?.hasUnpublishedChanges && (
           <Tooltip title={`Borrador guardado: ${fmtTimestamp(snapshot.botDraftUpdatedAt)}`}>
@@ -1006,7 +1084,7 @@ function BotsEditorInner() {
               color="info"
               startIcon={<ScienceIcon />}
               onClick={() => setSandboxOpen(true)}
-              disabled={loading || !selectedConfigId}
+              disabled={loading || !selectedBotId}
             >
               Probar
             </Button>
@@ -1033,7 +1111,7 @@ function BotsEditorInner() {
           size="small"
           startIcon={saving ? <CircularProgress size={14} color="inherit" /> : <SaveIcon />}
           onClick={handleSaveDraft}
-          disabled={saving || publishing || loading || !selectedConfigId}
+          disabled={saving || publishing || loading || !selectedBotId}
         >
           Guardar borrador
         </Button>
@@ -1461,7 +1539,7 @@ function BotsEditorInner() {
         onPatch={patchSelectedNode}
         onDelete={deleteSelectedNode}
         onSetStart={setSelectedAsStart}
-        configId={selectedConfigId}
+        configId={mediaConfigId}
         availableTopics={drawerTopics}
         variables={variables}
       />
@@ -1477,7 +1555,7 @@ function BotsEditorInner() {
       <SandboxDrawer
         open={sandboxOpen}
         onClose={() => setSandboxOpen(false)}
-        configId={selectedConfigId}
+        botId={selectedBotId}
         hasDraft={!!snapshot?.hasUnpublishedChanges}
         hasPublished={!!snapshot?.botTopics && snapshot.botTopics.length > 0}
       />

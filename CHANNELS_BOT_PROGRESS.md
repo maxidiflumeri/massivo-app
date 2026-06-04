@@ -8,15 +8,17 @@
 
 ## Estado actual
 
-**Fase en curso:** Fase 0 → **0a COMPLETA** + **0b backend COMPLETO** + **0b frontend
-base lista**. Próximo: migración de UI de 0b (`WapiBotsPage` → bot-centric +
-selector "Bot conectado" en Números) — requiere verificación runtime.
+**Fase en curso:** Fase 0 → **0a COMPLETA** + **0b COMPLETO** (backend + frontend UI).
+Pendiente sólo el **smoke-test runtime autenticado** de la UI. Próximo: Fase 1
+(unificar Channel/Conversation/Message + inbox omnicanal).
 
 **Última actualización:** sesión 1 (2026-06-03).
 
 **Commits en `feat/multichannel-bot`:**
 - `8f13e21` — Phase 0a: entidad `Bot` + migración/backfill + wiring backend
 - `7a91895` — Phase 0b backend: API `/api/bots` bot-centric + connect/disconnect
+- `93567c2` — Phase 0b frontend base: `botsApi` + tipos
+- (este commit) — Phase 0b frontend UI: editor bot-centric + selector en Números
 
 **Verificación 0a:**
 - ✅ Migración `20260603120000_extract_bot_entity` aplicada a la DB local + backfill
@@ -65,21 +67,27 @@ selector "Bot conectado" en Números) — requiere verificación runtime.
 - [x] Upload de media: queda config-scoped (mediaId de Meta por-WABA)
 - [x] Tests `bots.service.spec` 10/10; suite wapi 402/402; typecheck limpio
 
-**Frontend — base lista (no rompe nada), UI pendiente:**
-- [x] `apps/frontend/.../bots/types.ts`: `BotSnapshot`, `BotListItem`, `ConnectedChannel`
-- [x] `apps/frontend/.../bots/api.ts`: `botsApi` (bot-centric) agregado; `botApi` (config-scoped) intacto
-- [ ] **`WapiBotsPage.tsx`**: migrar de config-centric a bot-centric:
-  - estado `configs/selectedConfigId/snapshot:BotConfigSnapshot` → `bots/selectedBotId/snapshot:BotSnapshot`
-  - effect 1 (línea ~217): `botsApi.list(api)` en vez de `GET /api/wapi/configs`
-  - effect 2 (línea ~232): `botsApi.get(api, selectedBotId)`
-  - handlers `handleSaveDraft/handlePublish/handleDiscardDraft` (líneas ~790/838/878): `botsApi.*(api, selectedBotId, …)`
-  - toolbar dropdown (línea ~945): listar **bots** + botón "Crear bot" (`botsApi.create`) + borrar (`botsApi.remove`)
-  - `materializeTopics(snap)`: acepta `BotSnapshot` (mismos campos `bot*`) — revisar firma
-  - `NodeEditorDrawer` (prop `configId`): pasar `snapshot.connectedChannels[0]?.configId` para upload de media; si no hay canal conectado, deshabilitar media con hint
-  - `SandboxDrawer`: migrar a `botsApi.sandboxStep(api, botId, …)` (hoy usa `botApi.sandboxStep(configId)`)
-- [ ] **Página Números (`features/wapi/configs/`)**: selector "Bot conectado" por config (`botsApi.connectChannel/disconnectChannel`)
-- [ ] **Verificación runtime** (pendiente, requiere dev server): crear bot → editar → conectar a número → confirmar que responde
-- [ ] (opcional) Mover tipos del bot a `packages/shared-types`
+**Frontend — COMPLETO** (UI bot-centric, ver git log de la rama):
+- [x] `bots/types.ts`: `BotSnapshot`, `BotListItem`, `ConnectedChannel`
+- [x] `bots/api.ts`: `botsApi` (bot-centric); `botApi` (config-scoped) intacto
+- [x] **`WapiBotsPage.tsx`** migrado a bot-centric:
+  - estado `bots/selectedBotId/snapshot:BotSnapshot`; effects → `botsApi.list/get`
+  - handlers saveDraft/publish/discardDraft → `botsApi.*(api, selectedBotId)`
+  - toolbar: dropdown de **bots** + "Crear bot" (`window.prompt` → `botsApi.create`) + borrar (`botsApi.remove`); chip con nº de canales conectados
+  - `materializeTopics(snap: BotSnapshot)`
+  - `NodeEditorDrawer`: `configId={mediaConfigId}` (= primer canal conectado; media sigue config-scoped)
+  - `SandboxDrawer`: migrado a `botsApi.sandboxStep(api, botId)`
+- [x] **Página Números** (`WapiConfigsPage.tsx`): columna "Bot" con `<Select>` por canal (conectar/desconectar vía `botsApi.connectChannel/disconnectChannel`); `WapiConfigListItem.botId` agregado (back + front)
+
+**Verificación:**
+- [x] Backend bootea + rutas `/api/bots` mapeadas + recompila limpio en watch + typecheck + wapi 402/402
+- [x] Frontend typecheck limpio (turbo: 7/7 paquetes relevantes; sólo falla `@massivo/docs` por `tsconfig --ignoreDeprecations`, pre-existente y ajeno)
+- [ ] **Smoke-test runtime autenticado PENDIENTE** (Clerk gate, no headless): login → crear bot → editar/publicar → conectar a un número → confirmar respuesta. `vite build` aislado falla por errores pre-existentes en `inbox/api.ts` y `DashboardHome.tsx` (no de este trabajo).
+
+**Notas / mejoras futuras:**
+- Create-bot usa `window.prompt` — reemplazar por un dialog MUI.
+- (opcional) Mover tipos del bot a `packages/shared-types`.
+- `handleButtonAction` path `action:'BOT'`→`startTopic` sigue sin test propio (heredado de 0a).
 
 ### Sub-fase 0c — Cleanup
 - [ ] Migración drop de columnas `bot*` en `WapiConfig`

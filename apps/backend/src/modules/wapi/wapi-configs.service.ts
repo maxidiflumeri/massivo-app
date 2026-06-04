@@ -19,6 +19,8 @@ export interface WapiConfigListItem {
   isActive: boolean;
   isTestMode: boolean;
   createdAt: Date;
+  /** Phase 0b (multi-canal): bot conectado a este canal (null si ninguno). */
+  botId: string | null;
 }
 
 export interface WapiConfigDetail extends WapiConfigListItem {
@@ -64,6 +66,7 @@ function toListItem(row: any): WapiConfigListItem {
     isActive: row.isActive,
     isTestMode: row.isTestMode ?? false,
     createdAt: row.createdAt,
+    botId: row.botId ?? null,
   };
 }
 
@@ -107,6 +110,7 @@ export class WapiConfigsService {
       businessAccountId: row.businessAccountId,
       isActive: row.isActive,
       isTestMode: row.isTestMode ?? false,
+      botId: row.botId ?? null,
       welcomeMessage: row.welcomeMessage,
       optOutConfirmMessage: row.optOutConfirmMessage,
       optOutKeywords: row.optOutKeywords ?? [],

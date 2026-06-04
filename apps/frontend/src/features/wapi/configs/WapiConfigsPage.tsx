@@ -8,10 +8,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
   FormControlLabel,
   IconButton,
   InputAdornment,
+  MenuItem,
   Paper,
+  Select,
   Skeleton,
   Stack,
   Switch,
@@ -44,6 +47,8 @@ import type {
   WapiConfigDetail,
   WapiConfigListItem,
 } from './types';
+import { botsApi } from '../bots/api';
+import type { BotListItem } from '../bots/types';
 
 interface FormState {
   name: string;
@@ -123,6 +128,8 @@ export function WapiConfigsPage() {
   const [orgRole, setOrgRole] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [revealedTokens, setRevealedTokens] = useState<Record<string, string>>({});
+  // Phase 0b (multi-canal): bots disponibles para conectar a cada canal.
+  const [bots, setBots] = useState<BotListItem[]>([]);
 
   const isEdit = editing !== null;
   const canManageOrg = orgRole === 'OWNER' || orgRole === 'ADMIN';
@@ -134,6 +141,27 @@ export function WapiConfigsPage() {
       setItems(data);
     } catch (e) {
       notify.error(e instanceof Error ? e.message : 'Error cargando configs');
+    }
+  }
+
+  async function loadBots() {
+    try {
+      setBots(await botsApi.list(api));
+    } catch {
+      // El feature de bots puede estar off (403) → sin selector, no es error fatal.
+      setBots([]);
+    }
+  }
+
+  /** Phase 0b — conecta/desconecta el bot de un canal. botId='' = desconectar. */
+  async function handleSetBot(c: WapiConfigListItem, botId: string) {
+    try {
+      if (botId) await botsApi.connectChannel(api, botId, c.id);
+      else if (c.botId) await botsApi.disconnectChannel(api, c.botId, c.id);
+      await load();
+      notify.success(botId ? 'Bot conectado al canal' : 'Bot desconectado');
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'No se pudo actualizar el bot del canal');
     }
   }
 
@@ -153,6 +181,7 @@ export function WapiConfigsPage() {
   useEffect(() => {
     void load();
     void loadMe();
+    void loadBots();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -454,6 +483,7 @@ export function WapiConfigsPage() {
                 <TableCell>Phone Number ID</TableCell>
                 <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>WABA ID</TableCell>
                 <TableCell>Activa</TableCell>
+                <TableCell>Bot</TableCell>
                 <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Creada</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
@@ -490,6 +520,30 @@ export function WapiConfigsPage() {
                       checked={c.isActive}
                       onChange={(e) => handleToggleActive(c, e.target.checked)}
                     />
+                  </TableCell>
+                  <TableCell>
+                    {bots.length === 0 ? (
+                      <Typography variant="caption" sx={{ opacity: 0.6 }}>
+                        (sin bots)
+                      </Typography>
+                    ) : (
+                      <FormControl size="small" sx={{ minWidth: 140 }}>
+                        <Select
+                          value={c.botId ?? ''}
+                          displayEmpty
+                          onChange={(e) => handleSetBot(c, e.target.value)}
+                        >
+                          <MenuItem value="">
+                            <em>(ninguno)</em>
+                          </MenuItem>
+                          {bots.map((b) => (
+                            <MenuItem key={b.botId} value={b.botId}>
+                              {b.name}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )}
                   </TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                     {new Date(c.createdAt).toLocaleString()}

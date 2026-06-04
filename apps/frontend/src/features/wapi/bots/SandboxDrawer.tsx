@@ -31,13 +31,13 @@ import TouchAppIcon from '@mui/icons-material/TouchApp';
 import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useConfirm } from '../../../feedback/ConfirmProvider';
-import { botApi } from './api';
+import { botsApi } from './api';
 import type { SandboxHttpCallSummary, SandboxOutMessage, SandboxSource } from './types';
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  configId: string;
+  botId: string;
   /** Si hay draft, default a 'draft'; si no, 'published'. */
   hasDraft: boolean;
   hasPublished: boolean;
@@ -77,7 +77,7 @@ function hasAcceptedRealMode(): boolean {
   }
 }
 
-export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished }: Props) {
+export function SandboxDrawer({ open, onClose, botId, hasDraft, hasPublished }: Props) {
   const api = useApi();
   const notify = useNotify();
   const confirm = useConfirm();
@@ -110,7 +110,7 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
     seqRef.current = 0;
     // Default source: draft si existe, sino published.
     setSource(hasDraft ? 'draft' : 'published');
-  }, [open, configId, hasDraft]);
+  }, [open, botId, hasDraft]);
 
   useEffect(() => {
     try {
@@ -132,11 +132,11 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
       inbound: { kind: 'text'; body: string } | { kind: 'button'; buttonId: string } | undefined,
       opts: { reset?: boolean; resetOnly?: boolean } = {},
     ) => {
-      if (!configId) return;
+      if (!botId) return;
       setBusy(true);
       setError(null);
       try {
-        const r = await botApi.sandboxStep(api, configId, {
+        const r = await botsApi.sandboxStep(api, botId, {
           phone,
           source,
           httpMode,
@@ -169,7 +169,7 @@ export function SandboxDrawer({ open, onClose, configId, hasDraft, hasPublished 
         setBusy(false);
       }
     },
-    [api, configId, notify, phone, source, httpMode],
+    [api, botId, notify, phone, source, httpMode],
   );
 
   const handleHttpModeChange = useCallback(
