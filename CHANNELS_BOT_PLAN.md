@@ -142,14 +142,49 @@ Entrega la UX "diseño un bot y elijo a qué números conectarlo".
 
 ---
 
-## FASE 1 — Unificar canal + conversación (resumen; detalle en DESIGN §2-§6)
+## FASE 1 — Abstracción de canal + unificación + inbox omnicanal
 
-- Crear `Channel`, `Conversation`, `Message`, `BotSession` unificados.
-- Migrar datos WhatsApp (`WapiConfig`→`Channel(WHATSAPP)`, `WapiConversation`→`Conversation`, etc.).
-- `BotSession` pasa de `(configId, phone)` → `(channelId, externalUserId)` + `botId` denormalizado.
-- Introducir `ChannelAdapter` (registry) + `WhatsAppAdapter` (re-empaque del sender/webhook actual).
-- El motor (`deliverNode`) envía vía `adapter.send`; el guard de 24h pasa a `capabilities.freeformWindow`.
-- Inbox unificado: API `/api/inbox/conversations` + UI con badge/filtro de canal.
+> Detalle de arquitectura en DESIGN §2-§6. Se ataca en sub-fases chicas y
+> verificables. Principio igual a Phase 0: cada paso deja la app andando y los
+> tests verdes. Lo más riesgoso (migración de datos en vivo) va al final.
+
+### Sub-fase 1a — Capa de abstracción de canal (código, SIN schema)
+- Tipos `InboundMessage`, `OutboundMessage`, `ChannelCapabilities`, `ChannelAdapter`
+  en un módulo nuevo `apps/backend/src/modules/channels/`.
+- `WhatsAppAdapter`: implementa `send(conn, OutboundMessage)` envolviendo
+  `WapiSenderService` + `capabilities` (botones max 3, ventana 24h, templates).
+- `ChannelAdapterRegistry`: resuelve adapter por `ChannelKind`.
+- **Aditivo** (nadie lo consume todavía) + unit test del adapter. Riesgo: nulo.
+
+### Sub-fase 1b — Rewire de consumidores al adapter
+- Bot engine `deliverNode`: arma `OutboundMessage` y envía vía `adapter.send`
+  (clamp de botones por capability). → `wapi-bot-engine.service.ts:792-836`.
+- Inbox `sendText/sendMedia`: envía vía `adapter.send`; guard de 24h →
+  `capabilities.freeformWindow`. → `wapi-inbox.service.ts:338-580`.
+- Actualizar specs (engine/inbox mockean el sender → mockear el adapter).
+- Resolver dependencia de módulos (channels ↔ wapi) sin ciclos.
+
+### Sub-fase 1c — `verifyAndParse` + webhook genérico
+- Mover el parseo del webhook a `WhatsAppAdapter.verifyAndParse(req) → InboundMessage[]`.
+- Controller `/api/channels/:kind/:slug` → resuelve adapter → mismo downstream.
+- `/api/webhooks/wapi/:slug` queda como alias del genérico.
+
+### Sub-fase 1d — Modelo de datos unificado (RIESGO ALTO — migración en vivo)
+- `Channel`, `Conversation`, `Message`, `BotSession` unificados (schema + migración
+  + backfill desde `WapiConfig`/`WapiConversation`/`WapiMessage`/`WapiBotSession`).
+- `BotSession` → unique `(channelId, externalUserId)` + `botId` denormalizado.
+- `Conversation`: `phone→externalUserId`, `window24hAt→freeformWindowAt`,
+  `configId→channelId`, + `channelKind`.
+- Apuntar adapter + inbox + engine + webhook a los modelos unificados.
+
+### Sub-fase 1e — Inbox unificado (API + UI)
+- API `/api/inbox/conversations` agnóstica (reemplaza `/wapi/inbox`).
+- UI: ícono/badge + filtro de canal por conversación; composer dirigido por
+  `capabilities` (banner de ventana solo en canales Meta; botones según max).
+- Evento realtime `wapi.message.new` → `conversation.message.new` con `channelKind`.
+
+### Sub-fase 1f — Cleanup
+- Drop de tablas/columnas `Wapi*` legacy una vez estable.
 
 ## FASE 2 — Messenger · FASE 3 — Instagram · FASE 4 — Webchat
 

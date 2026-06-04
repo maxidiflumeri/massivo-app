@@ -92,8 +92,16 @@ Pendiente sólo el **smoke-test runtime autenticado** de la UI. Próximo: Fase 1
 ### Sub-fase 0c — Cleanup
 - [ ] Migración drop de columnas `bot*` en `WapiConfig`
 
+### Fase 1 — Abstracción de canal + unificación + inbox omnicanal
+(sub-fases detalladas en CHANNELS_BOT_PLAN.md → FASE 1)
+- [x] **1a** Capa de abstracción (módulo `channels/`): tipos `ChannelAdapter`/`Inbound`/`Outbound`/`Capabilities` + `WhatsAppAdapter` (envuelve `WapiSenderService`, capabilities) + `ChannelAdapterRegistry` + registrado en `app.module`. Aditivo, adapter spec 6/6, typecheck limpio.
+- [ ] **1b** Rewire engine `deliverNode` + inbox `sendText/sendMedia` al adapter (guard 24h → capability)
+- [ ] **1c** `verifyAndParse` + webhook genérico `/api/channels/:kind/:slug`
+- [ ] **1d** Modelo unificado `Channel/Conversation/Message/BotSession` (migración en vivo — riesgo alto)
+- [ ] **1e** Inbox unificado (API `/api/inbox` + UI con badge/filtro de canal)
+- [ ] **1f** Cleanup de tablas/columnas `Wapi*` legacy
+
 ### Fases siguientes
-- [ ] Fase 1 — Unificar Channel/Conversation/Message/BotSession + inbox omnicanal
 - [ ] Fase 2 — Messenger · Fase 3 — Instagram · Fase 4 — Webchat
 
 ---
