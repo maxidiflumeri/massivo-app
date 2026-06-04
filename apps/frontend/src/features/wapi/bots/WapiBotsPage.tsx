@@ -82,6 +82,7 @@ import { validateRouter, validateTopics, validateVariables } from './validateCli
 import { RouterPanel } from './RouterPanel';
 import { TopicsListView } from './TopicsListView';
 import { TopicDialog } from './TopicDialog';
+import { CreateBotDialog } from './CreateBotDialog';
 import { SandboxDrawer } from './SandboxDrawer';
 import { VariablesPanel } from './VariablesPanel';
 import { collectImplicitVariableNames } from './implicitVars';
@@ -187,6 +188,7 @@ function BotsEditorInner() {
   const [selectedBotId, setSelectedBotId] = useState<string>('');
   const [snapshot, setSnapshot] = useState<BotSnapshot | null>(null);
   const [creating, setCreating] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [ttl, setTtl] = useState(30);
   const [topics, setTopics] = useState<BotTopic[]>([
@@ -787,16 +789,15 @@ function BotsEditorInner() {
     });
   }
 
-  /** Crea un bot nuevo (Phase 0b) y lo selecciona en el editor. */
-  async function handleCreateBot() {
-    const name = window.prompt('Nombre del nuevo bot:')?.trim();
-    if (!name) return;
+  /** Crea un bot nuevo (Phase 0b) con el nombre del dialog y lo selecciona. */
+  async function handleConfirmCreateBot(name: string) {
     setCreating(true);
     try {
       const snap = await botsApi.create(api, name);
       const list = await botsApi.list(api);
       setBots(list);
       setSelectedBotId(snap.botId);
+      setCreateDialogOpen(false);
       notify.success('Bot creado');
     } catch (e) {
       notify.error((e as Error).message || 'No se pudo crear el bot');
@@ -1022,9 +1023,8 @@ function BotsEditorInner() {
             <Button
               size="small"
               variant="outlined"
-              startIcon={creating ? <CircularProgress size={14} color="inherit" /> : <AddIcon />}
-              onClick={handleCreateBot}
-              disabled={creating}
+              startIcon={<AddIcon />}
+              onClick={() => setCreateDialogOpen(true)}
             >
               Crear bot
             </Button>
@@ -1550,6 +1550,13 @@ function BotsEditorInner() {
         editing={topicDialogEditing}
         takenIds={dialogTakenIds}
         onSubmit={handleTopicDialogSubmit}
+      />
+
+      <CreateBotDialog
+        open={createDialogOpen}
+        onClose={() => setCreateDialogOpen(false)}
+        onSubmit={handleConfirmCreateBot}
+        submitting={creating}
       />
 
       <SandboxDrawer
