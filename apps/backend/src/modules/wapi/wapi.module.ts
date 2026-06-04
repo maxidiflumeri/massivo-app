@@ -25,6 +25,7 @@ import { WapiButtonActionService } from './button-actions/wapi-button-action.ser
 import { WapiBotEngineService } from './bot/wapi-bot-engine.service';
 import { WapiBotService } from './bot/wapi-bot.service';
 import { WapiBotController } from './bot/wapi-bot.controller';
+import { BotsController } from './bot/bots.controller';
 import {
   WapiBotFeatureGuard,
   WapiBotFeatureService,
@@ -48,6 +49,7 @@ import { WapiLiveService } from './live/wapi-live.service';
     WapiInboxController,
     WapiQuickRepliesController,
     WapiBotController,
+    BotsController,
     WapiLiveController,
   ],
   providers: [

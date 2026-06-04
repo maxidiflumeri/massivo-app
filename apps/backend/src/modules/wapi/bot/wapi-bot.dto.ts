@@ -69,6 +69,15 @@ export class SaveBotDraftDto {
 }
 
 /**
+ * Phase 0b — DTO para POST /api/bots (crear bot bot-centric).
+ */
+export class CreateBotDto {
+  @IsString()
+  @MaxLength(120)
+  name!: string;
+}
+
+/**
  * 4.O.3 — DTO para POST /wapi/configs/:id/bot/sandbox/step. Cliente virtual
  * del simulador (no se manda nada a Meta). Ver `WapiBotSandboxService.step`.
  */

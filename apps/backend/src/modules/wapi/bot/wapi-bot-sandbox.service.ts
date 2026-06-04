@@ -178,11 +178,17 @@ export class WapiBotSandboxService {
    * Procesa un step del sandbox. La sesión vive en memoria por
    * (orgId, configId, userId, phone). TTL 30 min lazy.
    */
-  async step(configId: string, input: SandboxStepInput): Promise<SandboxStepResult> {
+  async step(
+    configId: string,
+    input: SandboxStepInput,
+    preloaded?: CfgSnapshot | null,
+  ): Promise<SandboxStepResult> {
     const ctx = TenantContext.current();
     if (!ctx) throw new NotFoundException('Sin contexto de tenant');
 
-    const cfg = await this.loadConfig(configId);
+    // `preloaded` permite que `stepByBot` (Phase 0b) inyecte la definición leída
+    // por botId, reusando todo el motor del sandbox con `configId` = scope id.
+    const cfg = preloaded !== undefined ? preloaded : await this.loadConfig(configId);
     if (!cfg) throw new NotFoundException(`WapiConfig ${configId} no encontrado en este scope`);
 
     const source = input.source ?? 'draft';
@@ -753,6 +759,54 @@ export class WapiBotSandboxService {
       botRouterDraft: b?.routerDraft ?? null,
       botVariables: b?.variables ?? null,
       botVariablesDraft: b?.variablesDraft ?? null,
+    };
+  }
+
+  /**
+   * Phase 0b — step del sandbox por `botId` (API bot-centric). Carga la
+   * definición del Bot directamente y reusa todo el motor del sandbox vía
+   * `step`, usando el `botId` como scope de sesión.
+   */
+  async stepByBot(botId: string, input: SandboxStepInput): Promise<SandboxStepResult> {
+    const cfg = await this.loadBotSnapshot(botId);
+    if (!cfg) throw new NotFoundException(`Bot ${botId} no encontrado en este scope`);
+    return this.step(botId, input, cfg);
+  }
+
+  /** Carga la definición de un Bot por id y la mapea al shape `CfgSnapshot`. */
+  private async loadBotSnapshot(botId: string): Promise<CfgSnapshot | null> {
+    const bot = (await this.prisma.scoped.bot.findFirst({
+      where: { id: botId },
+      select: {
+        id: true,
+        flow: true,
+        topics: true,
+        router: true,
+        topicsDraft: true,
+        routerDraft: true,
+        variables: true,
+        variablesDraft: true,
+      },
+    })) as unknown as {
+      id: string;
+      flow: unknown;
+      topics: unknown;
+      router: unknown;
+      topicsDraft: unknown;
+      routerDraft: unknown;
+      variables: unknown;
+      variablesDraft: unknown;
+    } | null;
+    if (!bot) return null;
+    return {
+      id: bot.id,
+      botFlow: bot.flow ?? null,
+      botTopics: bot.topics ?? null,
+      botRouter: bot.router ?? null,
+      botTopicsDraft: bot.topicsDraft ?? null,
+      botRouterDraft: bot.routerDraft ?? null,
+      botVariables: bot.variables ?? null,
+      botVariablesDraft: bot.variablesDraft ?? null,
     };
   }
 }
