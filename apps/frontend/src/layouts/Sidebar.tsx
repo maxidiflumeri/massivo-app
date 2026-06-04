@@ -69,6 +69,22 @@ const NAV_GROUPS: NavGroupSpec[] = [
     label: 'General',
     items: [{ to: '/dashboard', label: 'Inicio', icon: <HomeIcon fontSize="small" /> }],
   },
+  // Bots: entidad cross-canal (un bot se conecta a N canales) → sección propia,
+  // fuera de WhatsApp. Gated por el kill-switch del feature.
+  ...(WAPI_BOT_FEATURE_ENABLED
+    ? [
+        {
+          label: 'Bots',
+          items: [
+            {
+              to: '/dashboard/bots',
+              label: 'Mis bots',
+              icon: <SmartToyIcon fontSize="small" />,
+            },
+          ],
+        },
+      ]
+    : []),
   {
     label: 'Email',
     items: [
@@ -137,15 +153,6 @@ const NAV_GROUPS: NavGroupSpec[] = [
         label: 'Respuestas rápidas',
         icon: <BoltIcon fontSize="small" />,
       },
-      ...(WAPI_BOT_FEATURE_ENABLED
-        ? [
-            {
-              to: '/dashboard/wapi/bots',
-              label: 'Bot guiado',
-              icon: <SmartToyIcon fontSize="small" />,
-            },
-          ]
-        : []),
       {
         to: '/dashboard/wapi/configs',
         label: 'Números',

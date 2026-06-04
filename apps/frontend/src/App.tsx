@@ -75,7 +75,10 @@ export function App() {
         <Route path="wapi/configs" element={<WapiConfigsPage />} />
         <Route path="wapi/inbox" element={<WapiInboxPage />} />
         <Route path="wapi/quick-replies" element={<WapiQuickRepliesPage />} />
-        <Route path="wapi/bots" element={<WapiBotsPage />} />
+        <Route path="bots" element={<WapiBotsPage />} />
+        {/* Bot dejó de ser sub-feature de WhatsApp (es cross-canal) → /dashboard/bots.
+            Redirect del path viejo por compat. */}
+        <Route path="wapi/bots" element={<Navigate to="/dashboard/bots" replace />} />
         <Route path="wapi/live" element={<WapiLivePage />} />
         <Route path="wapi/templates" element={<WapiTemplatesListPage />} />
         <Route path="wapi/templates/new" element={<WapiTemplateEditorPage />} />

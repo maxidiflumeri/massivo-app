@@ -30,7 +30,7 @@ export function AppLayout() {
   const { mode, toggleMode } = useColorMode();
   const isFullBleed =
     location.pathname.startsWith('/dashboard/wapi/inbox') ||
-    location.pathname.startsWith('/dashboard/wapi/bots') ||
+    location.pathname.startsWith('/dashboard/bots') ||
     location.pathname.startsWith('/dashboard/dev/wapi/chat');
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
