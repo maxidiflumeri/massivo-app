@@ -160,6 +160,9 @@ export function WapiSimulatorChatPage() {
         configId,
         search: phone.trim(),
         limit: 5,
+        // Dev: incluir conversaciones manejadas por el bot (no escaladas), si no
+        // el chat queda vacío hasta que el bot haga HANDOFF.
+        includeBotHandled: true,
       });
       const match = res.items.find((c) => c.phone === phone.trim()) ?? res.items[0];
       if (!match) {

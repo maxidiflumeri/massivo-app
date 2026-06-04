@@ -45,6 +45,14 @@ export class ListWapiConversationsQueryDto {
   @Transform(({ value }) => value === true || value === 'true' || value === '1')
   @IsBoolean()
   priority?: boolean;
+
+  // Incluir conversaciones manejadas por el bot (escalated=false). Por defecto el
+  // inbox las oculta (4.O.6); el Chat simulado de dev lo activa para poder ver la
+  // conversación + respuestas del bot aunque no haya HANDOFF.
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  @IsBoolean()
+  includeBotHandled?: boolean;
 }
 
 export class ListWapiMessagesQueryDto {

@@ -128,7 +128,9 @@ export class WapiInboxService {
     // siendo atendidas por el bot (escalated=false) no son visibles para
     // operadores ni admins; aparecen recién cuando el bot llega a HANDOFF
     // o el cliente toca el botón INBOX de un template.
-    where.escalated = true;
+    // `includeBotHandled` (Chat simulado de dev) levanta el filtro para poder
+    // ver la conversación + respuestas del bot aunque no haya escalado.
+    if (!query.includeBotHandled) where.escalated = true;
 
     let mineOrWaiting: Array<Record<string, unknown>> | null = null;
     switch (tab) {

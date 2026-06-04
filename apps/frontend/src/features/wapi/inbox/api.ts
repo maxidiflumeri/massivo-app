@@ -17,6 +17,8 @@ export interface ListConversationsParams {
   cursor?: string;
   limit?: number;
   priority?: boolean;
+  /** Incluir conversaciones manejadas por el bot (no escaladas). Usado por el Chat simulado de dev. */
+  includeBotHandled?: boolean;
 }
 
 function qs(params: Record<string, string | number | boolean | undefined>): string {
