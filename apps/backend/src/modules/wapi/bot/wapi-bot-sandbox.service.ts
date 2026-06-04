@@ -709,21 +709,51 @@ export class WapiBotSandboxService {
   }
 
   private async loadConfig(configId: string): Promise<CfgSnapshot | null> {
-    const row = await this.prisma.scoped.wapiConfig.findFirst({
+    // Phase 0a (multi-canal): la definición del bot vive en la entidad `Bot`
+    // (relación `WapiConfig.bot`). Mapeamos los campos del Bot al shape interno
+    // `CfgSnapshot` (nombres `bot*`) para no tocar el resto del sandbox. Si el
+    // config no tiene bot, devolvemos un snapshot vacío → el sandbox muestra
+    // "unavailable" (no 404).
+    const row = (await this.prisma.scoped.wapiConfig.findFirst({
       where: { id: configId },
       select: {
         id: true,
-        botFlow: true,
-        botTopics: true,
-        botRouter: true,
-        botTopicsDraft: true,
-        botRouterDraft: true,
-        botVariables: true,
-        botVariablesDraft: true,
+        bot: {
+          select: {
+            flow: true,
+            topics: true,
+            router: true,
+            topicsDraft: true,
+            routerDraft: true,
+            variables: true,
+            variablesDraft: true,
+          },
+        },
       } as never,
-    });
+    })) as unknown as {
+      id: string;
+      bot: {
+        flow: unknown;
+        topics: unknown;
+        router: unknown;
+        topicsDraft: unknown;
+        routerDraft: unknown;
+        variables: unknown;
+        variablesDraft: unknown;
+      } | null;
+    } | null;
     if (!row) return null;
-    return row as unknown as CfgSnapshot;
+    const b = row.bot;
+    return {
+      id: row.id,
+      botFlow: b?.flow ?? null,
+      botTopics: b?.topics ?? null,
+      botRouter: b?.router ?? null,
+      botTopicsDraft: b?.topicsDraft ?? null,
+      botRouterDraft: b?.routerDraft ?? null,
+      botVariables: b?.variables ?? null,
+      botVariablesDraft: b?.variablesDraft ?? null,
+    };
   }
 }
 

@@ -466,9 +466,15 @@ describe('WapiWebhookService', () => {
         welcomeMessage: 'Bienvenido!',
         optOutConfirmMessage: null,
         optOutKeywords: null,
-        botEnabled: true,
-        botFlow: { startNodeId: 'a', nodes: { a: { kind: 'HANDOFF', text: 'h' } } },
-        botSessionTtlMin: 30,
+        // Phase 0a (multi-canal): definición del bot vía relación `bot`.
+        bot: {
+          enabled: true,
+          flow: { startNodeId: 'a', nodes: { a: { kind: 'HANDOFF', text: 'h' } } },
+          sessionTtlMin: 30,
+          topics: null,
+          router: null,
+          variables: null,
+        },
       });
     });
 

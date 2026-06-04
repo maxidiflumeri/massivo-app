@@ -1,10 +1,14 @@
 /**
  * 4.O.3 — Tests del flujo Draft/Publish del bot. Verifica que:
- * - saveDraft NO toca la versión publicada (botTopics/botRouter activos).
- * - publish copia draft → activo, limpia draft, sella botPublishedAt.
+ * - saveDraft NO toca la versión publicada (topics/router activos).
+ * - publish copia draft → activo, limpia draft, sella publishedAt.
  * - discardDraft borra el draft y deja la versión publicada intacta.
  * - hasUnpublishedChanges refleja correctamente la relación entre timestamps.
  * - publish bloquea si el draft tiene refs inconsistentes (router → topicId).
+ *
+ * Phase 0a (multi-canal): la definición del bot vive en la entidad `Bot`
+ * (resuelta vía `WapiConfig.botId`). El mock provee `prisma.scoped.wapiConfig`
+ * (devuelve el `botId`) y `prisma.scoped.bot` (estado mutable del bot).
  */
 import { BadRequestException } from '@nestjs/common';
 import { WapiBotService } from './wapi-bot.service';
@@ -33,19 +37,57 @@ function makeTopic(id: string, label: string): BotTopic {
 
 type Row = Record<string, unknown>;
 
-function makePrisma(initial: Row) {
-  const state: Row = { id: 'cfg-1', ...initial };
+/**
+ * Mock de Prisma. `botInitial` usa los nombres de columna de `Bot`
+ * (enabled/topics/router/variables/*Draft/...). El config siempre tiene
+ * `botId='bot-1'` → `resolveBot` encuentra el bot sin crearlo.
+ */
+function makePrisma(botInitial: Row) {
+  const bot: Row = {
+    id: 'bot-1',
+    enabled: false,
+    sessionTtlMin: 30,
+    flow: null,
+    topics: null,
+    router: null,
+    variables: null,
+    topicsDraft: null,
+    routerDraft: null,
+    variablesDraft: null,
+    draftUpdatedAt: null,
+    publishedAt: null,
+    ...botInitial,
+  };
+  const config: Row = {
+    id: 'cfg-1',
+    botId: 'bot-1',
+    name: 'Cfg',
+    phoneNumberId: 'PN-1',
+    organizationId: 'org-1',
+    teamId: 'team-1',
+  };
   const wapiConfig = {
-    findFirst: jest.fn(async (_args: unknown) => ({ ...state })),
+    findFirst: jest.fn(async (_args: unknown) => ({ ...config })),
     update: jest.fn(async ({ data }: { data: Row }) => {
-      Object.assign(state, data);
-      return { ...state };
+      Object.assign(config, data);
+      return { ...config };
+    }),
+  };
+  const botModel = {
+    findFirst: jest.fn(async (_args: unknown) => ({ ...bot })),
+    update: jest.fn(async ({ data }: { data: Row }) => {
+      Object.assign(bot, data);
+      return { ...bot };
+    }),
+    create: jest.fn(async ({ data }: { data: Row }) => {
+      Object.assign(bot, data);
+      return { ...bot };
     }),
   };
   const prisma = {
-    scoped: { wapiConfig },
+    scoped: { wapiConfig, bot: botModel },
   } as never;
-  return { prisma, state, wapiConfig };
+  return { prisma, bot, config, wapiConfig, botModel };
 }
 
 function makeMedia() {
@@ -53,17 +95,9 @@ function makeMedia() {
 }
 
 describe('WapiBotService — 4.O.3 Draft/Publish', () => {
-  it('saveDraft escribe en botTopicsDraft sin tocar botTopics activos', async () => {
-    const { prisma, state } = makePrisma({
-      botEnabled: false,
-      botSessionTtlMin: 30,
-      botFlow: null,
-      botTopics: [makeTopic('A', 'Activo')],
-      botRouter: null,
-      botTopicsDraft: null,
-      botRouterDraft: null,
-      botDraftUpdatedAt: null,
-      botPublishedAt: null,
+  it('saveDraft escribe en topicsDraft sin tocar topics activos', async () => {
+    const { prisma, bot } = makePrisma({
+      topics: [makeTopic('A', 'Activo')],
     });
     const svc = new WapiBotService(prisma, makeMedia());
 
@@ -71,74 +105,57 @@ describe('WapiBotService — 4.O.3 Draft/Publish', () => {
       const newDraft = [makeTopic('A', 'Activo'), makeTopic('B', 'Borrador')];
       const snap = await svc.saveDraft('cfg-1', { botTopics: newDraft });
 
-      expect(state.botTopics).toEqual([makeTopic('A', 'Activo')]);
-      expect(state.botTopicsDraft).toEqual(newDraft);
-      expect(state.botDraftUpdatedAt).toBeInstanceOf(Date);
+      expect(bot.topics).toEqual([makeTopic('A', 'Activo')]);
+      expect(bot.topicsDraft).toEqual(newDraft);
+      expect(bot.draftUpdatedAt).toBeInstanceOf(Date);
       expect(snap.hasUnpublishedChanges).toBe(true);
     });
   });
 
-  it('publish copia botTopicsDraft → botTopics, limpia draft y setea botPublishedAt', async () => {
+  it('publish copia topicsDraft → topics, limpia draft y setea publishedAt', async () => {
     const draftTopics = [makeTopic('A', 'A'), makeTopic('B', 'B')];
-    const { prisma, state } = makePrisma({
-      botEnabled: false,
-      botSessionTtlMin: 30,
-      botFlow: null,
-      botTopics: [makeTopic('A', 'A')],
-      botRouter: null,
-      botTopicsDraft: draftTopics,
-      botRouterDraft: { rules: [], defaultTopicId: 'A' },
-      botDraftUpdatedAt: new Date('2026-05-01T10:00:00Z'),
-      botPublishedAt: null,
+    const { prisma, bot } = makePrisma({
+      topics: [makeTopic('A', 'A')],
+      topicsDraft: draftTopics,
+      routerDraft: { rules: [], defaultTopicId: 'A' },
+      draftUpdatedAt: new Date('2026-05-01T10:00:00Z'),
     });
     const svc = new WapiBotService(prisma, makeMedia());
 
     await TenantContext.run(ctx, async () => {
       const snap = await svc.publish('cfg-1');
-      expect(state.botTopics).toEqual(draftTopics);
-      expect(state.botRouter).toEqual({ rules: [], defaultTopicId: 'A' });
-      expect(state.botTopicsDraft).toBeNull();
-      expect(state.botRouterDraft).toBeNull();
-      expect(state.botDraftUpdatedAt).toBeNull();
-      expect(state.botPublishedAt).toBeInstanceOf(Date);
+      expect(bot.topics).toEqual(draftTopics);
+      expect(bot.router).toEqual({ rules: [], defaultTopicId: 'A' });
+      expect(bot.topicsDraft).toBeNull();
+      expect(bot.routerDraft).toBeNull();
+      expect(bot.draftUpdatedAt).toBeNull();
+      expect(bot.publishedAt).toBeInstanceOf(Date);
       expect(snap.hasUnpublishedChanges).toBe(false);
     });
   });
 
-  it('discardDraft borra botTopicsDraft sin tocar la versión publicada', async () => {
-    const { prisma, state } = makePrisma({
-      botEnabled: false,
-      botSessionTtlMin: 30,
-      botFlow: null,
-      botTopics: [makeTopic('A', 'A')],
-      botRouter: null,
-      botTopicsDraft: [makeTopic('A', 'A'), makeTopic('B', 'B')],
-      botRouterDraft: null,
-      botDraftUpdatedAt: new Date('2026-05-01T10:00:00Z'),
-      botPublishedAt: new Date('2026-04-30T10:00:00Z'),
+  it('discardDraft borra topicsDraft sin tocar la versión publicada', async () => {
+    const { prisma, bot } = makePrisma({
+      topics: [makeTopic('A', 'A')],
+      topicsDraft: [makeTopic('A', 'A'), makeTopic('B', 'B')],
+      draftUpdatedAt: new Date('2026-05-01T10:00:00Z'),
+      publishedAt: new Date('2026-04-30T10:00:00Z'),
     });
     const svc = new WapiBotService(prisma, makeMedia());
 
     await TenantContext.run(ctx, async () => {
       const snap = await svc.discardDraft('cfg-1');
-      expect(state.botTopics).toEqual([makeTopic('A', 'A')]);
-      expect(state.botTopicsDraft).toBeNull();
-      expect(state.botDraftUpdatedAt).toBeNull();
+      expect(bot.topics).toEqual([makeTopic('A', 'A')]);
+      expect(bot.topicsDraft).toBeNull();
+      expect(bot.draftUpdatedAt).toBeNull();
       expect(snap.hasUnpublishedChanges).toBe(false);
     });
   });
 
   it('hasUnpublishedChanges = false si el último publish es posterior al draftUpdatedAt', async () => {
     const { prisma } = makePrisma({
-      botEnabled: false,
-      botSessionTtlMin: 30,
-      botFlow: null,
-      botTopics: null,
-      botRouter: null,
-      botTopicsDraft: null,
-      botRouterDraft: null,
-      botDraftUpdatedAt: new Date('2026-04-01T10:00:00Z'),
-      botPublishedAt: new Date('2026-05-01T10:00:00Z'),
+      draftUpdatedAt: new Date('2026-04-01T10:00:00Z'),
+      publishedAt: new Date('2026-05-01T10:00:00Z'),
     });
     const svc = new WapiBotService(prisma, makeMedia());
 
@@ -150,15 +167,10 @@ describe('WapiBotService — 4.O.3 Draft/Publish', () => {
 
   it('publish bloquea si el draft de router referencia un topicId que no existe en draft ni en prod', async () => {
     const { prisma } = makePrisma({
-      botEnabled: false,
-      botSessionTtlMin: 30,
-      botFlow: null,
-      botTopics: [makeTopic('A', 'A')],
-      botRouter: null,
-      botTopicsDraft: [makeTopic('A', 'A')],
-      botRouterDraft: { rules: [{ kind: 'keyword', keywords: ['x'], topicId: 'FANTASMA' }] },
-      botDraftUpdatedAt: new Date('2026-05-01T10:00:00Z'),
-      botPublishedAt: null,
+      topics: [makeTopic('A', 'A')],
+      topicsDraft: [makeTopic('A', 'A')],
+      routerDraft: { rules: [{ kind: 'keyword', keywords: ['x'], topicId: 'FANTASMA' }] },
+      draftUpdatedAt: new Date('2026-05-01T10:00:00Z'),
     });
     const svc = new WapiBotService(prisma, makeMedia());
 
@@ -167,17 +179,10 @@ describe('WapiBotService — 4.O.3 Draft/Publish', () => {
     });
   });
 
-  it('publish falla si no hay draft (botDraftUpdatedAt null)', async () => {
+  it('publish falla si no hay draft (draftUpdatedAt null)', async () => {
     const { prisma } = makePrisma({
-      botEnabled: false,
-      botSessionTtlMin: 30,
-      botFlow: null,
-      botTopics: [makeTopic('A', 'A')],
-      botRouter: null,
-      botTopicsDraft: null,
-      botRouterDraft: null,
-      botDraftUpdatedAt: null,
-      botPublishedAt: null,
+      topics: [makeTopic('A', 'A')],
+      draftUpdatedAt: null,
     });
     const svc = new WapiBotService(prisma, makeMedia());
 

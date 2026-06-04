@@ -20,11 +20,29 @@ function ctxB(): RequestContext {
   return { organizationId: 'org-B', teamId: 'team-B', userId: 'user-B' } as unknown as RequestContext;
 }
 
+// Phase 0a (multi-canal): la definición del bot vive en la entidad `Bot`. Los
+// tests setean `row` con nombres `bot*` (legacy); el mock lo envuelve en el shape
+// `{ id, bot: {...} }` que `loadConfig` ahora selecciona vía la relación `bot`.
 function makePrisma(row: Record<string, unknown> | null) {
+  const wrapped =
+    row === null
+      ? null
+      : {
+          id: row.id,
+          bot: {
+            flow: row.botFlow ?? null,
+            topics: row.botTopics ?? null,
+            router: row.botRouter ?? null,
+            topicsDraft: row.botTopicsDraft ?? null,
+            routerDraft: row.botRouterDraft ?? null,
+            variables: row.botVariables ?? null,
+            variablesDraft: row.botVariablesDraft ?? null,
+          },
+        };
   return {
     scoped: {
       wapiConfig: {
-        findFirst: jest.fn(async () => row),
+        findFirst: jest.fn(async () => wrapped),
       },
     },
   } as never;

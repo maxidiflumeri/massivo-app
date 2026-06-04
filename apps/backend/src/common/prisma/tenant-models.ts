@@ -21,6 +21,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'WapiQuickReply',
   'WapiResolutionNote',
   'WapiBotSession',
+  // Bot como entidad propia (Phase 0a — multi-canal)
+  'Bot',
   // Cross-cutting (Fase 2.C)
   'Tag',
   'ContactList',

@@ -125,15 +125,15 @@ model Organization {
   usageCounters UsageCounter[]
   auditLogs     AuditLog[]
 
-  smtpAccounts      SmtpAccount[]
-  emailDomains      EmailDomain[]
-  emailTemplates    EmailTemplate[]
-  emailCampaigns    EmailCampaign[]
-  emailContacts     EmailContact[]
-  emailReports      EmailReport[]
-  emailEvents       EmailEvent[]
-  emailBounces      EmailBounce[]
-  emailUnsubscribes EmailUnsubscribe[]
+  smtpAccounts        SmtpAccount[]
+  emailDomains        EmailDomain[]
+  emailTemplates      EmailTemplate[]
+  emailCampaigns      EmailCampaign[]
+  emailContacts       EmailContact[]
+  emailReports        EmailReport[]
+  emailEvents         EmailEvent[]
+  emailBounces        EmailBounce[]
+  emailUnsubscribes   EmailUnsubscribe[]
   wapiConfigs         WapiConfig[]
   wapiTemplates       WapiTemplate[]
   wapiCampaigns       WapiCampaign[]
@@ -145,6 +145,7 @@ model Organization {
   wapiQuickReplies    WapiQuickReply[]
   wapiResolutionNotes WapiResolutionNote[]
   wapiBotSessions     WapiBotSession[]
+  bots                Bot[]
 
   contacts                Contact[]
   tags                    Tag[]
@@ -169,14 +170,14 @@ model Team {
 
   memberships TeamMembership[]
 
-  smtpAccounts      SmtpAccount[]
-  emailTemplates    EmailTemplate[]
-  emailCampaigns    EmailCampaign[]
-  emailContacts     EmailContact[]
-  emailReports      EmailReport[]
-  emailEvents       EmailEvent[]
-  emailBounces      EmailBounce[]
-  emailUnsubscribes EmailUnsubscribe[]
+  smtpAccounts        SmtpAccount[]
+  emailTemplates      EmailTemplate[]
+  emailCampaigns      EmailCampaign[]
+  emailContacts       EmailContact[]
+  emailReports        EmailReport[]
+  emailEvents         EmailEvent[]
+  emailBounces        EmailBounce[]
+  emailUnsubscribes   EmailUnsubscribe[]
   wapiConfigs         WapiConfig[]
   wapiTemplates       WapiTemplate[]
   wapiCampaigns       WapiCampaign[]
@@ -188,6 +189,7 @@ model Team {
   wapiQuickReplies    WapiQuickReply[]
   wapiResolutionNotes WapiResolutionNote[]
   wapiBotSessions     WapiBotSession[]
+  bots                Bot[]
 
   contacts       Contact[]
   tags           Tag[]
@@ -347,10 +349,10 @@ model SmtpAccount {
 }
 
 enum EmailDomainStatus {
-  PENDING            // Recién creada en SES, esperando que el cliente agregue DNS
-  VERIFIED           // SES confirmó DKIM en el DNS del cliente
-  FAILED             // DKIM falló en SES (DNS mal configurado / records borrados)
-  TEMPORARY_FAILURE  // SES dice fallo transitorio — retry-able
+  PENDING // Recién creada en SES, esperando que el cliente agregue DNS
+  VERIFIED // SES confirmó DKIM en el DNS del cliente
+  FAILED // DKIM falló en SES (DNS mal configurado / records borrados)
+  TEMPORARY_FAILURE // SES dice fallo transitorio — retry-able
 }
 
 /**
@@ -360,44 +362,43 @@ enum EmailDomainStatus {
  * DMARC sin v=DMARC1), marcamos INVALID.
  */
 enum DnsRecordStatus {
-  PENDING   // Default antes del primer check
-  VERIFIED  // Record encontrado y válido
-  MISSING   // No hay TXT en el DNS para esta key
-  INVALID   // Hay TXT pero no cumple el formato esperado
+  PENDING // Default antes del primer check
+  VERIFIED // Record encontrado y válido
+  MISSING // No hay TXT en el DNS para esta key
+  INVALID // Hay TXT pero no cumple el formato esperado
 }
 
 /**
  * Dominio de envío verificado en AWS SES bajo la account de Massivo.
  * Cada org puede registrar sus propios dominios; el cliente agrega 3 CNAMEs
  * DKIM al DNS de su dominio y SES los verifica.
- *
  * El nombre del dominio es único per-org (no globalmente) — un mismo dominio
  * no puede ser registrado por dos orgs distintas en nuestra account porque SES
  * rechaza el segundo CreateEmailIdentity. Esto se valida en backend antes de
  * llamar a SES.
  */
 model EmailDomain {
-  id              String            @id @default(cuid())
-  organizationId  String
-  domain          String            // lowercase, sin trailing dot
-  status          EmailDomainStatus @default(PENDING)
+  id               String            @id @default(cuid())
+  organizationId   String
+  domain           String // lowercase, sin trailing dot
+  status           EmailDomainStatus @default(PENDING)
   // 3 CNAMEs DKIM que el cliente debe agregar al DNS.
   // Shape: [{ name: 'xxx._domainkey.<domain>', value: 'xxx.dkim.amazonses.com' }, ...]
-  dkimTokens      Json              @default("[]")
-  lastCheckedAt   DateTime?
-  verifiedAt      DateTime?
-  failureReason   String?
+  dkimTokens       Json              @default("[]")
+  lastCheckedAt    DateTime?
+  verifiedAt       DateTime?
+  failureReason    String?
   // SPF check: lookup TXT en `<domain>`. VERIFIED si hay `v=spf1` con
   // `include:amazonses.com`. Si hay SPF pero no incluye amazonses, INVALID.
-  spfStatus       DnsRecordStatus   @default(PENDING)
-  spfRecord       String?           // El TXT encontrado, para mostrar al user
+  spfStatus        DnsRecordStatus   @default(PENDING)
+  spfRecord        String? // El TXT encontrado, para mostrar al user
   // DMARC: lookup TXT en `_dmarc.<domain>`. VERIFIED si hay `v=DMARC1`.
   // No exigimos política estricta — Gmail/Yahoo 2024 acepta p=none.
-  dmarcStatus     DnsRecordStatus   @default(PENDING)
-  dmarcRecord     String?
-  dnsLastCheckedAt DateTime?        // Última vez que corrimos SPF + DMARC
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  dmarcStatus      DnsRecordStatus   @default(PENDING)
+  dmarcRecord      String?
+  dnsLastCheckedAt DateTime? // Última vez que corrimos SPF + DMARC
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   smtpAccounts SmtpAccount[]
@@ -496,7 +497,9 @@ model EmailReport {
   // contactId = null y recipientEmail seteado.
   campaignId     String?
   contactId      String?
-  /** Email del destinatario para transaccionales (sin EmailContact asociado). */
+  /**
+   * Email del destinatario para transaccionales (sin EmailContact asociado).
+   */
   recipientEmail String?
   status         EmailReportStatus @default(PENDING)
   sentAt         DateTime?
@@ -627,7 +630,7 @@ enum WapiOptOutScope {
 }
 
 model WapiConfig {
-  id                    String   @id @default(cuid())
+  id                    String    @id @default(cuid())
   organizationId        String
   teamId                String
   name                  String?
@@ -641,18 +644,18 @@ model WapiConfig {
   // Keywords case-insensitive que disparan opt-out automático al recibirse
   // como texto inbound. Si vacío, se usan los defaults internos del webhook
   // handler (BAJA, STOP, UNSUBSCRIBE, CANCELAR).
-  optOutKeywords        String[] @default([])
-  dailyLimit            Int      @default(200)
+  optOutKeywords        String[]  @default([])
+  dailyLimit            Int       @default(200)
   // 4.Q — Throttle entre envíos. Defaults 30s/60s. Pisable per-campaña vía
   // WapiCampaign.config.delayMinMs/Max. Si null, fallback a env y luego a hard
   // defaults (DEFAULT_DELAY_MIN_MS/MAX en wapi-worker.service.ts).
-  sendDelayMinMs        Int      @default(30000)
-  sendDelayMaxMs        Int      @default(60000)
-  isActive              Boolean  @default(true)
+  sendDelayMinMs        Int       @default(30000)
+  sendDelayMaxMs        Int       @default(60000)
+  isActive              Boolean   @default(true)
   // Si true, el sender NO pega a Meta — devuelve un wamid SIM_ y persiste el
   // mensaje como si Meta hubiera respondido OK. Usado por la página
   // /dashboard/dev/wapi/chat para simular ida-vuelta completo sin tocar Meta.
-  isTestMode            Boolean  @default(false)
+  isTestMode            Boolean   @default(false)
   // Bot guiado por número (4.M). Si botEnabled=true y botFlow no es null, el
   // webhook intercepta los inbounds y los pasa por el motor de bot antes que
   // welcome/opt-out/4.K. botFlow es un JSON con shape:
@@ -660,13 +663,13 @@ model WapiConfig {
   //     options?: [{ id, label, nextNodeId }] } } }
   // sessionTtlMin define después de cuántos minutos sin interacción la sesión
   // del bot expira (cliente vuelve a empezar en startNodeId al próximo inbound).
-  botEnabled            Boolean  @default(false)
+  botEnabled            Boolean   @default(false)
   botFlow               Json?
-  botSessionTtlMin      Int      @default(30)
+  botSessionTtlMin      Int       @default(30)
   // 4.O.6 — TTL del estado WAITING de una conversación. El operador "pone en
   // espera" tras responder; si el cliente no contesta en este lapso, un worker
   // periódico cierra la conversación automáticamente (RESOLVED + auto-nota).
-  botWaitingTtlMin      Int      @default(120)
+  botWaitingTtlMin      Int       @default(120)
   // 4.O.1 — sistema multi-tema. botTopics: Array<{id,label,flow:BotFlow}>.
   // botRouter: { rules: BotRouterRule[], defaultTopicId?: string } decide a qué
   // tema entrar según template-payload (regex named groups) o keyword exacto.
@@ -689,16 +692,63 @@ model WapiConfig {
   botVariablesDraft     Json?
   botDraftUpdatedAt     DateTime?
   botPublishedAt        DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Phase 0 (multi-canal): el bot pasa a entidad propia `Bot`. Un `Bot` se
+  // diseña una vez y se conecta a N canales (N WapiConfig). Las columnas `bot*`
+  // de arriba quedan DEPRECADAS — la definición vive ahora en `Bot` (resuelto vía
+  // `botId`). Se mantienen hasta el cleanup (Fase 0c) para migración reversible.
+  botId String?
 
   organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team          Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  bot           Bot?               @relation(fields: [botId], references: [id], onDelete: SetNull)
   campaigns     WapiCampaign[]
   conversations WapiConversation[]
   botSessions   WapiBotSession[]
 
   @@unique([teamId, phoneNumberId])
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([botId])
+}
+
+// Phase 0 (multi-canal) — Definición del bot como entidad de primera clase.
+// Extraída de las columnas `bot*` de `WapiConfig`. Un Bot se diseña una vez y se
+// conecta a N canales (hoy N WapiConfig vía `WapiConfig.botId`; en Fase 1 también
+// Instagram/Messenger/Webchat). Los shapes JSON (flow/topics/router/variables) son
+// idénticos a los de WapiConfig — el runtime del bot no cambia.
+model Bot {
+  id             String  @id @default(cuid())
+  organizationId String
+  teamId         String
+  name           String
+  enabled        Boolean @default(false)
+
+  // Versión publicada (la que ejecuta el motor en prod). ← WapiConfig.bot{Flow,Topics,Router,Variables}
+  flow      Json?
+  topics    Json?
+  router    Json?
+  variables Json?
+
+  // Borrador en edición (sandbox). ← WapiConfig.bot{Topics,Router,Variables}Draft
+  topicsDraft    Json?
+  routerDraft    Json?
+  variablesDraft Json?
+  draftUpdatedAt DateTime?
+  publishedAt    DateTime?
+
+  // Runtime. ← WapiConfig.botSessionTtlMin. (botWaitingTtlMin queda en WapiConfig: es TTL de "hold" del inbox.)
+  sessionTtlMin Int @default(30)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  configs      WapiConfig[]
+
   @@index([organizationId])
   @@index([teamId])
 }
@@ -809,25 +859,25 @@ model WapiReport {
 }
 
 model WapiConversation {
-  id             String                 @id @default(cuid())
-  organizationId String
-  teamId         String
-  configId       String
-  phone          String
-  name           String?
-  status         WapiConversationStatus @default(UNASSIGNED)
-  assignedUserId String?
-  lastMessageAt  DateTime?
-  window24hAt    DateTime?
-  firstReplyAt   DateTime?
-  resolvedAt     DateTime?
-  unreadCount    Int                    @default(0)
-  lastReadAt     DateTime?
-  campaignName   String?
+  id                 String                 @id @default(cuid())
+  organizationId     String
+  teamId             String
+  configId           String
+  phone              String
+  name               String?
+  status             WapiConversationStatus @default(UNASSIGNED)
+  assignedUserId     String?
+  lastMessageAt      DateTime?
+  window24hAt        DateTime?
+  firstReplyAt       DateTime?
+  resolvedAt         DateTime?
+  unreadCount        Int                    @default(0)
+  lastReadAt         DateTime?
+  campaignName       String?
   // Marcada como prioridad alta — se setea cuando el cliente apreta el botón
   // INBOX en un template interactivo (4.K). El inbox tiene un filtro y un
   // badge ⭐ para destacarlas.
-  priority       Boolean                @default(false)
+  priority           Boolean                @default(false)
   // 4.O.6 — Sistema de suspensión del bot + estado WAITING.
   // `escalated`: la conversación es visible en el inbox sólo si está escalada
   //   (HANDOFF del bot, button INBOX action, take/assign manual). Conversaciones
@@ -839,12 +889,12 @@ model WapiConversation {
   // `lastAssignedUserId`: el operador que la tenía antes de pasar a WAITING o
   //   antes de soltarla. Se mantiene para que la UI muestre "atendida por X la
   //   última vez" cuando vuelve a UNASSIGNED por respuesta del cliente.
-  escalated         Boolean   @default(false)
-  botSuspended      Boolean   @default(false)
-  waitingUntil      DateTime?
+  escalated          Boolean                @default(false)
+  botSuspended       Boolean                @default(false)
+  waitingUntil       DateTime?
   lastAssignedUserId String?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
   organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team            Team                 @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -958,7 +1008,7 @@ model WapiResolutionNote {
 // si existe + no expiró, decide el próximo nodo según la opción seleccionada.
 // Sesión finaliza cuando se llega a un nodo HANDOFF o el operador toma manual.
 model WapiBotSession {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   teamId         String
   configId       String
@@ -967,15 +1017,15 @@ model WapiBotSession {
   // 4.O.1 — id del tema (BotTopic) en el que está parado el cliente. Null para
   // sesiones legacy (botFlow sin topics) — el motor las trata como tema 'default'.
   currentTopicId String?
-  startedAt      DateTime @default(now())
-  lastInboundAt  DateTime @default(now())
+  startedAt      DateTime  @default(now())
+  lastInboundAt  DateTime  @default(now())
   expiresAt      DateTime
   endedAt        DateTime?
   endedReason    String?
   // Variables capturadas por nodos CAPTURE (4.N.2). Forma libre Json,
   // claves = nombres definidos en saveAs. Se usa para interpolación {{var}}
   // en MESSAGE/CAPTURE/MEDIA y para ramas CONDITION{kind:'var'}.
-  data           Json?    @default("{}")
+  data           Json?     @default("{}")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -999,7 +1049,7 @@ model WapiBotSession {
 // normaliza todo a phoneE164. EmailContact/WapiContact siguen como audience snapshots
 // per-campaign pero ahora linkean al Contact cross-channel via contactId.
 model Contact {
-  id             String   @id @default(cuid())
+  id             String  @id @default(cuid())
   organizationId String
   teamId         String?
 
@@ -1019,20 +1069,19 @@ model Contact {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  team              Team?                    @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  tags              ContactTag[]
-  listMembers       ContactListMember[]
-  emailIdentities   EmailContact[]
-  wapiIdentities    WapiContact[]
-  mergesAsLeft      ContactMergeSuggestion[] @relation("LeftContact")
-  mergesAsRight     ContactMergeSuggestion[] @relation("RightContact")
+  organization    Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team            Team?                    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  tags            ContactTag[]
+  listMembers     ContactListMember[]
+  emailIdentities EmailContact[]
+  wapiIdentities  WapiContact[]
+  mergesAsLeft    ContactMergeSuggestion[] @relation("LeftContact")
+  mergesAsRight   ContactMergeSuggestion[] @relation("RightContact")
 
   // Strong identity keys: globally unique per org → auto-merge en matching service
   @@unique([organizationId, externalId])
   @@unique([organizationId, dni])
   @@unique([organizationId, cuit])
-
   // Weak identity keys: indexed para queries rápidas, pero NO unique — multiple contacts
   // pueden compartir email (familia/oficina) o phone (mismo teléfono compartido). El
   // matching propone merge en UI, no fuerza.

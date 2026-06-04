@@ -465,6 +465,9 @@ export class WapiWebhookService {
   }): Promise<void> {
     const cfg = (await this.prisma.scoped.wapiConfig.findFirst({
       where: { id: input.configId },
+      // Phase 0a (multi-canal): la definición del bot vive en la entidad `Bot`
+      // (relación `WapiConfig.bot`). El config aporta los campos de canal
+      // (phoneNumberId/accessToken/isTestMode); el bot, la definición del flow.
       select: {
         id: true,
         phoneNumberId: true,
@@ -474,24 +477,31 @@ export class WapiWebhookService {
         welcomeMessage: true,
         optOutConfirmMessage: true,
         optOutKeywords: true,
-        botEnabled: true,
-        botFlow: true,
-        botSessionTtlMin: true,
-        botTopics: true,
-        botRouter: true,
-        botVariables: true,
+        bot: {
+          select: {
+            enabled: true,
+            flow: true,
+            sessionTtlMin: true,
+            topics: true,
+            router: true,
+            variables: true,
+          },
+        },
       } as never,
     })) as
       | (Awaited<ReturnType<typeof this.prisma.scoped.wapiConfig.findFirst>> & {
-          botEnabled: boolean;
-          botFlow: unknown;
-          botSessionTtlMin: number;
-          botTopics: unknown;
-          botRouter: unknown;
-          botVariables: unknown;
+          bot: {
+            enabled: boolean;
+            flow: unknown;
+            sessionTtlMin: number;
+            topics: unknown;
+            router: unknown;
+            variables: unknown;
+          } | null;
         })
       | null;
     if (!cfg || !cfg.isActive) return;
+    const bot = cfg.bot;
 
     // 0. Bot guiado (4.M). Si está activo y maneja el inbound, omitimos welcome/optout/4.K.
     let botHandled = false;
@@ -500,8 +510,8 @@ export class WapiWebhookService {
     const botFeatureOn = await this.botFeature.isEnabled();
     if (
       botFeatureOn &&
-      cfg.botEnabled &&
-      (cfg.botTopics || cfg.botFlow) &&
+      bot?.enabled &&
+      (bot.topics || bot.flow) &&
       (input.inboundText !== null || input.isBotButton)
     ) {
       const botInbound = input.isBotButton && input.buttonInfo
@@ -520,12 +530,13 @@ export class WapiWebhookService {
             phoneNumberId: cfg.phoneNumberId,
             accessTokenEnc: cfg.accessTokenEnc,
             isTestMode: cfg.isTestMode,
-            botEnabled: cfg.botEnabled,
-            botFlow: cfg.botFlow,
-            botSessionTtlMin: cfg.botSessionTtlMin,
-            botTopics: cfg.botTopics,
-            botRouter: cfg.botRouter,
-            botVariables: (cfg as unknown as { botVariables?: unknown }).botVariables,
+            // Campos de definición desde la entidad `Bot` (Phase 0a).
+            botEnabled: bot.enabled,
+            botFlow: bot.flow,
+            botSessionTtlMin: bot.sessionTtlMin,
+            botTopics: bot.topics,
+            botRouter: bot.router,
+            botVariables: bot.variables,
           },
           {
             configId: cfg.id,
@@ -632,12 +643,15 @@ export class WapiWebhookService {
       accessTokenEnc: string;
       isTestMode: boolean;
       optOutConfirmMessage: string | null;
-      botEnabled: boolean;
-      botFlow: unknown;
-      botSessionTtlMin: number;
-      botTopics: unknown;
-      botRouter: unknown;
-      botVariables: unknown;
+      // Phase 0a (multi-canal): definición del bot vía relación `bot`.
+      bot: {
+        enabled: boolean;
+        flow: unknown;
+        sessionTtlMin: number;
+        topics: unknown;
+        router: unknown;
+        variables: unknown;
+      } | null;
     };
     conversationId: string;
     phone: string;
@@ -677,14 +691,15 @@ export class WapiWebhookService {
     // diseño — un payload nuevo manda. Si el feature está off (env u org),
     // ignoramos silenciosamente: el payload llegó pero no podemos servirlo.
     if (resolved.action === 'BOT') {
-      if (!input.botFeatureOn || !input.cfg.botEnabled) {
+      const bot = input.cfg.bot;
+      if (!input.botFeatureOn || !bot?.enabled) {
         this.logger.debug(
           `BOT action ignored (feature off) configId=${input.cfg.id} buttonId=${input.button.buttonId}`,
         );
         return;
       }
       const match = this.botRouter.resolve(
-        this.parseRouter(input.cfg.botRouter),
+        this.parseRouter(bot.router),
         { kind: 'template-payload', payload: input.button.buttonId },
       );
       if (!match) {
@@ -699,12 +714,13 @@ export class WapiWebhookService {
           phoneNumberId: input.cfg.phoneNumberId,
           accessTokenEnc: input.cfg.accessTokenEnc,
           isTestMode: input.cfg.isTestMode,
-          botEnabled: input.cfg.botEnabled,
-          botFlow: input.cfg.botFlow,
-          botSessionTtlMin: input.cfg.botSessionTtlMin,
-          botTopics: input.cfg.botTopics,
-          botRouter: input.cfg.botRouter,
-          botVariables: (input.cfg as unknown as { botVariables?: unknown }).botVariables,
+          // Campos de definición desde la entidad `Bot` (Phase 0a).
+          botEnabled: bot.enabled,
+          botFlow: bot.flow,
+          botSessionTtlMin: bot.sessionTtlMin,
+          botTopics: bot.topics,
+          botRouter: bot.router,
+          botVariables: bot.variables,
         },
         input.conversationId,
         input.phone,

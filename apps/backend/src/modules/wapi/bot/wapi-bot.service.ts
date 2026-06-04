@@ -62,11 +62,45 @@ export interface SaveBotDraftInput {
   botVariables?: unknown;
 }
 
+/** Forma interna leída de `Bot` (campos de definición). */
+interface BotRow {
+  id: string;
+  enabled: boolean;
+  sessionTtlMin: number;
+  flow: unknown;
+  topics: unknown;
+  router: unknown;
+  variables: unknown;
+  topicsDraft: unknown;
+  routerDraft: unknown;
+  variablesDraft: unknown;
+  draftUpdatedAt: Date | null;
+  publishedAt: Date | null;
+}
+
+const BOT_SELECT = {
+  id: true,
+  enabled: true,
+  sessionTtlMin: true,
+  flow: true,
+  topics: true,
+  router: true,
+  variables: true,
+  topicsDraft: true,
+  routerDraft: true,
+  variablesDraft: true,
+  draftUpdatedAt: true,
+  publishedAt: true,
+} as const;
+
 /**
- * Servicio CRUD del bot por config (4.M). Lee/escribe los campos
- * `botEnabled` / `botSessionTtlMin` / `botFlow` en `WapiConfig`. Valida la
- * estructura del flow antes de persistir — si el flow es inválido se rechaza
- * con 400 (mejor errar al guardar que al recibir un inbound).
+ * Servicio CRUD del bot (4.M). Phase 0a (multi-canal): la definición del bot
+ * vive en la entidad `Bot` (extraída de las columnas `bot*` de `WapiConfig`).
+ * El bot se resuelve vía `WapiConfig.botId`; si el config no tiene bot todavía,
+ * `update`/`saveDraft` crean uno y lo linkean (lazy). El contrato público
+ * (`BotConfigSnapshot`, llaveado por `configId`) NO cambia — la API y el frontend
+ * siguen iguales. Valida la estructura del flow antes de persistir — si es
+ * inválido se rechaza con 400 (mejor errar al guardar que al recibir un inbound).
  */
 @Injectable()
 export class WapiBotService {
@@ -76,6 +110,100 @@ export class WapiBotService {
     private readonly prisma: PrismaService,
     private readonly media: WapiMediaService,
   ) {}
+
+  /**
+   * Resuelve el `Bot` de un config vía `WapiConfig.botId`. Si `create=true` y el
+   * config no tiene bot, crea uno (org/team del config) y lo linkea. Devuelve
+   * null si no hay bot y `create=false`.
+   */
+  private async resolveBot(configId: string, opts: { create: boolean }): Promise<BotRow | null> {
+    const config = (await this.prisma.scoped.wapiConfig.findFirst({
+      where: { id: configId },
+      select: {
+        id: true,
+        botId: true,
+        name: true,
+        phoneNumberId: true,
+        organizationId: true,
+        teamId: true,
+      } as never,
+    })) as unknown as {
+      id: string;
+      botId: string | null;
+      name: string | null;
+      phoneNumberId: string;
+      organizationId: string;
+      teamId: string;
+    } | null;
+    if (!config) throw new NotFoundException(`WapiConfig ${configId} no encontrado en este scope`);
+
+    if (config.botId) {
+      const bot = (await this.prisma.scoped.bot.findFirst({
+        where: { id: config.botId },
+        select: BOT_SELECT,
+      })) as unknown as BotRow | null;
+      if (bot) return bot;
+      // botId colgante (no debería pasar) → cae a crear si está permitido.
+    }
+    if (!opts.create) return null;
+
+    const created = (await this.prisma.scoped.bot.create({
+      data: {
+        organizationId: config.organizationId,
+        teamId: config.teamId,
+        name: config.name?.trim() || `Bot ${config.phoneNumberId}`,
+      },
+      select: BOT_SELECT,
+    })) as unknown as BotRow;
+    await this.prisma.scoped.wapiConfig.update({
+      where: { id: configId },
+      data: { botId: created.id } as never,
+    });
+    this.logger.log(`Bot creado y linkeado configId=${configId} botId=${created.id}`);
+    return created;
+  }
+
+  private emptySnapshot(configId: string): BotConfigSnapshot {
+    return {
+      configId,
+      botEnabled: false,
+      botSessionTtlMin: 30,
+      botFlow: null,
+      botTopics: null,
+      botRouter: null,
+      botVariables: null,
+      botTopicsDraft: null,
+      botRouterDraft: null,
+      botVariablesDraft: null,
+      botDraftUpdatedAt: null,
+      botPublishedAt: null,
+      hasUnpublishedChanges: false,
+    };
+  }
+
+  private toSnapshot(configId: string, bot: BotRow): BotConfigSnapshot {
+    const draftUpdatedAt = bot.draftUpdatedAt ?? null;
+    const publishedAt = bot.publishedAt ?? null;
+    // Hay cambios sin publicar si existe timestamp de draft y o bien nunca se publicó
+    // o el último save del draft es posterior al último publish.
+    const hasUnpublishedChanges =
+      !!draftUpdatedAt && (!publishedAt || draftUpdatedAt.getTime() > publishedAt.getTime());
+    return {
+      configId,
+      botEnabled: bot.enabled,
+      botSessionTtlMin: bot.sessionTtlMin,
+      botFlow: (bot.flow ?? null) as BotFlow | null,
+      botTopics: (bot.topics ?? null) as BotTopic[] | null,
+      botRouter: (bot.router ?? null) as BotRouter | null,
+      botVariables: (bot.variables ?? null) as BotVariable[] | null,
+      botTopicsDraft: (bot.topicsDraft ?? null) as BotTopic[] | null,
+      botRouterDraft: (bot.routerDraft ?? null) as BotRouter | null,
+      botVariablesDraft: (bot.variablesDraft ?? null) as BotVariable[] | null,
+      botDraftUpdatedAt: draftUpdatedAt,
+      botPublishedAt: publishedAt,
+      hasUnpublishedChanges,
+    };
+  }
 
   /**
    * Sube un archivo a Meta para usar como mediaId dentro de un nodo MEDIA del
@@ -156,82 +284,27 @@ export class WapiBotService {
 
   async get(configId: string): Promise<BotConfigSnapshot> {
     this.requireContext();
-    const row = await this.prisma.scoped.wapiConfig.findFirst({
-      where: { id: configId },
-      // Cast: Prisma client puede no estar regenerado todavía con los nuevos
-      // campos cuando el dev server está corriendo con la dll cacheada.
-      select: {
-        id: true,
-        botEnabled: true,
-        botSessionTtlMin: true,
-        botFlow: true,
-        botTopics: true,
-        botRouter: true,
-        botVariables: true,
-        botTopicsDraft: true,
-        botRouterDraft: true,
-        botVariablesDraft: true,
-        botDraftUpdatedAt: true,
-        botPublishedAt: true,
-      } as never,
-    });
-    if (!row) throw new NotFoundException(`WapiConfig ${configId} no encontrado en este scope`);
-    const r = row as unknown as {
-      id: string;
-      botEnabled: boolean;
-      botSessionTtlMin: number;
-      botFlow: unknown;
-      botTopics: unknown;
-      botRouter: unknown;
-      botVariables: unknown;
-      botTopicsDraft: unknown;
-      botRouterDraft: unknown;
-      botVariablesDraft: unknown;
-      botDraftUpdatedAt: Date | null;
-      botPublishedAt: Date | null;
-    };
-    const draftUpdatedAt = r.botDraftUpdatedAt ?? null;
-    const publishedAt = r.botPublishedAt ?? null;
-    // Hay cambios sin publicar si existe timestamp de draft y o bien nunca se publicó
-    // o el último save del draft es posterior al último publish.
-    const hasUnpublishedChanges =
-      !!draftUpdatedAt && (!publishedAt || draftUpdatedAt.getTime() > publishedAt.getTime());
-    return {
-      configId: r.id,
-      botEnabled: r.botEnabled,
-      botSessionTtlMin: r.botSessionTtlMin,
-      botFlow: (r.botFlow ?? null) as BotFlow | null,
-      botTopics: (r.botTopics ?? null) as BotTopic[] | null,
-      botRouter: (r.botRouter ?? null) as BotRouter | null,
-      botVariables: (r.botVariables ?? null) as BotVariable[] | null,
-      botTopicsDraft: (r.botTopicsDraft ?? null) as BotTopic[] | null,
-      botRouterDraft: (r.botRouterDraft ?? null) as BotRouter | null,
-      botVariablesDraft: (r.botVariablesDraft ?? null) as BotVariable[] | null,
-      botDraftUpdatedAt: draftUpdatedAt,
-      botPublishedAt: publishedAt,
-      hasUnpublishedChanges,
-    };
+    const bot = await this.resolveBot(configId, { create: false });
+    if (!bot) return this.emptySnapshot(configId);
+    return this.toSnapshot(configId, bot);
   }
 
   async update(configId: string, dto: UpdateBotInput): Promise<BotConfigSnapshot> {
     this.requireContext();
-    const current = await this.prisma.scoped.wapiConfig.findFirst({
-      where: { id: configId },
-      select: { id: true } as never,
-    });
-    if (!current) throw new NotFoundException(`WapiConfig ${configId} no encontrado en este scope`);
+    const bot = (await this.resolveBot(configId, { create: true })) as BotRow;
 
+    // Mapeo DTO (nombres `bot*`) → columnas de `Bot`.
     const data: Record<string, unknown> = {};
-    if (dto.botEnabled !== undefined) data.botEnabled = dto.botEnabled;
+    if (dto.botEnabled !== undefined) data.enabled = dto.botEnabled;
     if (dto.botSessionTtlMin !== undefined) {
       if (!Number.isFinite(dto.botSessionTtlMin) || dto.botSessionTtlMin < 1 || dto.botSessionTtlMin > 1440) {
         throw new BadRequestException('botSessionTtlMin debe estar entre 1 y 1440');
       }
-      data.botSessionTtlMin = dto.botSessionTtlMin;
+      data.sessionTtlMin = dto.botSessionTtlMin;
     }
     if (dto.botFlow !== undefined) {
       if (dto.botFlow === null) {
-        data.botFlow = null;
+        data.flow = null;
       } else {
         const validation = validateBotFlow(dto.botFlow);
         if (!validation.ok) {
@@ -240,7 +313,7 @@ export class WapiBotService {
             errors: validation.errors,
           });
         }
-        data.botFlow = dto.botFlow;
+        data.flow = dto.botFlow;
       }
     }
     // 4.O.1 — topics + router. Validamos en este orden para que router pueda
@@ -248,75 +321,64 @@ export class WapiBotService {
     let topicIdsForRouter: ReadonlySet<string> | undefined;
     if (dto.botTopics !== undefined) {
       if (dto.botTopics === null) {
-        data.botTopics = null;
+        data.topics = null;
       } else {
         const v = validateBotTopics(dto.botTopics);
         if (!v.ok || !v.topics) {
           throw new BadRequestException({ message: 'botTopics inválidos', errors: v.errors });
         }
-        data.botTopics = dto.botTopics as never;
+        data.topics = dto.botTopics as never;
         topicIdsForRouter = new Set(v.topics.map((t) => t.id));
       }
     }
     if (dto.botRouter !== undefined) {
       if (dto.botRouter === null) {
-        data.botRouter = null;
+        data.router = null;
       } else {
-        // Si no estamos actualizando topics en este patch, leemos los existentes
-        // para validar las refs del router.
-        if (!topicIdsForRouter) {
-          const existing = await this.prisma.scoped.wapiConfig.findFirst({
-            where: { id: configId },
-            select: { botTopics: true } as never,
-          });
-          const existingTopicsRaw = (existing as unknown as { botTopics: unknown } | null)?.botTopics;
-          if (existingTopicsRaw) {
-            const v = validateBotTopics(existingTopicsRaw);
-            if (v.ok && v.topics) {
-              topicIdsForRouter = new Set(v.topics.map((t) => t.id));
-            }
+        // Si no estamos actualizando topics en este patch, validamos las refs del
+        // router contra los topics ya persistidos en el Bot.
+        if (!topicIdsForRouter && bot.topics) {
+          const v = validateBotTopics(bot.topics);
+          if (v.ok && v.topics) {
+            topicIdsForRouter = new Set(v.topics.map((t) => t.id));
           }
         }
         const v = validateBotRouter(dto.botRouter, topicIdsForRouter);
         if (!v.ok) {
           throw new BadRequestException({ message: 'botRouter inválido', errors: v.errors });
         }
-        data.botRouter = dto.botRouter as never;
+        data.router = dto.botRouter as never;
       }
     }
     if (dto.botVariables !== undefined) {
       if (dto.botVariables === null) {
-        data.botVariables = null;
+        data.variables = null;
       } else {
         const v = validateBotVariables(dto.botVariables);
         if (!v.ok) {
           throw new BadRequestException({ message: 'botVariables inválidas', errors: v.errors });
         }
-        data.botVariables = dto.botVariables as never;
+        data.variables = dto.botVariables as never;
       }
     }
 
-    if (Object.keys(data).length === 0) return this.get(configId);
+    if (Object.keys(data).length === 0) return this.toSnapshot(configId, bot);
 
     // Si se está activando el bot pero no hay flow ni topics (ni se está
     // enviando ninguno), bloqueamos para evitar dejar el bot encendido vacío.
-    if (data.botEnabled === true && data.botFlow === undefined && data.botTopics === undefined) {
-      const existing = await this.prisma.scoped.wapiConfig.findFirst({
-        where: { id: configId },
-        select: { botFlow: true, botTopics: true } as never,
-      });
-      const e = existing as unknown as { botFlow: unknown; botTopics: unknown } | null;
-      if (!e?.botFlow && !e?.botTopics) {
+    if (data.enabled === true && data.flow === undefined && data.topics === undefined) {
+      if (!bot.flow && !bot.topics) {
         throw new BadRequestException('No se puede activar el bot sin botFlow ni botTopics');
       }
     }
 
-    await this.prisma.scoped.wapiConfig.update({
-      where: { id: configId },
+    const updated = (await this.prisma.scoped.bot.update({
+      where: { id: bot.id },
       data: data as never,
-    });
-    this.logger.log(`Bot config actualizado configId=${configId} fields=${Object.keys(data).join(',')}`);
-    return this.get(configId);
+      select: BOT_SELECT,
+    })) as unknown as BotRow;
+    this.logger.log(`Bot actualizado configId=${configId} botId=${bot.id} fields=${Object.keys(data).join(',')}`);
+    return this.toSnapshot(configId, updated);
   }
 
   /**
@@ -332,46 +394,32 @@ export class WapiBotService {
    */
   async saveDraft(configId: string, dto: SaveBotDraftInput): Promise<BotConfigSnapshot> {
     this.requireContext();
-    const current = await this.prisma.scoped.wapiConfig.findFirst({
-      where: { id: configId },
-      select: {
-        id: true,
-        botTopicsDraft: true,
-        botRouterDraft: true,
-        botTopics: true,
-      } as never,
-    });
-    if (!current) throw new NotFoundException(`WapiConfig ${configId} no encontrado en este scope`);
-    const c = current as unknown as {
-      botTopicsDraft: unknown;
-      botRouterDraft: unknown;
-      botTopics: unknown;
-    };
+    const bot = (await this.resolveBot(configId, { create: true })) as BotRow;
 
     const data: Record<string, unknown> = {};
     let topicIdsForRouter: ReadonlySet<string> | undefined;
 
     if (dto.botTopics !== undefined) {
       if (dto.botTopics === null) {
-        data.botTopicsDraft = null;
+        data.topicsDraft = null;
       } else {
         const v = validateBotTopics(dto.botTopics);
         if (!v.ok || !v.topics) {
           throw new BadRequestException({ message: 'botTopics inválidos', errors: v.errors });
         }
-        data.botTopicsDraft = dto.botTopics as never;
+        data.topicsDraft = dto.botTopics as never;
         topicIdsForRouter = new Set(v.topics.map((t) => t.id));
       }
     }
 
     if (dto.botRouter !== undefined) {
       if (dto.botRouter === null) {
-        data.botRouterDraft = null;
+        data.routerDraft = null;
       } else {
         if (!topicIdsForRouter) {
           // Si el draft no actualiza topics, validamos contra topics del draft
           // (si existe) o de prod como fallback.
-          const sourceTopicsRaw = c.botTopicsDraft ?? c.botTopics;
+          const sourceTopicsRaw = bot.topicsDraft ?? bot.topics;
           if (sourceTopicsRaw) {
             const v = validateBotTopics(sourceTopicsRaw);
             if (v.ok && v.topics) {
@@ -383,34 +431,35 @@ export class WapiBotService {
         if (!v.ok) {
           throw new BadRequestException({ message: 'botRouter inválido', errors: v.errors });
         }
-        data.botRouterDraft = dto.botRouter as never;
+        data.routerDraft = dto.botRouter as never;
       }
     }
 
     if (dto.botVariables !== undefined) {
       if (dto.botVariables === null) {
-        data.botVariablesDraft = null;
+        data.variablesDraft = null;
       } else {
         const v = validateBotVariables(dto.botVariables);
         if (!v.ok) {
           throw new BadRequestException({ message: 'botVariables inválidas', errors: v.errors });
         }
-        data.botVariablesDraft = dto.botVariables as never;
+        data.variablesDraft = dto.botVariables as never;
       }
     }
 
-    if (Object.keys(data).length === 0) return this.get(configId);
+    if (Object.keys(data).length === 0) return this.toSnapshot(configId, bot);
 
-    data.botDraftUpdatedAt = new Date();
+    data.draftUpdatedAt = new Date();
 
-    await this.prisma.scoped.wapiConfig.update({
-      where: { id: configId },
+    const updated = (await this.prisma.scoped.bot.update({
+      where: { id: bot.id },
       data: data as never,
-    });
+      select: BOT_SELECT,
+    })) as unknown as BotRow;
     this.logger.log(
-      `Bot draft actualizado configId=${configId} fields=${Object.keys(data).filter((k) => k !== 'botDraftUpdatedAt').join(',')}`,
+      `Bot draft actualizado configId=${configId} botId=${bot.id} fields=${Object.keys(data).filter((k) => k !== 'draftUpdatedAt').join(',')}`,
     );
-    return this.get(configId);
+    return this.toSnapshot(configId, updated);
   }
 
   /**
@@ -423,39 +472,16 @@ export class WapiBotService {
    */
   async publish(configId: string): Promise<BotConfigSnapshot> {
     this.requireContext();
-    const current = await this.prisma.scoped.wapiConfig.findFirst({
-      where: { id: configId },
-      select: {
-        id: true,
-        botTopicsDraft: true,
-        botRouterDraft: true,
-        botVariablesDraft: true,
-        botTopics: true,
-        botRouter: true,
-        botVariables: true,
-        botDraftUpdatedAt: true,
-      } as never,
-    });
-    if (!current) throw new NotFoundException(`WapiConfig ${configId} no encontrado en este scope`);
-    const c = current as unknown as {
-      botTopicsDraft: unknown;
-      botRouterDraft: unknown;
-      botVariablesDraft: unknown;
-      botTopics: unknown;
-      botRouter: unknown;
-      botVariables: unknown;
-      botDraftUpdatedAt: Date | null;
-    };
-
-    if (!c.botDraftUpdatedAt) {
+    const bot = await this.resolveBot(configId, { create: false });
+    if (!bot || !bot.draftUpdatedAt) {
       throw new BadRequestException('No hay borrador para publicar');
     }
 
     // El draft puede tener sólo topics, sólo router, o ambos. Si una mitad
     // está vacía en el draft, publicamos lo que ya está en prod para esa mitad.
-    const nextTopicsRaw = c.botTopicsDraft ?? c.botTopics ?? null;
-    const nextRouterRaw = c.botRouterDraft ?? c.botRouter ?? null;
-    const nextVariablesRaw = c.botVariablesDraft ?? c.botVariables ?? null;
+    const nextTopicsRaw = bot.topicsDraft ?? bot.topics ?? null;
+    const nextRouterRaw = bot.routerDraft ?? bot.router ?? null;
+    const nextVariablesRaw = bot.variablesDraft ?? bot.variables ?? null;
 
     let topicIds: ReadonlySet<string> | undefined;
     if (nextTopicsRaw !== null) {
@@ -488,22 +514,23 @@ export class WapiBotService {
     }
 
     const data: Record<string, unknown> = {
-      botTopics: nextTopicsRaw,
-      botRouter: nextRouterRaw,
-      botVariables: nextVariablesRaw,
-      botTopicsDraft: null,
-      botRouterDraft: null,
-      botVariablesDraft: null,
-      botDraftUpdatedAt: null,
-      botPublishedAt: new Date(),
+      topics: nextTopicsRaw,
+      router: nextRouterRaw,
+      variables: nextVariablesRaw,
+      topicsDraft: null,
+      routerDraft: null,
+      variablesDraft: null,
+      draftUpdatedAt: null,
+      publishedAt: new Date(),
     };
 
-    await this.prisma.scoped.wapiConfig.update({
-      where: { id: configId },
+    const updated = (await this.prisma.scoped.bot.update({
+      where: { id: bot.id },
       data: data as never,
-    });
-    this.logger.log(`Bot publicado configId=${configId}`);
-    return this.get(configId);
+      select: BOT_SELECT,
+    })) as unknown as BotRow;
+    this.logger.log(`Bot publicado configId=${configId} botId=${bot.id}`);
+    return this.toSnapshot(configId, updated);
   }
 
   /**
@@ -512,22 +539,20 @@ export class WapiBotService {
    */
   async discardDraft(configId: string): Promise<BotConfigSnapshot> {
     this.requireContext();
-    const current = await this.prisma.scoped.wapiConfig.findFirst({
-      where: { id: configId },
-      select: { id: true } as never,
-    });
-    if (!current) throw new NotFoundException(`WapiConfig ${configId} no encontrado en este scope`);
+    const bot = await this.resolveBot(configId, { create: false });
+    if (!bot) return this.emptySnapshot(configId);
 
-    await this.prisma.scoped.wapiConfig.update({
-      where: { id: configId },
+    const updated = (await this.prisma.scoped.bot.update({
+      where: { id: bot.id },
       data: {
-        botTopicsDraft: null,
-        botRouterDraft: null,
-        botVariablesDraft: null,
-        botDraftUpdatedAt: null,
+        topicsDraft: null,
+        routerDraft: null,
+        variablesDraft: null,
+        draftUpdatedAt: null,
       } as never,
-    });
-    this.logger.log(`Bot draft descartado configId=${configId}`);
-    return this.get(configId);
+      select: BOT_SELECT,
+    })) as unknown as BotRow;
+    this.logger.log(`Bot draft descartado configId=${configId} botId=${bot.id}`);
+    return this.toSnapshot(configId, updated);
   }
 }
