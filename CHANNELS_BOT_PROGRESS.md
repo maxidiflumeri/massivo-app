@@ -8,17 +8,32 @@
 
 ## Estado actual
 
-**Fase en curso:** Fase 0 → **0a COMPLETA** + **0b COMPLETO** (backend + frontend UI).
-Pendiente sólo el **smoke-test runtime autenticado** de la UI. Próximo: Fase 1
-(unificar Channel/Conversation/Message + inbox omnicanal).
+**Fase en curso:** **Fase 0 COMPLETA** (0a+0b, probado en runtime por el usuario) +
+**Fase 1: 1a y 1b COMPLETAS**. Próximo: **1c** (verifyAndParse + webhook genérico).
 
-**Última actualización:** sesión 1 (2026-06-03).
+**Última actualización:** sesión 1 (2026-06-03) — fin de jornada.
 
-**Commits en `feat/multichannel-bot`:**
-- `8f13e21` — Phase 0a: entidad `Bot` + migración/backfill + wiring backend
-- `7a91895` — Phase 0b backend: API `/api/bots` bot-centric + connect/disconnect
-- `93567c2` — Phase 0b frontend base: `botsApi` + tipos
-- (este commit) — Phase 0b frontend UI: editor bot-centric + selector en Números
+**Commits en `feat/multichannel-bot` (en orden):**
+- `8f13e21` — 0a: entidad `Bot` + migración/backfill + wiring backend
+- `7a91895` — 0b backend: API `/api/bots` bot-centric + connect/disconnect
+- `93567c2` — 0b frontend base: `botsApi` + tipos
+- `6bf17db` — 0b frontend UI: editor bot-centric + selector en Números
+- `c16348a` — Bots a sección propia del sidebar + ruta `/dashboard/bots`
+- `b13b741` — dialog propio para crear bot (reemplaza window.prompt)
+- `212fd0a` — fix Chat simulado muestra conversaciones manejadas por el bot
+- `8b25093` — fix connect endpoint POST
+- `63a09b6` — **1a**: capa de abstracción de canal + `WhatsAppAdapter`
+- `0618f65` — **1b**: engine + inbox envían vía adapter; guard 24h → capability
+
+**✅ Probado en runtime por el usuario:** crear bot, editar/publicar, conectar a un
+número (Números), y el bot responde end-to-end en el Chat simulado.
+
+### Para retomar mañana
+1. `git checkout feat/multichannel-bot` (todo commiteado, working tree limpio).
+2. Seguir por **1c** (ver PLAN → FASE 1).
+3. **Decisión pendiente del usuario:** relocar/renombrar el módulo del bot (sacar
+   de `modules/wapi/`, quitar prefijo `Wapi`). Análisis + recomendación en
+   PLAN → **Sub-fase 1g** (recomendado: hacerlo justo después de 1d, no antes).
 
 **Verificación 0a:**
 - ✅ Migración `20260603120000_extract_bot_entity` aplicada a la DB local + backfill
@@ -100,6 +115,7 @@ Pendiente sólo el **smoke-test runtime autenticado** de la UI. Próximo: Fase 1
 - [ ] **1d** Modelo unificado `Channel/Conversation/Message/BotSession` (migración en vivo — riesgo alto)
 - [ ] **1e** Inbox unificado (API `/api/inbox` + UI con badge/filtro de canal)
 - [ ] **1f** Cleanup de tablas/columnas `Wapi*` legacy
+- [ ] **1g** Relocar/renombrar el módulo del bot (sacar de `wapi/`, quitar prefijo `Wapi`) — propuesta del usuario; recomendado hacerlo justo después de 1d (ver PLAN §1g)
 
 ### Fases siguientes
 - [ ] Fase 2 — Messenger · Fase 3 — Instagram · Fase 4 — Webchat

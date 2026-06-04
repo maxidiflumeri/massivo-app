@@ -186,6 +186,45 @@ Entrega la UX "diseño un bot y elijo a qué números conectarlo".
 ### Sub-fase 1f — Cleanup
 - Drop de tablas/columnas `Wapi*` legacy una vez estable.
 
+### Sub-fase 1g — Relocar + renombrar el módulo del bot (agnóstico)
+> **Propuesta del usuario (2026-06-03):** ahora que el bot es cross-canal, no
+> debería vivir en `modules/wapi/` ni tener clases/archivos con prefijo `Wapi`.
+
+**Análisis / recomendación: SÍ hacerlo, pero DESPUÉS de 1d.** El bot ya está
+*diseñado* agnóstico, pero todavía tiene plumbing acoplado a WhatsApp que recién
+se limpia en 1c/1d:
+- el engine recibe `CfgForEngine` con `phoneNumberId`/`accessTokenEnc` y usa
+  `WhatsAppAdapter` directo (no el registry por `channelKind`);
+- la sesión es `WapiBotSession` llaveada `(configId, phone)`;
+- la entrada (webhook) es WhatsApp-específica.
+
+1d ya reescribe el engine para ser channel-aware (BotSession unificada, resolver
+adapter por `channelKind` vía registry). **Conviene renombrar/mover en la misma
+pasada que 1d (o inmediatamente después)** para:
+- no quedar en un estado a-medias (archivos sin prefijo pero internals que aún
+  referencian `WapiBotSession`/`WapiConfig`);
+- no generar un diff gigante de rename colisionando con el trabajo de 1c/1d.
+
+**Alcance del rename (cuando se haga):**
+- Mover `apps/backend/src/modules/wapi/bot/` → `apps/backend/src/modules/bot/`.
+- Clases: `WapiBotEngineService`→`BotEngineService`, `WapiBotService`→`BotService`,
+  `WapiBotSandboxService`→`BotSandboxService`, `WapiBotRouterService`→`BotRouterService`,
+  `WapiBotFeatureService/Guard`→`BotFeatureService/Guard`, `WapiBotHttpExecutor`,
+  `WapiBotMediaFetchService`, `WapiBotWaitingExpirerService`. (`BotsController`,
+  `bot-flow-runtime.ts`, `expression-engine.ts`, `interpolate.ts` ya están limpios.)
+- Archivos: `wapi-bot-*.ts` → `bot-*.ts`; `wapi-bot.types.ts` → `bot.types.ts`.
+- Frontend: `features/wapi/bots/` → `features/bots/` (api ya es `botsApi`, ruta ya
+  es `/dashboard/bots`).
+- Actualizar imports (webhook, inbox, module registration) + un nuevo `BotModule`.
+
+**Ojo (no todo es agnóstico):** `WapiBotMediaFetchService` y el upload de media de
+nodos son por-WABA (mediaId de Meta). Eso queda channel-specific o se adapter-iza;
+revisarlo al renombrar, no asumir que todo el folder es agnóstico.
+
+**Decisión a tomar:** ¿rename como parte de 1d, o como 1g separada justo después?
+(recomendado: 1g separada inmediatamente después de 1d, para que 1d quede acotada
+a "datos" y 1g a "nombres/ubicación" — dos diffs limpios y revisables).
+
 ## FASE 2 — Messenger · FASE 3 — Instagram · FASE 4 — Webchat
 
 Ver DESIGN §3.2, §7 y §10. Messenger primero (primo de WhatsApp, misma Graph API).
