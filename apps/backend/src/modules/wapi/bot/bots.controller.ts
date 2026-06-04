@@ -8,7 +8,6 @@ import {
   Param,
   Patch,
   Post,
-  Put,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -114,7 +113,7 @@ export class BotsController {
   }
 
   /** Conecta un canal (WapiConfig) a este bot. */
-  @Put(':botId/channels/:configId')
+  @Post(':botId/channels/:configId')
   @HttpCode(HttpStatus.OK)
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
   @Audit({ action: 'bot.channelConnected', resourceType: 'WapiConfig', resourceIdFrom: 'param:configId' })
