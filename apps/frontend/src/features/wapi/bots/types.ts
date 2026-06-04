@@ -290,6 +290,43 @@ export interface UpdateBotPayload {
   botVariables?: BotVariable[] | null;
 }
 
+// Phase 0b (multi-canal) — API bot-centric (/api/bots). El bot se diseña una vez
+// y se conecta a N canales.
+export interface ConnectedChannel {
+  configId: string;
+  name: string | null;
+  phoneNumberId: string;
+  kind: 'WHATSAPP';
+}
+
+/** Snapshot del bot llaveado por botId (respuesta de /api/bots/:botId). */
+export interface BotSnapshot {
+  botId: string;
+  name: string;
+  botEnabled: boolean;
+  botSessionTtlMin: number;
+  botFlow: BotFlow | null;
+  botTopics: BotTopic[] | null;
+  botRouter: BotRouter | null;
+  botVariables: BotVariable[] | null;
+  botTopicsDraft: BotTopic[] | null;
+  botRouterDraft: BotRouter | null;
+  botVariablesDraft: BotVariable[] | null;
+  botDraftUpdatedAt: string | null;
+  botPublishedAt: string | null;
+  hasUnpublishedChanges: boolean;
+  connectedChannels: ConnectedChannel[];
+}
+
+export interface BotListItem {
+  botId: string;
+  name: string;
+  enabled: boolean;
+  hasUnpublishedChanges: boolean;
+  connectedChannels: ConnectedChannel[];
+  updatedAt: string;
+}
+
 export interface SaveBotDraftPayload {
   botTopics?: BotTopic[] | null;
   botRouter?: BotRouter | null;
