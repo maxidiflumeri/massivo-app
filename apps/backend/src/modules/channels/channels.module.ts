@@ -1,20 +1,18 @@
 import { Module } from '@nestjs/common';
 import { WapiModule } from '../wapi/wapi.module';
-import { WhatsAppAdapter } from './adapters/whatsapp.adapter';
 import { ChannelAdapterRegistry } from './channel-adapter.registry';
 
 /**
  * Fase 1 (multi-canal) — Módulo de abstracción de canal. Expone el
- * `ChannelAdapterRegistry` para que el motor del bot, el inbox y el webhook
- * envíen/reciban vía adapters normalizados en vez de acoplarse a un proveedor.
+ * `ChannelAdapterRegistry` (resuelve adapter por kind) para webhook/multi-canal.
  *
- * Importa `WapiModule` para reusar `WapiSenderService` en el `WhatsAppAdapter`
- * (re-empaque, no duplicación). En 1b los consumidores (engine/inbox) pasan a
- * depender de este registro.
+ * El `WhatsAppAdapter` se provee en `WapiModule` (sólo depende de
+ * `WapiSenderService`) y se importa desde acá; así el motor/inbox lo inyectan
+ * directo sin ciclo de módulos. El registry lo consume vía el import.
  */
 @Module({
   imports: [WapiModule],
-  providers: [WhatsAppAdapter, ChannelAdapterRegistry],
-  exports: [ChannelAdapterRegistry, WhatsAppAdapter],
+  providers: [ChannelAdapterRegistry],
+  exports: [ChannelAdapterRegistry],
 })
 export class ChannelsModule {}

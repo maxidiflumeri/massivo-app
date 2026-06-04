@@ -38,6 +38,9 @@ import { WapiBotHttpRateLimiterService } from './bot/wapi-bot-http-rate-limiter.
 import { WapiBotMediaFetchService } from './bot/wapi-bot-media-fetch.service';
 import { WapiLiveController } from './live/wapi-live.controller';
 import { WapiLiveService } from './live/wapi-live.service';
+// Fase 1b — el adapter de WhatsApp vive acá (depende sólo de WapiSenderService)
+// para que el motor del bot y el inbox lo inyecten sin ciclo con ChannelsModule.
+import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
 
 @Module({
   imports: [EventsModule, ContactsModule],
@@ -79,6 +82,7 @@ import { WapiLiveService } from './live/wapi-live.service';
     WapiBotHttpExecutor,
     WapiBotMediaFetchService,
     WapiLiveService,
+    WhatsAppAdapter,
   ],
   exports: [
     WapiQueueService,
@@ -86,6 +90,7 @@ import { WapiLiveService } from './live/wapi-live.service';
     WapiMediaService,
     WapiWebhookService,
     WapiBotFeatureService,
+    WhatsAppAdapter,
   ],
 })
 export class WapiModule {}

@@ -21,6 +21,62 @@ import type { BotFlow } from './wapi-bot.types';
 // cualquier método llamado por el engine (botNodeEntered, botSetVar, etc).
 const noopEventLogger = new Proxy({}, { get: () => () => undefined }) as never;
 
+// Fase 1b — el engine envía vía WhatsAppAdapter. Este helper crea un mock-adapter
+// que reenvía al `sender` mock, preservando las aserciones existentes sobre
+// `sender.sendText/sendInteractiveButtons/sendMediaById`. La traducción
+// OutboundMessage→Meta la cubre whatsapp.adapter.spec.ts aparte.
+function makeForwardingAdapter(sender: {
+  sendInteractiveButtons: jest.Mock;
+  sendText: jest.Mock;
+  sendMediaById: jest.Mock;
+}) {
+  return {
+    capabilities: {
+      interactiveButtons: { supported: true, max: 3 },
+      mediaTypes: ['image', 'video', 'audio', 'document'],
+      freeformWindow: { enforced: true, hours: 24 },
+      templates: true,
+    },
+    send: jest.fn(
+      async (
+        conn: { phoneNumberId: string; accessToken: string; isTestMode: boolean },
+        msg: Record<string, unknown>,
+      ) => {
+        const cfg = {
+          phoneNumberId: conn.phoneNumberId,
+          accessToken: conn.accessToken,
+          isTestMode: conn.isTestMode,
+        };
+        let r: { metaMessageId: string };
+        if (msg.kind === 'buttons') {
+          r = await sender.sendInteractiveButtons(cfg, {
+            to: msg.to,
+            body: msg.text,
+            header: msg.header,
+            footer: msg.footer,
+            buttons: msg.buttons,
+          });
+        } else if (msg.kind === 'media') {
+          r = await sender.sendMediaById(cfg, {
+            to: msg.to,
+            type: msg.mediaType,
+            mediaId: msg.mediaId,
+            caption: msg.caption,
+            filename: msg.filename,
+          });
+        } else {
+          r = await sender.sendText(cfg, {
+            to: msg.to,
+            body: msg.text,
+            previewUrl: msg.previewUrl,
+          });
+        }
+        return { externalMessageId: r.metaMessageId };
+      },
+    ),
+  };
+}
+
 const flow: BotFlow = {
   startNodeId: 'menu1',
   nodes: {
@@ -117,7 +173,7 @@ describe('WapiBotEngineService', () => {
     svc = new WapiBotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
-      sender as never,
+      makeForwardingAdapter(sender) as never,
       encryption as never,
       feature as never,
       router as never,
@@ -933,7 +989,7 @@ describe('WapiBotEngineService', () => {
     const localSvc = new WapiBotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
-      sender as never,
+      makeForwardingAdapter(sender) as never,
       encryption as never,
       feature as never,
       routerMock as never,
@@ -1025,7 +1081,7 @@ describe('WapiBotEngineService', () => {
     const localSvc = new WapiBotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
-      sender as never,
+      makeForwardingAdapter(sender) as never,
       encryption as never,
       feature as never,
       routerMock as never,

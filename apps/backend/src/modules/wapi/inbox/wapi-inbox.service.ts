@@ -11,12 +11,8 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
-import { WapiSenderService } from '../sender/wapi-sender.service';
-import {
-  WapiSendException,
-  type SendMediaByIdInput,
-  type SendTextInput,
-} from '../sender/wapi-sender.types';
+import { WhatsAppAdapter } from '../../channels/adapters/whatsapp.adapter';
+import { WapiSendException } from '../sender/wapi-sender.types';
 import { WapiMediaService } from '../media/wapi-media.service';
 import { WapiBotEngineService } from '../bot/wapi-bot-engine.service';
 import {
@@ -80,7 +76,7 @@ export class WapiInboxService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sender: WapiSenderService,
+    private readonly whatsapp: WhatsAppAdapter,
     private readonly events: EventsService,
     private readonly encryption: EncryptionService,
     private readonly media: WapiMediaService,
@@ -347,8 +343,13 @@ export class WapiInboxService {
       throw new ConflictException('No se puede responder una conversación resuelta — reabrila primero');
     }
 
+    // Fase 1b — guard de ventana de freeform dirigido por la capability del canal.
+    // WhatsApp la aplica (24h); canales sin ventana (ej. webchat) la saltean.
     const window24hAt = conv.window24hAt;
-    if (!window24hAt || window24hAt.getTime() < Date.now()) {
+    if (
+      this.whatsapp.capabilities.freeformWindow.enforced &&
+      (!window24hAt || window24hAt.getTime() < Date.now())
+    ) {
       throw new BadRequestException(
         'Ventana de 24h cerrada — sólo se puede responder con plantilla. Iniciá una campaña con template.',
       );
@@ -360,23 +361,18 @@ export class WapiInboxService {
     if (!cfg) throw new ConflictException('La config WhatsApp asociada ya no existe');
     if (!cfg.isActive) throw new ConflictException('La config WhatsApp está deshabilitada');
 
-    const sendInput: SendTextInput = {
-      to: conv.phone,
-      body: dto.body,
-      previewUrl: dto.previewUrl ?? false,
-    };
-
     let metaMessageId: string;
     try {
-      const result = await this.sender.sendText(
+      // Fase 1b — envío vía WhatsAppAdapter (capa de canal).
+      const result = await this.whatsapp.send(
         {
           phoneNumberId: cfg.phoneNumberId,
           accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
           isTestMode: cfg.isTestMode,
         },
-        sendInput,
+        { kind: 'text', to: conv.phone, text: dto.body, previewUrl: dto.previewUrl ?? false },
       );
-      metaMessageId = result.metaMessageId;
+      metaMessageId = result.externalMessageId;
     } catch (err) {
       if (err instanceof WapiSendException) {
         throw new BadRequestException(`Meta API: ${err.detail.message}`);
@@ -453,8 +449,12 @@ export class WapiInboxService {
     if (conv.status === 'RESOLVED') {
       throw new ConflictException('No se puede responder una conversación resuelta — reabrila primero');
     }
+    // Fase 1b — guard de ventana dirigido por capability del canal (ver sendText).
     const window24hAt = conv.window24hAt;
-    if (!window24hAt || window24hAt.getTime() < Date.now()) {
+    if (
+      this.whatsapp.capabilities.freeformWindow.enforced &&
+      (!window24hAt || window24hAt.getTime() < Date.now())
+    ) {
       throw new BadRequestException(
         'Ventana de 24h cerrada — sólo se puede responder con plantilla.',
       );
@@ -487,25 +487,25 @@ export class WapiInboxService {
       throw err;
     }
 
-    const sendInput: SendMediaByIdInput = {
-      to: conv.phone,
-      type,
-      mediaId: upload.mediaId,
-      caption: dto.caption,
-      filename: type === 'document' ? file.originalname : undefined,
-    };
-
     let metaMessageId: string;
     try {
-      const result = await this.sender.sendMediaById(
+      // Fase 1b — envío vía WhatsAppAdapter (capa de canal).
+      const result = await this.whatsapp.send(
         {
           phoneNumberId: cfg.phoneNumberId,
           accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
           isTestMode: cfg.isTestMode,
         },
-        sendInput,
+        {
+          kind: 'media',
+          to: conv.phone,
+          mediaType: type,
+          mediaId: upload.mediaId,
+          caption: dto.caption,
+          filename: type === 'document' ? file.originalname : undefined,
+        },
       );
-      metaMessageId = result.metaMessageId;
+      metaMessageId = result.externalMessageId;
     } catch (err) {
       if (err instanceof WapiSendException) {
         throw new BadRequestException(`Meta API: ${err.detail.message}`);

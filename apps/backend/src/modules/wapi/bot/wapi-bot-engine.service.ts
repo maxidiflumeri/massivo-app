@@ -6,7 +6,7 @@ import { EventLogger } from '../../../common/observability/event-logger.service'
 import { ObservabilityContext } from '../../../common/observability/observability-context';
 import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
-import { WapiSenderService } from '../sender/wapi-sender.service';
+import { WhatsAppAdapter } from '../../channels/adapters/whatsapp.adapter';
 import { WapiSendException } from '../sender/wapi-sender.types';
 import { interpolate, interpolateAsync } from './interpolate';
 import { evaluateExpression } from './expression-engine';
@@ -94,7 +94,7 @@ export class WapiBotEngineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventsService,
-    private readonly sender: WapiSenderService,
+    private readonly whatsapp: WhatsAppAdapter,
     private readonly encryption: EncryptionService,
     private readonly feature: WapiBotFeatureService,
     private readonly router: WapiBotRouterService,
@@ -790,18 +790,22 @@ export class WapiBotEngineService {
       return;
     }
     try {
-      const senderCfg = {
+      // Fase 1b — el envío sale por el `WhatsAppAdapter` (capa de canal). El
+      // motor arma un `OutboundMessage` normalizado; el adapter lo traduce a la
+      // llamada de Meta. `conn` es la conexión del canal (token desencriptado).
+      const conn = {
         phoneNumberId: cfg.phoneNumberId,
         accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
         isTestMode: cfg.isTestMode,
       };
-      let result;
+      let result: { externalMessageId: string };
       let wapiType: string;
       if (node.kind === 'MENU') {
         wapiType = 'interactive';
-        result = await this.sender.sendInteractiveButtons(senderCfg, {
+        result = await this.whatsapp.send(conn, {
+          kind: 'buttons',
           to: phone,
-          body: await interpolateAsync(node.text, data),
+          text: await interpolateAsync(node.text, data),
           header: node.header ? await interpolateAsync(node.header, data) : undefined,
           footer: node.footer ? await interpolateAsync(node.footer, data) : undefined,
           buttons: node.options.slice(0, 3).map((o) => ({
@@ -811,9 +815,10 @@ export class WapiBotEngineService {
         });
       } else if (node.kind === 'MEDIA') {
         wapiType = node.mediaType;
-        result = await this.sender.sendMediaById(senderCfg, {
+        result = await this.whatsapp.send(conn, {
+          kind: 'media',
           to: phone,
-          type: node.mediaType,
+          mediaType: node.mediaType,
           mediaId: node.mediaId,
           caption: node.caption ? await interpolateAsync(node.caption, data) : undefined,
           filename: node.filename,
@@ -825,9 +830,10 @@ export class WapiBotEngineService {
       ) {
         // Texto plano interpolado (soporta {{var}} + {{= expr }}).
         wapiType = 'text';
-        result = await this.sender.sendText(senderCfg, {
+        result = await this.whatsapp.send(conn, {
+          kind: 'text',
           to: phone,
-          body: await interpolateAsync(node.text, data),
+          text: await interpolateAsync(node.text, data),
           previewUrl: false,
         });
       } else {
@@ -851,7 +857,7 @@ export class WapiBotEngineService {
       const message = await this.prismaMessage.create({
         data: {
           conversationId,
-          metaMessageId: result.metaMessageId,
+          metaMessageId: result.externalMessageId,
           fromMe: true,
           type: wapiType,
           content: content as Prisma.InputJsonValue,
@@ -874,7 +880,7 @@ export class WapiBotEngineService {
             content: message.content,
             status: 'sent',
             timestamp: ts.toISOString(),
-            metaMessageId: result.metaMessageId,
+            metaMessageId: result.externalMessageId,
           },
         });
       }

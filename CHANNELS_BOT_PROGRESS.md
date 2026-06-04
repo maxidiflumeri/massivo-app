@@ -95,7 +95,7 @@ Pendiente sólo el **smoke-test runtime autenticado** de la UI. Próximo: Fase 1
 ### Fase 1 — Abstracción de canal + unificación + inbox omnicanal
 (sub-fases detalladas en CHANNELS_BOT_PLAN.md → FASE 1)
 - [x] **1a** Capa de abstracción (módulo `channels/`): tipos `ChannelAdapter`/`Inbound`/`Outbound`/`Capabilities` + `WhatsAppAdapter` (envuelve `WapiSenderService`, capabilities) + `ChannelAdapterRegistry` + registrado en `app.module`. Aditivo, adapter spec 6/6, typecheck limpio.
-- [ ] **1b** Rewire engine `deliverNode` + inbox `sendText/sendMedia` al adapter (guard 24h → capability)
+- [x] **1b** Rewire engine `deliverNode` + inbox `sendText/sendMedia` al `WhatsAppAdapter`; guard de ventana 24h → `capabilities.freeformWindow`. `WhatsAppAdapter` movido a `WapiModule` (sin ciclo con `ChannelsModule`). Specs engine/inbox con mock-adapter que reenvía al sender → 408/408 wapi+channels, typecheck limpio.
 - [ ] **1c** `verifyAndParse` + webhook genérico `/api/channels/:kind/:slug`
 - [ ] **1d** Modelo unificado `Channel/Conversation/Message/BotSession` (migración en vivo — riesgo alto)
 - [ ] **1e** Inbox unificado (API `/api/inbox` + UI con badge/filtro de canal)

@@ -5,7 +5,7 @@ import { WapiInboxService } from './wapi-inbox.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
-import { WapiSenderService } from '../sender/wapi-sender.service';
+import { WhatsAppAdapter } from '../../channels/adapters/whatsapp.adapter';
 import { WapiMediaService } from '../media/wapi-media.service';
 import { WapiBotEngineService } from '../bot/wapi-bot-engine.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
@@ -43,6 +43,36 @@ describe('WapiInboxService', () => {
       },
     };
     senderMock = { sendText: jest.fn(), sendMediaById: jest.fn() };
+    // Fase 1b — el inbox envía vía WhatsAppAdapter. Mock que reenvía al senderMock
+    // (preserva las aserciones sobre sendText/sendMediaById) + expone capabilities
+    // para el guard de ventana de 24h.
+    const adapterMock = {
+      capabilities: {
+        interactiveButtons: { supported: true, max: 3 },
+        mediaTypes: ['image', 'video', 'audio', 'document'],
+        freeformWindow: { enforced: true, hours: 24 },
+        templates: true,
+      },
+      send: jest.fn(async (conn: unknown, msg: Record<string, unknown>) => {
+        const cfg = conn;
+        if (msg.kind === 'media') {
+          const r = await senderMock.sendMediaById(cfg, {
+            to: msg.to,
+            type: msg.mediaType,
+            mediaId: msg.mediaId,
+            caption: msg.caption,
+            filename: msg.filename,
+          });
+          return { externalMessageId: r.metaMessageId };
+        }
+        const r = await senderMock.sendText(cfg, {
+          to: msg.to,
+          body: msg.text,
+          previewUrl: msg.previewUrl,
+        });
+        return { externalMessageId: r.metaMessageId };
+      }),
+    };
     eventsMock = { emitToTeam: jest.fn() };
     mediaMock = { uploadToMeta: jest.fn() };
 
@@ -50,7 +80,7 @@ describe('WapiInboxService', () => {
       providers: [
         WapiInboxService,
         { provide: PrismaService, useValue: { scoped: prismaMock } },
-        { provide: WapiSenderService, useValue: senderMock },
+        { provide: WhatsAppAdapter, useValue: adapterMock },
         { provide: EventsService, useValue: eventsMock },
         {
           provide: EncryptionService,
