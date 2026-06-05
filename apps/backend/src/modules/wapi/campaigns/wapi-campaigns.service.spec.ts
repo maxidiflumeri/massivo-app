@@ -234,7 +234,7 @@ describe('WapiCampaignsService', () => {
   describe('send', () => {
     function readyCampaign() {
       return {
-        id: 'c1', status: 'DRAFT', templateId: 't1', configId: 'cfg1',
+        id: 'c1', status: 'DRAFT', templateId: 't1', channelId: 'cfg1',
         contacts: [{ id: 'k1', phone: '5491100' }, { id: 'k2', phone: '5492200' }],
       };
     }
@@ -271,7 +271,7 @@ describe('WapiCampaignsService', () => {
     });
 
     it('sin configId → BadRequest', async () => {
-      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ ...readyCampaign(), configId: null });
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ ...readyCampaign(), channelId: null });
       await expect(withCtx(() => svc.send('c1'))).rejects.toBeInstanceOf(BadRequestException);
     });
 

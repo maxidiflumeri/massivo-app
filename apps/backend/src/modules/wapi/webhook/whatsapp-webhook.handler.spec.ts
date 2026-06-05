@@ -18,7 +18,7 @@ import { WhatsAppWebhookHandler } from './whatsapp-webhook.handler';
 describe('WhatsAppWebhookHandler', () => {
   let prisma: {
     organization: { findUnique: jest.Mock };
-    wapiConfig: { findMany: jest.Mock };
+    channel: { findMany: jest.Mock };
   };
   let encryption: { encrypt: jest.Mock; decrypt: jest.Mock; isEncrypted: jest.Mock };
   let webhook: { process: jest.Mock };
@@ -31,7 +31,7 @@ describe('WhatsAppWebhookHandler', () => {
       organization: {
         findUnique: jest.fn().mockResolvedValue({ id: 'org-a' }),
       },
-      wapiConfig: { findMany: jest.fn() },
+      channel: { findMany: jest.fn() },
     };
     encryption = {
       encrypt: jest.fn((v: string) => v),
@@ -44,7 +44,7 @@ describe('WhatsAppWebhookHandler', () => {
 
   describe('verify (org-scoped por slug)', () => {
     it('token correcto matchea una config activa de la org → devuelve challenge', async () => {
-      prisma.wapiConfig.findMany.mockResolvedValueOnce([
+      prisma.channel.findMany.mockResolvedValueOnce([
         { id: 'cfg-1', webhookVerifyTokenEnc: 'verify-secret' },
       ]);
       const out = await handler.verify(SLUG, 'subscribe', 'verify-secret', 'CHAL-1');
@@ -53,7 +53,7 @@ describe('WhatsAppWebhookHandler', () => {
         where: { webhookSlug: SLUG },
         select: { id: true },
       });
-      expect(prisma.wapiConfig.findMany.mock.calls[0]![0].where).toMatchObject({
+      expect(prisma.channel.findMany.mock.calls[0]![0].where).toMatchObject({
         organizationId: 'org-a',
         isActive: true,
       });
@@ -67,7 +67,7 @@ describe('WhatsAppWebhookHandler', () => {
     });
 
     it('token correcto matchea la 2ª config (escanea todas las de la org)', async () => {
-      prisma.wapiConfig.findMany.mockResolvedValueOnce([
+      prisma.channel.findMany.mockResolvedValueOnce([
         { id: 'cfg-1', webhookVerifyTokenEnc: 'token-A' },
         { id: 'cfg-2', webhookVerifyTokenEnc: 'token-B' },
       ]);
@@ -76,7 +76,7 @@ describe('WhatsAppWebhookHandler', () => {
     });
 
     it('token sin match → 403', async () => {
-      prisma.wapiConfig.findMany.mockResolvedValueOnce([
+      prisma.channel.findMany.mockResolvedValueOnce([
         { id: 'cfg-1', webhookVerifyTokenEnc: 'token-A' },
       ]);
       await expect(
@@ -85,7 +85,7 @@ describe('WhatsAppWebhookHandler', () => {
     });
 
     it('sin configs activas en la org → 403', async () => {
-      prisma.wapiConfig.findMany.mockResolvedValueOnce([]);
+      prisma.channel.findMany.mockResolvedValueOnce([]);
       await expect(
         handler.verify(SLUG, 'subscribe', 'cualquiera', 'CHAL'),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -122,7 +122,7 @@ describe('WhatsAppWebhookHandler', () => {
     }
 
     it('firma válida → llama service con map y 200, scoping por orgId', async () => {
-      prisma.wapiConfig.findMany.mockResolvedValueOnce([
+      prisma.channel.findMany.mockResolvedValueOnce([
         {
           id: 'cfg-1',
           organizationId: 'org-a',
@@ -134,7 +134,7 @@ describe('WhatsAppWebhookHandler', () => {
       const raw = Buffer.from(payloadFor('pn-100'), 'utf8');
       const out = await handler.receive(SLUG, sign(raw, 'sec'), raw);
       expect(out).toEqual({ ok: true });
-      expect(prisma.wapiConfig.findMany.mock.calls[0]![0].where).toMatchObject({
+      expect(prisma.channel.findMany.mock.calls[0]![0].where).toMatchObject({
         organizationId: 'org-a',
       });
       expect(webhook.process).toHaveBeenCalledTimes(1);
@@ -152,11 +152,11 @@ describe('WhatsAppWebhookHandler', () => {
       await expect(
         handler.receive('wbh_xxx', undefined, raw),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(prisma.wapiConfig.findMany).not.toHaveBeenCalled();
+      expect(prisma.channel.findMany).not.toHaveBeenCalled();
     });
 
     it('multi-config (mismo App, dos números, misma org) → carga ambos en el map', async () => {
-      prisma.wapiConfig.findMany.mockResolvedValueOnce([
+      prisma.channel.findMany.mockResolvedValueOnce([
         {
           id: 'cfg-A',
           organizationId: 'org-a',
@@ -189,7 +189,7 @@ describe('WhatsAppWebhookHandler', () => {
     });
 
     it('firma inválida → 403 sin llamar service', async () => {
-      prisma.wapiConfig.findMany.mockResolvedValueOnce([
+      prisma.channel.findMany.mockResolvedValueOnce([
         { id: 'cfg-1', organizationId: 'org-a', teamId: 'team-a', phoneNumberId: 'pn-100', appSecretEnc: 'sec' },
       ]);
       const raw = Buffer.from(payloadFor('pn-100'), 'utf8');
@@ -200,7 +200,7 @@ describe('WhatsAppWebhookHandler', () => {
     });
 
     it('sin appSecret en config → acepta sin verificar (modo dev)', async () => {
-      prisma.wapiConfig.findMany.mockResolvedValueOnce([
+      prisma.channel.findMany.mockResolvedValueOnce([
         { id: 'cfg-1', organizationId: 'org-a', teamId: 'team-a', phoneNumberId: 'pn-100', appSecretEnc: null },
       ]);
       const raw = Buffer.from(payloadFor('pn-100'), 'utf8');
@@ -214,7 +214,7 @@ describe('WhatsAppWebhookHandler', () => {
       const out = await handler.receive(SLUG, undefined, raw);
       expect(out).toEqual({ ok: true });
       expect(prisma.organization.findUnique).not.toHaveBeenCalled();
-      expect(prisma.wapiConfig.findMany).not.toHaveBeenCalled();
+      expect(prisma.channel.findMany).not.toHaveBeenCalled();
       expect(webhook.process).not.toHaveBeenCalled();
     });
 
@@ -223,7 +223,7 @@ describe('WhatsAppWebhookHandler', () => {
       const out = await handler.receive(SLUG, undefined, raw);
       expect(out).toEqual({ ok: true });
       expect(prisma.organization.findUnique).not.toHaveBeenCalled();
-      expect(prisma.wapiConfig.findMany).not.toHaveBeenCalled();
+      expect(prisma.channel.findMany).not.toHaveBeenCalled();
       expect(webhook.process).not.toHaveBeenCalled();
     });
 
@@ -241,7 +241,7 @@ describe('WhatsAppWebhookHandler', () => {
     });
 
     it('phone_number_id sin config matching en la org → 404', async () => {
-      prisma.wapiConfig.findMany.mockResolvedValueOnce([]);
+      prisma.channel.findMany.mockResolvedValueOnce([]);
       const raw = Buffer.from(payloadFor('pn-fantasma'), 'utf8');
       await expect(
         handler.receive(SLUG, undefined, raw),
@@ -249,7 +249,7 @@ describe('WhatsAppWebhookHandler', () => {
     });
 
     it('cache slug→orgId: segunda llamada no re-consulta organization', async () => {
-      prisma.wapiConfig.findMany.mockResolvedValue([
+      prisma.channel.findMany.mockResolvedValue([
         { id: 'cfg-1', webhookVerifyTokenEnc: 'verify-secret' },
       ]);
       await handler.verify(SLUG, 'subscribe', 'verify-secret', 'A');

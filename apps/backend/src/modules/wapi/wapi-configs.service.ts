@@ -89,7 +89,7 @@ export class WapiConfigsService {
 
   async findAll(): Promise<WapiConfigListItem[]> {
     this.requireContext();
-    const rows = await this.prisma.scoped.wapiConfig.findMany({
+    const rows = await this.prisma.scoped.channel.findMany({
       orderBy: { createdAt: 'desc' },
     });
     return rows.map(toListItem);
@@ -97,7 +97,7 @@ export class WapiConfigsService {
 
   async findOne(id: string): Promise<WapiConfigDetail> {
     this.requireContext();
-    const row = await this.prisma.scoped.wapiConfig.findFirst({
+    const row = await this.prisma.scoped.channel.findFirst({
       where: { id },
     });
     if (!row) {
@@ -125,7 +125,7 @@ export class WapiConfigsService {
   async create(dto: CreateWapiConfigDto): Promise<WapiConfigListItem> {
     const ctx = this.requireContext();
     assertDelayRange(dto.sendDelayMinMs, dto.sendDelayMaxMs);
-    const row = await this.prisma.scoped.wapiConfig.create({
+    const row = await this.prisma.scoped.channel.create({
       data: {
         name: dto.name,
         phoneNumberId: dto.phoneNumberId,
@@ -140,7 +140,7 @@ export class WapiConfigsService {
         sendDelayMinMs: dto.sendDelayMinMs,
         sendDelayMaxMs: dto.sendDelayMaxMs,
         isTestMode: dto.isTestMode ?? false,
-      } as Prisma.WapiConfigUncheckedCreateInput,
+      } as Prisma.ChannelUncheckedCreateInput,
     });
     this.logger.log(`WapiConfig created: ${row.id} in org ${ctx.organizationId} team ${ctx.teamId}`);
     return toListItem(row);
@@ -148,7 +148,7 @@ export class WapiConfigsService {
 
   async update(id: string, dto: UpdateWapiConfigDto): Promise<WapiConfigListItem> {
     this.requireContext();
-    const current = await this.prisma.scoped.wapiConfig.findFirst({
+    const current = await this.prisma.scoped.channel.findFirst({
       where: { id },
     });
     if (!current) {
@@ -182,7 +182,7 @@ export class WapiConfigsService {
       updateData.appSecretEnc = dto.appSecret === null ? null : this.encryption.encrypt(dto.appSecret);
     }
 
-    const row = await this.prisma.scoped.wapiConfig.update({
+    const row = await this.prisma.scoped.channel.update({
       where: { id },
       data: updateData,
     });
@@ -196,7 +196,7 @@ export class WapiConfigsService {
    */
   async revealSecrets(id: string): Promise<{ webhookVerifyToken: string }> {
     const ctx = this.requireContext();
-    const row = await this.prisma.scoped.wapiConfig.findFirst({
+    const row = await this.prisma.scoped.channel.findFirst({
       where: { id },
       select: { id: true, webhookVerifyTokenEnc: true },
     });
@@ -213,14 +213,14 @@ export class WapiConfigsService {
 
   async remove(id: string): Promise<void> {
     this.requireContext();
-    const current = await this.prisma.scoped.wapiConfig.findFirst({
+    const current = await this.prisma.scoped.channel.findFirst({
       where: { id },
     });
     if (!current) {
       throw new NotFoundException(`WapiConfig ${id} no encontrado en este scope`);
     }
 
-    await this.prisma.scoped.wapiConfig.delete({
+    await this.prisma.scoped.channel.delete({
       where: { id },
     });
     this.logger.log(`WapiConfig deleted: ${id}`);

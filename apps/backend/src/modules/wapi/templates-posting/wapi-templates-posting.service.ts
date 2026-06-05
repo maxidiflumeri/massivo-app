@@ -80,7 +80,7 @@ export class WapiTemplatesPostingService {
 
   async submit(configId: string, dto: CreateWapiTemplateMetaDto): Promise<WapiTemplate> {
     const ctx = this.requireContext();
-    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
+    const cfg = await this.prisma.scoped.channel.findFirst({
       where: { id: configId },
       select: {
         id: true,

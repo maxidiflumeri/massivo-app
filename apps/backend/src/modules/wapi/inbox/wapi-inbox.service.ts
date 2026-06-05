@@ -90,11 +90,11 @@ export class WapiInboxService {
    */
   private async endBotSessionsFor(conversationId: string, reason: string): Promise<void> {
     try {
-      const conv = await this.prisma.scoped.wapiConversation.findFirst({
+      const conv = await this.prisma.scoped.conversation.findFirst({
         where: { id: conversationId },
-        select: { configId: true, phone: true },
+        select: { channelId: true, externalUserId: true },
       });
-      if (conv) await this.botEngine.endSessionsForConversation(conv.configId, conv.phone, reason);
+      if (conv) await this.botEngine.endSessionsForConversation(conv.channelId, conv.externalUserId, reason);
     } catch {
       // best-effort
     }
@@ -117,7 +117,8 @@ export class WapiInboxService {
     const limit = query.limit ?? DEFAULT_LIST_LIMIT;
 
     const where: Record<string, unknown> = {};
-    if (query.configId) where.configId = query.configId;
+    // El query DTO mantiene `configId` (contrato del frontend) → mapeo a channelId.
+    if (query.configId) where.channelId = query.configId;
     if (query.priority) where.priority = true;
 
     // 4.O.6 — el inbox sólo muestra conversaciones escaladas. Las que están
@@ -161,7 +162,7 @@ export class WapiInboxService {
       const term = query.search.trim();
       if (term.length > 0) {
         searchOr = [
-          { phone: { contains: term, mode: 'insensitive' } },
+          { externalUserId: { contains: term, mode: 'insensitive' } },
           { name: { contains: term, mode: 'insensitive' } },
         ];
       }
@@ -180,7 +181,7 @@ export class WapiInboxService {
       where.id = { lt: query.cursor };
     }
 
-    const rows = await this.prisma.scoped.wapiConversation.findMany({
+    const rows = await this.prisma.scoped.conversation.findMany({
       where: where as never,
       orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
@@ -210,13 +211,13 @@ export class WapiInboxService {
       const r = row as unknown as { waitingUntil: Date | null; lastAssignedUserId: string | null };
       return {
         id: row.id,
-        configId: row.configId,
-        phone: row.phone,
+        configId: row.channelId,
+        phone: row.externalUserId,
         name: row.name,
         status: row.status,
         assignedUserId: row.assignedUserId,
         lastMessageAt: row.lastMessageAt,
-        window24hAt: row.window24hAt,
+        window24hAt: row.freeformWindowAt,
         unreadCount: row.unreadCount,
         campaignName: row.campaignName,
         resolvedAt: row.resolvedAt,
@@ -242,7 +243,7 @@ export class WapiInboxService {
     updatedAt: Date;
   }> {
     this.requireContext();
-    const row = await this.prisma.scoped.wapiConversation.findFirst({
+    const row = await this.prisma.scoped.conversation.findFirst({
       where: { id },
       include: {
         messages: {
@@ -262,13 +263,13 @@ export class WapiInboxService {
     const r = row as unknown as { waitingUntil: Date | null; lastAssignedUserId: string | null };
     return {
       id: row.id,
-      configId: row.configId,
-      phone: row.phone,
+      configId: row.channelId,
+      phone: row.externalUserId,
       name: row.name,
       status: row.status,
       assignedUserId: row.assignedUserId,
       lastMessageAt: row.lastMessageAt,
-      window24hAt: row.window24hAt,
+      window24hAt: row.freeformWindowAt,
       unreadCount: row.unreadCount,
       campaignName: row.campaignName,
       resolvedAt: row.resolvedAt,
@@ -293,7 +294,7 @@ export class WapiInboxService {
     query: ListWapiMessagesQueryDto,
   ): Promise<{ items: MessagePayload[]; nextCursor: string | null }> {
     this.requireContext();
-    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+    const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
       select: { id: true },
     });
@@ -303,7 +304,7 @@ export class WapiInboxService {
     const where: Record<string, unknown> = { conversationId };
     if (query.cursor) where.id = { lt: query.cursor };
 
-    const rows = await this.prisma.scoped.wapiMessage.findMany({
+    const rows = await this.prisma.scoped.message.findMany({
       where: where as never,
       orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
       take: limit + 1,
@@ -323,7 +324,7 @@ export class WapiInboxService {
       content: row.content,
       status: row.status,
       timestamp: row.timestamp,
-      metaMessageId: row.metaMessageId,
+      metaMessageId: row.externalId,
       mediaMime: row.mediaMime,
       mediaSize: row.mediaSize,
       mediaFilename: row.mediaFilename,
@@ -335,7 +336,7 @@ export class WapiInboxService {
 
   async sendText(conversationId: string, dto: SendWapiInboxTextDto): Promise<MessagePayload> {
     const ctx = this.requireContext();
-    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+    const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
     });
     if (!conv) throw new NotFoundException(`Conversación ${conversationId} no encontrada`);
@@ -345,7 +346,7 @@ export class WapiInboxService {
 
     // Fase 1b — guard de ventana de freeform dirigido por la capability del canal.
     // WhatsApp la aplica (24h); canales sin ventana (ej. webchat) la saltean.
-    const window24hAt = conv.window24hAt;
+    const window24hAt = conv.freeformWindowAt;
     if (
       this.whatsapp.capabilities.freeformWindow.enforced &&
       (!window24hAt || window24hAt.getTime() < Date.now())
@@ -355,8 +356,8 @@ export class WapiInboxService {
       );
     }
 
-    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
-      where: { id: conv.configId },
+    const cfg = await this.prisma.scoped.channel.findFirst({
+      where: { id: conv.channelId },
     });
     if (!cfg) throw new ConflictException('La config WhatsApp asociada ya no existe');
     if (!cfg.isActive) throw new ConflictException('La config WhatsApp está deshabilitada');
@@ -370,7 +371,7 @@ export class WapiInboxService {
           accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
           isTestMode: cfg.isTestMode,
         },
-        { kind: 'text', to: conv.phone, text: dto.body, previewUrl: dto.previewUrl ?? false },
+        { kind: 'text', to: conv.externalUserId, text: dto.body, previewUrl: dto.previewUrl ?? false },
       );
       metaMessageId = result.externalMessageId;
     } catch (err) {
@@ -381,10 +382,11 @@ export class WapiInboxService {
     }
 
     const ts = new Date();
-    const message = await this.prisma.scoped.wapiMessage.create({
+    const message = await this.prisma.scoped.message.create({
       data: {
         conversationId: conv.id,
-        metaMessageId,
+        channelId: conv.channelId,
+        externalId: metaMessageId,
         fromMe: true,
         type: 'text',
         content: { text: { body: dto.body } } as Prisma.InputJsonValue,
@@ -394,7 +396,7 @@ export class WapiInboxService {
     });
 
     const becomesAssigned = conv.status === 'UNASSIGNED' && !conv.assignedUserId;
-    const updated = await this.prisma.scoped.wapiConversation.update({
+    const updated = await this.prisma.scoped.conversation.update({
       where: { id: conv.id },
       data: {
         lastMessageAt: ts,
@@ -407,7 +409,7 @@ export class WapiInboxService {
 
     this.events.emitToTeam(ctx.teamId, 'wapi.message.new', {
       conversationId: conv.id,
-      configId: conv.configId,
+      configId: conv.channelId,
       message: {
         id: message.id,
         fromMe: true,
@@ -442,7 +444,7 @@ export class WapiInboxService {
     file: { buffer: Buffer; mimetype: string; originalname: string; size: number },
   ): Promise<MessagePayload> {
     const ctx = this.requireContext();
-    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+    const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
     });
     if (!conv) throw new NotFoundException(`Conversación ${conversationId} no encontrada`);
@@ -450,7 +452,7 @@ export class WapiInboxService {
       throw new ConflictException('No se puede responder una conversación resuelta — reabrila primero');
     }
     // Fase 1b — guard de ventana dirigido por capability del canal (ver sendText).
-    const window24hAt = conv.window24hAt;
+    const window24hAt = conv.freeformWindowAt;
     if (
       this.whatsapp.capabilities.freeformWindow.enforced &&
       (!window24hAt || window24hAt.getTime() < Date.now())
@@ -460,8 +462,8 @@ export class WapiInboxService {
       );
     }
 
-    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
-      where: { id: conv.configId },
+    const cfg = await this.prisma.scoped.channel.findFirst({
+      where: { id: conv.channelId },
     });
     if (!cfg) throw new ConflictException('La config WhatsApp asociada ya no existe');
     if (!cfg.isActive) throw new ConflictException('La config WhatsApp está deshabilitada');
@@ -498,7 +500,7 @@ export class WapiInboxService {
         },
         {
           kind: 'media',
-          to: conv.phone,
+          to: conv.externalUserId,
           mediaType: type,
           mediaId: upload.mediaId,
           caption: dto.caption,
@@ -517,10 +519,11 @@ export class WapiInboxService {
     const contentMedia: Record<string, unknown> = { id: upload.mediaId };
     if (dto.caption) contentMedia.caption = dto.caption;
     if (type === 'document') contentMedia.filename = file.originalname;
-    const message = await this.prisma.scoped.wapiMessage.create({
+    const message = await this.prisma.scoped.message.create({
       data: {
         conversationId: conv.id,
-        metaMessageId,
+        channelId: conv.channelId,
+        externalId: metaMessageId,
         fromMe: true,
         type,
         content: { [type]: contentMedia } as Prisma.InputJsonValue,
@@ -537,7 +540,7 @@ export class WapiInboxService {
     });
 
     const becomesAssigned = conv.status === 'UNASSIGNED' && !conv.assignedUserId;
-    const updated = await this.prisma.scoped.wapiConversation.update({
+    const updated = await this.prisma.scoped.conversation.update({
       where: { id: conv.id },
       data: {
         lastMessageAt: ts,
@@ -550,7 +553,7 @@ export class WapiInboxService {
 
     this.events.emitToTeam(ctx.teamId, 'wapi.message.new', {
       conversationId: conv.id,
-      configId: conv.configId,
+      configId: conv.channelId,
       message: {
         id: message.id,
         fromMe: true,
@@ -594,7 +597,7 @@ export class WapiInboxService {
     size: number;
   }> {
     this.requireContext();
-    const msg = await this.prisma.scoped.wapiMessage.findFirst({
+    const msg = await this.prisma.scoped.message.findFirst({
       where: { id: messageId },
       select: {
         mediaLocalPath: true,
@@ -618,13 +621,13 @@ export class WapiInboxService {
 
   async setReadState(conversationId: string, read: boolean): Promise<{ unreadCount: number }> {
     const ctx = this.requireContext();
-    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+    const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
       select: { id: true },
     });
     if (!conv) throw new NotFoundException(`Conversación ${conversationId} no encontrada`);
 
-    const updated = await this.prisma.scoped.wapiConversation.update({
+    const updated = await this.prisma.scoped.conversation.update({
       where: { id: conv.id },
       data: read
         ? { unreadCount: 0, lastReadAt: new Date() }
@@ -646,7 +649,7 @@ export class WapiInboxService {
 
   async assign(conversationId: string, userId: string): Promise<{ id: string; assignedUserId: string }> {
     const ctx = this.requireContext();
-    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+    const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
       select: { id: true, status: true },
     });
@@ -656,7 +659,7 @@ export class WapiInboxService {
     }
     // 4.O.6 — tomar/asignar suspende el bot, escala (si veníamos de WAITING),
     // limpia el TTL y cachea quién es el último responsable para el badge "asignado a X".
-    const updated = await this.prisma.scoped.wapiConversation.update({
+    const updated = await this.prisma.scoped.conversation.update({
       where: { id: conv.id },
       data: {
         assignedUserId: userId,
@@ -679,7 +682,7 @@ export class WapiInboxService {
 
   async unassign(conversationId: string): Promise<{ id: string }> {
     const ctx = this.requireContext();
-    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+    const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
       select: { id: true, status: true },
     });
@@ -689,7 +692,7 @@ export class WapiInboxService {
     }
     // 4.O.6 — el bot sigue suspendido (la conversación ya está escalada y debe
     // resolverse por humano) y limpiamos waitingUntil por si veníamos de WAITING.
-    const updated = await this.prisma.scoped.wapiConversation.update({
+    const updated = await this.prisma.scoped.conversation.update({
       where: { id: conv.id },
       data: {
         assignedUserId: null,
@@ -711,7 +714,7 @@ export class WapiInboxService {
     dto: ResolveWapiConversationDto,
   ): Promise<{ id: string; resolvedAt: Date }> {
     const ctx = this.requireContext();
-    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+    const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
       select: { id: true, status: true },
     });
@@ -724,7 +727,7 @@ export class WapiInboxService {
     // 4.O.6 — al resolver, el bot vuelve a estar disponible para el próximo
     // inbound del cliente. Mantenemos `escalated=true` y `lastAssignedUserId`
     // como auditoría (la pestaña "resueltas" filtra por escalated=true).
-    const updated = await this.prisma.scoped.wapiConversation.update({
+    const updated = await this.prisma.scoped.conversation.update({
       where: { id: conv.id },
       data: {
         status: 'RESOLVED',
@@ -757,7 +760,7 @@ export class WapiInboxService {
 
   async reopen(conversationId: string): Promise<{ id: string }> {
     const ctx = this.requireContext();
-    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+    const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
       select: { id: true, status: true, assignedUserId: true },
     });
@@ -767,7 +770,7 @@ export class WapiInboxService {
     }
     const nextStatus = conv.assignedUserId ? 'ASSIGNED' : 'UNASSIGNED';
     // 4.O.6 — reopen manual implica que el operador retoma; bot suspendido.
-    const updated = await this.prisma.scoped.wapiConversation.update({
+    const updated = await this.prisma.scoped.conversation.update({
       where: { id: conv.id },
       data: {
         status: nextStatus,
@@ -796,21 +799,21 @@ export class WapiInboxService {
    */
   async putOnHold(conversationId: string): Promise<{ id: string; waitingUntil: Date }> {
     const ctx = this.requireContext();
-    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+    const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
-      select: { id: true, status: true, assignedUserId: true, configId: true },
+      select: { id: true, status: true, assignedUserId: true, channelId: true },
     });
     if (!conv) throw new NotFoundException(`Conversación ${conversationId} no encontrada`);
     if (conv.status !== 'ASSIGNED') {
       throw new ConflictException('Sólo se puede poner en espera una conversación asignada');
     }
-    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
-      where: { id: conv.configId },
+    const cfg = await this.prisma.scoped.channel.findFirst({
+      where: { id: conv.channelId },
       select: { botWaitingTtlMin: true } as never,
     });
     const ttlMin = Math.max(1, ((cfg as unknown as { botWaitingTtlMin?: number } | null)?.botWaitingTtlMin) ?? 120);
     const waitingUntil = new Date(Date.now() + ttlMin * 60_000);
-    const updated = await this.prisma.scoped.wapiConversation.update({
+    const updated = await this.prisma.scoped.conversation.update({
       where: { id: conv.id },
       data: {
         status: 'WAITING',
@@ -834,7 +837,7 @@ export class WapiInboxService {
     Array<{ id: string; note: string; authorUserId: string | null; createdAt: Date }>
   > {
     this.requireContext();
-    const conv = await this.prisma.scoped.wapiConversation.findFirst({
+    const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
       select: { id: true },
     });

@@ -8,10 +8,12 @@
 
 ## Estado actual
 
-**Fase en curso:** **Fase 0 COMPLETA** (0a+0b, probado en runtime por el usuario) +
-**Fase 1: 1a, 1b y 1c COMPLETAS**. Próximo: **1d** (modelo unificado `Channel/Conversation/Message/BotSession` — RIESGO ALTO, migración en vivo).
+**Fase en curso:** **Fase 0 COMPLETA** (0a+0b) + **Fase 1: 1a–1d COMPLETAS** (1d
+verificado: migración aplicada + cero drift + backend/frontend tsc limpio + specs
+verdes). Próximo: **1e** (inbox unificado API+UI + rename de contrato) o **1g**
+(rename de clases/módulo del bot). **Pendiente smoke runtime de 1d** (Chat simulado).
 
-**Última actualización:** sesión 2 (2026-06-05).
+**Última actualización:** sesión 3 (2026-06-05).
 
 **Commits en `feat/multichannel-bot` (en orden):**
 - `8f13e21` — 0a: entidad `Bot` + migración/backfill + wiring backend
@@ -29,19 +31,25 @@
 número (Números), y el bot responde end-to-end en el Chat simulado.
 
 ### Para retomar mañana
-1. `git checkout feat/multichannel-bot`. **Ojo:** 1c está en el working tree **sin
-   commitear** — commitear antes de seguir (sugerido: `feat(channels): parseInbound
-   + webhook genérico /api/channels/:kind/:slug (Fase 1c)`).
-2. Seguir por **1d** (modelo unificado — RIESGO ALTO, migración en vivo; ver PLAN → FASE 1).
-3. **Decisión pendiente del usuario:** relocar/renombrar el módulo del bot (sacar
-   de `modules/wapi/`, quitar prefijo `Wapi`). Análisis + recomendación en
-   PLAN → **Sub-fase 1g** (recomendado: hacerlo justo después de 1d, no antes).
-4. **Cabos sueltos de 1c (para 1d):** (a) `parseInbound` existe y está testeado pero
-   **todavía no lo consume el flujo vivo** — `process` sigue sobre el payload Meta;
-   1d debe rewirearlo. (b) No se agregó `parseStatus` (status updates siguen
-   parseándose en `WapiWebhookService.handleStatus`). (c) La resolución de tenant
-   sigue WhatsApp-específica (`WapiConfig` por phone_number_id); con `Channel` (1d)
-   pasa a ser channel-aware y el handler se pliega al `verifyAndParse(req, channel)`.
+1. `git checkout feat/multichannel-bot`. **Ojo:** 1c y 1d están en el working tree
+   **sin commitear** — commitear antes de seguir.
+2. **Smoke runtime de 1d PENDIENTE:** levantar backend (DB ya migrada) + Chat
+   simulado → confirmar upsert Conversation con `channelKind`, Message con
+   `channelId`+`externalId`, socket llega al inbox con keys legacy, BotSession por
+   `channelId_externalUserId`. (No se pudo correr en la sesión: VPN del trabajo
+   rompía la conexión del engine de Prisma — desconectar VPN para usar la DB local.)
+3. Seguir por **1e** (inbox unificado: API `/api/inbox` + UI badge/filtro de canal +
+   rename del contrato socket/DTO a `channelId`/`externalUserId`) y/o **1g** (rename
+   de clases/módulo del bot `WapiBot*`→`Bot*`, `WapiConversationStatus`, etc.).
+4. **Cabos sueltos de 1d (para 1e):** (a) **El contrato HTTP/socket mantiene keys
+   legacy** `configId`/`phone`/`window24hAt` (mapeadas en la frontera de inbox/
+   webhook/waiting-expirer/campaigns/live) → el frontend NO se tocó; 1e renombra el
+   contrato. (b) `parseInbound` sigue **sin consumirse por el flujo vivo** (la
+   persistencia del webhook usa el payload Meta directo); rewirearlo cuando se
+   limpie. (c) `parseStatus` aún no existe. (d) Enum Prisma se llama **`ChannelType`**
+   (no `ChannelKind`) por colisión con el legacy `ChannelKind {EMAIL,WAPI}` de
+   CampaignLog. (e) Clases `WapiBot*Service` y enum `WapiConversationStatus` NO se
+   renombraron (van en 1g).
 
 **Verificación 0a:**
 - ✅ Migración `20260603120000_extract_bot_entity` aplicada a la DB local + backfill
@@ -120,7 +128,7 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 - [x] **1a** Capa de abstracción (módulo `channels/`): tipos `ChannelAdapter`/`Inbound`/`Outbound`/`Capabilities` + `WhatsAppAdapter` (envuelve `WapiSenderService`, capabilities) + `ChannelAdapterRegistry` + registrado en `app.module`. Aditivo, adapter spec 6/6, typecheck limpio.
 - [x] **1b** Rewire engine `deliverNode` + inbox `sendText/sendMedia` al `WhatsAppAdapter`; guard de ventana 24h → `capabilities.freeformWindow`. `WhatsAppAdapter` movido a `WapiModule` (sin ciclo con `ChannelsModule`). Specs engine/inbox con mock-adapter que reenvía al sender → 408/408 wapi+channels, typecheck limpio.
 - [x] **1c** `parseInbound` + webhook genérico `/api/channels/:kind/:slug` (alcance "liviana"; ver bitácora sesión 2). `parseInbound(payload)→InboundMessage[]` en `WhatsAppAdapter` (parser puro, aditivo — lo consume 1d). Lógica del webhook extraída a `WhatsAppWebhookHandler` (compartida por `/api/webhooks/wapi/:slug` legacy y `/api/channels/whatsapp/:slug` genérica). **La persistencia (`WapiWebhookService.process`) NO se tocó.** 424/424 wapi+channels, typecheck limpio. **Sin commitear (working tree).**
-- [ ] **1d** Modelo unificado `Channel/Conversation/Message/BotSession` (migración en vivo — riesgo alto)
+- [x] **1d** Modelo unificado `Channel/Conversation/Message/BotSession` (rename big-bang, greenfield). Migración `20260605120000_rename_channel_entities` aplicada + **cero drift**. Enum `ChannelType` (no `ChannelKind` por colisión legacy). Contrato HTTP/socket mantiene keys legacy (`configId`/`phone`/`window24hAt`/`metaMessageId`/`configRel`) mapeadas en la frontera → frontend intacto. Backend+frontend tsc limpio; specs verdes (full backend salvo 5 email pre-existentes). **Sin commitear; smoke runtime pendiente.**
 - [ ] **1e** Inbox unificado (API `/api/inbox` + UI con badge/filtro de canal)
 - [ ] **1f** Cleanup de tablas/columnas `Wapi*` legacy
 - [ ] **1g** Relocar/renombrar el módulo del bot (sacar de `wapi/`, quitar prefijo `Wapi`) — propuesta del usuario; recomendado hacerlo justo después de 1d (ver PLAN §1g)
@@ -131,6 +139,39 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 ---
 
 ## Bitácora (qué se hizo y por qué)
+
+### Sesión 3 — 2026-06-05 (Fase 1d)
+- **Implementada toda la Fase 1d** (rename big-bang `WapiConfig→Channel`,
+  `WapiConversation→Conversation`, `WapiMessage→Message`, `WapiBotSession→BotSession`;
+  greenfield). Decisiones del dueño: rename completo (no coexistencia) + greenfield.
+- **Schema** (`schema.prisma`): 4 modelos renombrados + enum `ChannelType`
+  (WHATSAPP/INSTAGRAM/MESSENGER/WEBCHAT — se llama `ChannelType` y no `ChannelKind`
+  porque ya existía `enum ChannelKind {EMAIL,WAPI}` legacy en CampaignLog). Campos:
+  `configId→channelId`, `phone→externalUserId`, `window24hAt→freeformWindowAt`,
+  `metaMessageId→externalId`; nuevos `Channel.kind`, `Conversation.channelKind`
+  (denorm), `Message.channelId` (denorm, para unique `[channelId, externalId]`).
+  Back-relations Organization/Team/Bot/WapiCampaign actualizadas.
+- **Migración** `20260605120000_rename_channel_entities`: SQL hand-written idempotente
+  (RENAME, preserva datos) — enum → rename tablas → rename columnas → columnas nuevas
+  → backfill denorm → SET NOT NULL → rename PK/FK/índices → unique compuesto Message.
+  Aplicada con `migrate deploy`; `migrate diff --exit-code` = **No difference detected**.
+  (Ojo: el engine de Prisma no conecta a la DB local detrás de la VPN del trabajo;
+  desconectar VPN.)
+- **Repoint de código** (~17 archivos no-spec): accesores `prisma.scoped.wapiX→.x`
+  (sed), `tenant-models.ts` (4 entradas), casts `prismaSession`/waiting-expirer raw,
+  bot-engine (sesión por `channelId_externalUserId` + Message `channelId`/`externalId`),
+  webhook (Conversation `channelKind:'WHATSAPP'` + Message `channelId`), inbox,
+  contact-timeline, worker/campañas/live (relación `configRel→channel`).
+- **Decisión clave**: el **contrato HTTP/socket NO cambió** — se mapean las keys
+  legacy en la frontera (DTOs, emits, `toCampaignApiShape`, BotListItem). Por eso el
+  frontend no se tocó y su tsc sigue limpio. El rename del contrato es 1e.
+- **Specs** (~18 suites): sed de accesores/keys + fixes de mock-data y call-arg asserts
+  (manteniendo keys legacy en asserts de output). Resultado: full backend **782/787**
+  (los 5 rojos son email `prepare-html`/`ses-webhook`, pre-existentes y ajenos).
+- **Bug encontrado en runtime por el usuario** (bots page): `Bot.findMany` seguía
+  pidiendo la relación `configs` (renombrada a `channels`) en un `select as never`
+  (invisible a tsc). Corregido en `listBots` + spec. Lección: barrer relaciones
+  renombradas en selects/includes casteados, no confiar sólo en tsc.
 
 ### Sesión 2 — 2026-06-05
 - **Implementada la Sub-fase 1c (alcance "liviana", elegido por el usuario).** La

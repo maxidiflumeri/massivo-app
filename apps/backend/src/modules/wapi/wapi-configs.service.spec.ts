@@ -20,7 +20,7 @@ describe('WapiConfigsService', () => {
 
   beforeEach(async () => {
     prismaMock = {
-      wapiConfig: {
+      channel: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
         create: jest.fn(),
@@ -55,17 +55,17 @@ describe('WapiConfigsService', () => {
   });
 
   it('findOne devuelve config si existe (contexto inyectado)', async () => {
-    prismaMock.wapiConfig.findFirst.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
+    prismaMock.channel.findFirst.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
 
     const res = await TenantContext.run(mockCtx, () => service.findOne('c1'));
     expect(res.id).toBe('c1');
-    expect(prismaMock.wapiConfig.findFirst).toHaveBeenCalledWith({
+    expect(prismaMock.channel.findFirst).toHaveBeenCalledWith({
       where: { id: 'c1' },
     });
   });
 
   it('findOne lanza NotFoundException si no lo encuentra en el scope', async () => {
-    prismaMock.wapiConfig.findFirst.mockResolvedValue(null);
+    prismaMock.channel.findFirst.mockResolvedValue(null);
 
     await expect(
       TenantContext.run(mockCtx, () => service.findOne('c1')),
@@ -73,7 +73,7 @@ describe('WapiConfigsService', () => {
   });
 
   it('create inyecta data y llama a Prisma', async () => {
-    prismaMock.wapiConfig.create.mockResolvedValue({ id: 'new-c1', phoneNumberId: '123' });
+    prismaMock.channel.create.mockResolvedValue({ id: 'new-c1', phoneNumberId: '123' });
 
     const dto = {
       name: 'Test',
@@ -86,7 +86,7 @@ describe('WapiConfigsService', () => {
 
     const res = await TenantContext.run(mockCtx, () => service.create(dto));
     expect(res.id).toBe('new-c1');
-    expect(prismaMock.wapiConfig.create).toHaveBeenCalledWith({
+    expect(prismaMock.channel.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         phoneNumberId: '123',
         accessTokenEnc: 'enc(abc)',
@@ -96,12 +96,12 @@ describe('WapiConfigsService', () => {
   });
 
   it('delete valida existencia antes de eliminar', async () => {
-    prismaMock.wapiConfig.findFirst.mockResolvedValue(null);
+    prismaMock.channel.findFirst.mockResolvedValue(null);
 
     await expect(
       TenantContext.run(mockCtx, () => service.remove('c1')),
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(prismaMock.wapiConfig.delete).not.toHaveBeenCalled();
+    expect(prismaMock.channel.delete).not.toHaveBeenCalled();
   });
 
   describe('4.Q sendDelay throttle', () => {
@@ -117,11 +117,11 @@ describe('WapiConfigsService', () => {
       await expect(
         TenantContext.run(mockCtx, () => service.create(dto)),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prismaMock.wapiConfig.create).not.toHaveBeenCalled();
+      expect(prismaMock.channel.create).not.toHaveBeenCalled();
     });
 
     it('create con min==max OK', async () => {
-      prismaMock.wapiConfig.create.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
+      prismaMock.channel.create.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
       const dto = {
         phoneNumberId: '123',
         businessAccountId: '456',
@@ -131,30 +131,30 @@ describe('WapiConfigsService', () => {
         sendDelayMaxMs: 30000,
       };
       await TenantContext.run(mockCtx, () => service.create(dto));
-      expect(prismaMock.wapiConfig.create).toHaveBeenCalled();
+      expect(prismaMock.channel.create).toHaveBeenCalled();
     });
 
     it('update parcial: solo min, contra current.max persistido', async () => {
-      prismaMock.wapiConfig.findFirst.mockResolvedValue({
+      prismaMock.channel.findFirst.mockResolvedValue({
         id: 'c1', sendDelayMinMs: 10000, sendDelayMaxMs: 20000,
       });
-      prismaMock.wapiConfig.update.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
+      prismaMock.channel.update.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
       // min nuevo (50000) > max persistido (20000) → debe fallar
       await expect(
         TenantContext.run(mockCtx, () => service.update('c1', { sendDelayMinMs: 50000 })),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prismaMock.wapiConfig.update).not.toHaveBeenCalled();
+      expect(prismaMock.channel.update).not.toHaveBeenCalled();
     });
 
     it('update parcial: min nuevo válido contra current.max → OK', async () => {
-      prismaMock.wapiConfig.findFirst.mockResolvedValue({
+      prismaMock.channel.findFirst.mockResolvedValue({
         id: 'c1', sendDelayMinMs: 10000, sendDelayMaxMs: 60000,
       });
-      prismaMock.wapiConfig.update.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
+      prismaMock.channel.update.mockResolvedValue({ id: 'c1', phoneNumberId: '123' });
       await TenantContext.run(mockCtx, () =>
         service.update('c1', { sendDelayMinMs: 30000 }),
       );
-      expect(prismaMock.wapiConfig.update).toHaveBeenCalledWith(
+      expect(prismaMock.channel.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ sendDelayMinMs: 30000 }),
         }),

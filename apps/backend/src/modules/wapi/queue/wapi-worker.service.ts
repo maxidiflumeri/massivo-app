@@ -142,7 +142,7 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
       where: {
         status: 'SENT',
         sentAt: { gte: since },
-        campaign: { configId },
+        campaign: { channelId: configId },
       },
     });
   }
@@ -192,7 +192,7 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
         where: { id: reportId },
         include: {
           contact: true,
-          campaign: { include: { template: true, configRel: true } },
+          campaign: { include: { template: true, channel: true } },
         },
       });
       if (!report) throw new Error(`WapiReport ${reportId} not found in tenant`);
@@ -232,7 +232,7 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
       }
 
       const template = report.campaign.template;
-      const cfg = report.campaign.configRel;
+      const cfg = report.campaign.channel;
       if (!template) throw new Error(`Campaign ${report.campaignId} has no template`);
       if (!cfg) throw new Error(`Campaign ${report.campaignId} has no config`);
 
@@ -338,7 +338,7 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
         await this.sleep(
           this.jitterMs({
             campaignConfig: report.campaign.config,
-            configRel: report.campaign.configRel ?? undefined,
+            configRel: report.campaign.channel ?? undefined,
           }),
         );
         return { metaMessageId: result.metaMessageId };

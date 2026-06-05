@@ -5,7 +5,7 @@
  *  - CAPTURE válido avanza la sesión; inválido reentrega el mismo nodo.
  *  - `reset: true` borra la sesión.
  *  - Aislamiento multi-tenant: la sesión de un userId/configId no es visible para otro.
- *  - El sandbox NO toca prisma.scoped.wapiBotSession (sólo lee el WapiConfig).
+ *  - El sandbox NO toca prisma.scoped.botSession (sólo lee el WapiConfig).
  */
 import { WapiBotSandboxService } from './wapi-bot-sandbox.service';
 import { WapiBotRouterService } from './wapi-bot-router.service';
@@ -41,7 +41,7 @@ function makePrisma(row: Record<string, unknown> | null) {
         };
   return {
     scoped: {
-      wapiConfig: {
+      channel: {
         findFirst: jest.fn(async () => wrapped),
       },
     },

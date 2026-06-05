@@ -56,7 +56,7 @@ function makePrisma(seedBots: Row[] = []) {
       [...bots.values()].map((b) => ({
         ...b,
         updatedAt: new Date('2026-06-01T00:00:00Z'),
-        configs: [...configs.values()]
+        channels: [...configs.values()]
           .filter((c) => c.botId === b.id)
           .map((c) => ({ id: c.id, name: c.name, phoneNumberId: c.phoneNumberId })),
       })),
@@ -95,7 +95,7 @@ function makePrisma(seedBots: Row[] = []) {
     }),
   };
 
-  const prisma = { scoped: { bot, wapiConfig } } as never;
+  const prisma = { scoped: { bot, channel: wapiConfig } } as never;
   return { prisma, bots, configs, botModel: bot, wapiConfig };
 }
 

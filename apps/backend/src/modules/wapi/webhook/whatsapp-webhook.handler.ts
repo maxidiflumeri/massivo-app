@@ -49,7 +49,7 @@ export class WhatsAppWebhookHandler {
       throw new BadRequestException(`hub.mode=${mode} no soportado`);
     }
     const orgId = await this.resolveOrgIdBySlug(slug);
-    const configs = await this.prisma.wapiConfig.findMany({
+    const configs = await this.prisma.channel.findMany({
       where: { isActive: true, organizationId: orgId },
       select: { id: true, webhookVerifyTokenEnc: true },
     });
@@ -92,7 +92,7 @@ export class WhatsAppWebhookHandler {
     }
 
     const orgId = await this.resolveOrgIdBySlug(slug);
-    const configs = await this.prisma.wapiConfig.findMany({
+    const configs = await this.prisma.channel.findMany({
       where: {
         organizationId: orgId,
         phoneNumberId: { in: [...phoneNumberIds] },

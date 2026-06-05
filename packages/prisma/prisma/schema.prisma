@@ -134,17 +134,17 @@ model Organization {
   emailEvents         EmailEvent[]
   emailBounces        EmailBounce[]
   emailUnsubscribes   EmailUnsubscribe[]
-  wapiConfigs         WapiConfig[]
+  channels            Channel[]
   wapiTemplates       WapiTemplate[]
   wapiCampaigns       WapiCampaign[]
   wapiContacts        WapiContact[]
   wapiReports         WapiReport[]
-  wapiConversations   WapiConversation[]
-  wapiMessages        WapiMessage[]
+  conversations       Conversation[]
+  messages            Message[]
   wapiOptOuts         WapiOptOut[]
   wapiQuickReplies    WapiQuickReply[]
   wapiResolutionNotes WapiResolutionNote[]
-  wapiBotSessions     WapiBotSession[]
+  botSessions         BotSession[]
   bots                Bot[]
 
   contacts                Contact[]
@@ -178,17 +178,17 @@ model Team {
   emailEvents         EmailEvent[]
   emailBounces        EmailBounce[]
   emailUnsubscribes   EmailUnsubscribe[]
-  wapiConfigs         WapiConfig[]
+  channels            Channel[]
   wapiTemplates       WapiTemplate[]
   wapiCampaigns       WapiCampaign[]
   wapiContacts        WapiContact[]
   wapiReports         WapiReport[]
-  wapiConversations   WapiConversation[]
-  wapiMessages        WapiMessage[]
+  conversations       Conversation[]
+  messages            Message[]
   wapiOptOuts         WapiOptOut[]
   wapiQuickReplies    WapiQuickReply[]
   wapiResolutionNotes WapiResolutionNote[]
-  wapiBotSessions     WapiBotSession[]
+  botSessions         BotSession[]
   bots                Bot[]
 
   contacts       Contact[]
@@ -629,11 +629,26 @@ enum WapiOptOutScope {
   CAMPAIGN
 }
 
-model WapiConfig {
-  id                    String    @id @default(cuid())
+// Fase 1 (multi-canal) — plataforma del canal. Matchea el union `ChannelKind`
+// de apps/backend/src/modules/channels/adapter.types.ts (mismos valores string).
+// Se llama `ChannelType` y no `ChannelKind` porque ya existe un enum legacy
+// `ChannelKind { EMAIL, WAPI }` (usado por CampaignLog) con otra semántica.
+enum ChannelType {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+  WEBCHAT
+}
+
+// Fase 1d — `Channel` (ex `WapiConfig`): conexión/transporte a una plataforma.
+// Hoy sólo WHATSAPP; los campos de creds/operativos siguen flat (no `settings`
+// JSON todavía). `isActive` se mantiene (no se introduce `ChannelStatus` aún).
+model Channel {
+  id                    String      @id @default(cuid())
   organizationId        String
   teamId                String
   name                  String?
+  kind                  ChannelType @default(WHATSAPP)
   phoneNumberId         String
   businessAccountId     String
   accessTokenEnc        String
@@ -701,12 +716,12 @@ model WapiConfig {
   // `botId`). Se mantienen hasta el cleanup (Fase 0c) para migración reversible.
   botId String?
 
-  organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  team          Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  bot           Bot?               @relation(fields: [botId], references: [id], onDelete: SetNull)
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team          Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  bot           Bot?           @relation(fields: [botId], references: [id], onDelete: SetNull)
   campaigns     WapiCampaign[]
-  conversations WapiConversation[]
-  botSessions   WapiBotSession[]
+  conversations Conversation[]
+  botSessions   BotSession[]
 
   @@unique([teamId, phoneNumberId])
   @@index([organizationId])
@@ -747,7 +762,7 @@ model Bot {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  configs      WapiConfig[]
+  channels     Channel[]
 
   @@index([organizationId])
   @@index([teamId])
@@ -786,7 +801,7 @@ model WapiCampaign {
   archived        Boolean            @default(false)
   jobId           String?
   templateId      String?
-  configId        String?
+  channelId       String?
   scheduledAt     DateTime?
   sentAt          DateTime?
   config          Json?
@@ -797,7 +812,7 @@ model WapiCampaign {
   organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
   template     WapiTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  configRel    WapiConfig?   @relation(fields: [configId], references: [id], onDelete: SetNull)
+  channel      Channel?      @relation(fields: [channelId], references: [id], onDelete: SetNull)
   contacts     WapiContact[]
   reports      WapiReport[]
 
@@ -858,17 +873,20 @@ model WapiReport {
   @@index([sentAt])
 }
 
-model WapiConversation {
+model Conversation {
   id                 String                 @id @default(cuid())
   organizationId     String
   teamId             String
-  configId           String
-  phone              String
+  channelId          String
+  // Denormalizado de Channel.kind para filtrar el inbox por canal sin join.
+  channelKind        ChannelType
+  externalUserId     String
   name               String?
   status             WapiConversationStatus @default(UNASSIGNED)
   assignedUserId     String?
   lastMessageAt      DateTime?
-  window24hAt        DateTime?
+  // Ventana de freeform del canal (ex window24hAt). 24h en canales Meta.
+  freeformWindowAt   DateTime?
   firstReplyAt       DateTime?
   resolvedAt         DateTime?
   unreadCount        Int                    @default(0)
@@ -898,11 +916,11 @@ model WapiConversation {
 
   organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team            Team                 @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  config          WapiConfig           @relation(fields: [configId], references: [id], onDelete: Cascade)
-  messages        WapiMessage[]
+  channel         Channel              @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  messages        Message[]
   resolutionNotes WapiResolutionNote[]
 
-  @@unique([teamId, configId, phone])
+  @@unique([teamId, channelId, externalUserId])
   @@index([organizationId])
   @@index([teamId])
   @@index([assignedUserId])
@@ -911,15 +929,23 @@ model WapiConversation {
   @@index([teamId, priority, lastMessageAt])
   // 4.O.6 — listado del inbox filtra por escalated; worker de TTL busca WAITING vencidos.
   @@index([teamId, escalated, lastMessageAt])
+  // Fase 1d — el inbox omnicanal filtra por canal.
+  @@index([teamId, channelKind, lastMessageAt])
   @@index([status, waitingUntil])
 }
 
-model WapiMessage {
+model Message {
   id             String   @id @default(cuid())
   organizationId String
   teamId         String
   conversationId String
-  metaMessageId  String?  @unique
+  // Denormalizado de la conversación — necesario para el unique compuesto por
+  // canal (un id externo sólo es único dentro de su canal).
+  channelId      String
+  // Id del mensaje en el proveedor (ex metaMessageId). Para dedup. Nullable:
+  // salientes pueden no traer id (o `SIM_` en test mode); en Postgres los NULL
+  // no colisionan en un UNIQUE.
+  externalId     String?
   fromMe         Boolean
   type           String
   content        Json
@@ -937,10 +963,12 @@ model WapiMessage {
   mediaCaption   String?
   mediaLocalPath String?
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  team         Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  conversation WapiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
+  // Idempotencia por canal (reemplaza el metaMessageId @unique global).
+  @@unique([channelId, externalId])
   @@index([organizationId])
   @@index([teamId])
   @@index([conversationId, timestamp])
@@ -994,9 +1022,9 @@ model WapiResolutionNote {
   note           String
   createdAt      DateTime @default(now())
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  team         Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  conversation WapiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([teamId])
@@ -1007,12 +1035,12 @@ model WapiResolutionNote {
 // flow del bot. Cuando llega un inbound, el motor busca por (configId, phone) y
 // si existe + no expiró, decide el próximo nodo según la opción seleccionada.
 // Sesión finaliza cuando se llega a un nodo HANDOFF o el operador toma manual.
-model WapiBotSession {
+model BotSession {
   id             String    @id @default(cuid())
   organizationId String
   teamId         String
-  configId       String
-  phone          String
+  channelId      String
+  externalUserId String
   currentNodeId  String
   // 4.O.1 — id del tema (BotTopic) en el que está parado el cliente. Null para
   // sesiones legacy (botFlow sin topics) — el motor las trata como tema 'default'.
@@ -1029,9 +1057,9 @@ model WapiBotSession {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  config       WapiConfig   @relation(fields: [configId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
-  @@unique([configId, phone])
+  @@unique([channelId, externalUserId])
   @@index([organizationId])
   @@index([teamId])
   @@index([expiresAt])

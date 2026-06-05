@@ -56,33 +56,35 @@ export class WapiBotWaitingExpirerService implements OnModuleInit, OnModuleDestr
   async tick(): Promise<{ expired: number }> {
     const now = new Date();
     const rows = (await (this.prisma as unknown as {
-      wapiConversation: {
+      conversation: {
         findMany: (args: unknown) => Promise<
-          Array<{ id: string; teamId: string; configId: string; phone: string }>
+          Array<{ id: string; teamId: string; channelId: string; externalUserId: string }>
         >;
       };
-    }).wapiConversation.findMany({
+    }).conversation.findMany({
       where: { status: 'WAITING', waitingUntil: { lt: now } },
-      select: { id: true, teamId: true, configId: true, phone: true },
+      select: { id: true, teamId: true, channelId: true, externalUserId: true },
       take: 200,
-    })) as Array<{ id: string; teamId: string; configId: string; phone: string }>;
+    })) as Array<{ id: string; teamId: string; channelId: string; externalUserId: string }>;
     if (rows.length === 0) return { expired: 0 };
 
     let expired = 0;
     for (const row of rows) {
       try {
         await (this.prisma as unknown as {
-          wapiConversation: { update: (args: unknown) => Promise<unknown> };
-        }).wapiConversation.update({
+          conversation: { update: (args: unknown) => Promise<unknown> };
+        }).conversation.update({
           where: { id: row.id },
           // Doble guard sobre status: si entre el findMany y el update el
           // operador resolvió o el cliente respondió, no pisamos el cambio.
           data: { status: 'UNASSIGNED', waitingUntil: null },
         });
+        // Contrato de socket: mantenemos las keys legacy configId/phone (mapeadas
+        // desde channelId/externalUserId) para no tocar el frontend en 1d.
         this.events.emitToTeam(row.teamId, 'wapi.conversation.updated', {
           id: row.id,
-          configId: row.configId,
-          phone: row.phone,
+          configId: row.channelId,
+          phone: row.externalUserId,
           status: 'UNASSIGNED',
           waitingUntil: null,
         });

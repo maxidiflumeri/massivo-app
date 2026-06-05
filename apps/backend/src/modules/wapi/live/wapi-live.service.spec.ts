@@ -3,8 +3,8 @@ import { WapiLiveService } from './wapi-live.service';
 interface ScopedMocks {
   wapiCampaign: { findMany: jest.Mock };
   wapiReport: { groupBy: jest.Mock };
-  wapiConfig: { findMany: jest.Mock };
-  wapiConversation: { count: jest.Mock; findFirst: jest.Mock };
+  channel: { findMany: jest.Mock };
+  conversation: { count: jest.Mock; findFirst: jest.Mock };
 }
 
 function buildSvc(scoped: ScopedMocks) {
@@ -18,8 +18,8 @@ describe('WapiLiveService', () => {
     scoped = {
       wapiCampaign: { findMany: jest.fn().mockResolvedValue([]) },
       wapiReport: { groupBy: jest.fn().mockResolvedValue([]) },
-      wapiConfig: { findMany: jest.fn().mockResolvedValue([]) },
-      wapiConversation: {
+      channel: { findMany: jest.fn().mockResolvedValue([]) },
+      conversation: {
         count: jest.fn().mockResolvedValue(0),
         findFirst: jest.fn().mockResolvedValue(null),
       },
@@ -40,7 +40,7 @@ describe('WapiLiveService', () => {
     });
     expect(out.generatedAt).toBeInstanceOf(Date);
     // Inbox: 3 counts + 1 findFirst.
-    expect(scoped.wapiConversation.count).toHaveBeenCalledTimes(3);
+    expect(scoped.conversation.count).toHaveBeenCalledTimes(3);
   });
 
   it('arma totals + throughput por campaña activa', async () => {
@@ -49,20 +49,20 @@ describe('WapiLiveService', () => {
         id: 'c1',
         name: 'Promo abril',
         status: 'PROCESSING',
-        configId: 'cfg1',
+        channelId: 'cfg1',
         sentAt: new Date('2026-05-06T10:00:00Z'),
         config: null,
-        configRel: { name: 'Línea principal', sendDelayMinMs: 30000, sendDelayMaxMs: 60000 },
+        channel: { name: 'Línea principal', sendDelayMinMs: 30000, sendDelayMaxMs: 60000 },
         template: { metaName: 'promo_abril' },
       },
       {
         id: 'c2',
         name: 'Recordatorio',
         status: 'PAUSED',
-        configId: 'cfg2',
+        channelId: 'cfg2',
         sentAt: null,
         config: { delayMinMs: 5000, delayMaxMs: 10000 },
-        configRel: { name: null, sendDelayMinMs: 30000, sendDelayMaxMs: 60000 },
+        channel: { name: null, sendDelayMinMs: 30000, sendDelayMaxMs: 60000 },
         template: { metaName: null },
       },
     ]);
@@ -109,7 +109,7 @@ describe('WapiLiveService', () => {
   });
 
   it('configs: percent calculado contra dailyLimit con cap a 100', async () => {
-    scoped.wapiConfig.findMany.mockResolvedValueOnce([
+    scoped.channel.findMany.mockResolvedValueOnce([
       {
         id: 'cfg1',
         name: 'Línea principal',
@@ -141,8 +141,8 @@ describe('WapiLiveService', () => {
     scoped.wapiCampaign.findMany
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
-        { id: 'campA', configId: 'cfg1' },
-        { id: 'campB', configId: 'cfg2' },
+        { id: 'campA', channelId: 'cfg1' },
+        { id: 'campB', channelId: 'cfg2' },
       ]);
 
     const svc = buildSvc(scoped);
@@ -168,12 +168,12 @@ describe('WapiLiveService', () => {
   });
 
   it('inbox: counts + más antigua sin asignar', async () => {
-    scoped.wapiConversation.count
+    scoped.conversation.count
       .mockResolvedValueOnce(3) // unassigned
       .mockResolvedValueOnce(5) // waiting
       .mockResolvedValueOnce(11); // escalatedTotal
     const oldest = new Date('2026-05-06T08:00:00Z');
-    scoped.wapiConversation.findFirst.mockResolvedValueOnce({ lastMessageAt: oldest });
+    scoped.conversation.findFirst.mockResolvedValueOnce({ lastMessageAt: oldest });
 
     const svc = buildSvc(scoped);
     const out = await svc.snapshot();

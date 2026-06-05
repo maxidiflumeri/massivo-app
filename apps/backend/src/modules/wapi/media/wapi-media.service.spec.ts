@@ -33,7 +33,7 @@ describe('WapiMediaService', () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wapi-media-test-'));
     prismaMock = {
-      wapiConfig: {
+      channel: {
         findFirst: jest.fn().mockResolvedValue({
           phoneNumberId: 'ph1',
           accessTokenEnc: 'tok-enc',

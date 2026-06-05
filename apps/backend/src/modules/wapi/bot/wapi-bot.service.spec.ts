@@ -7,7 +7,7 @@
  * - publish bloquea si el draft tiene refs inconsistentes (router → topicId).
  *
  * Phase 0a (multi-canal): la definición del bot vive en la entidad `Bot`
- * (resuelta vía `WapiConfig.botId`). El mock provee `prisma.scoped.wapiConfig`
+ * (resuelta vía `WapiConfig.botId`). El mock provee `prisma.scoped.channel`
  * (devuelve el `botId`) y `prisma.scoped.bot` (estado mutable del bot).
  */
 import { BadRequestException } from '@nestjs/common';
@@ -85,7 +85,7 @@ function makePrisma(botInitial: Row) {
     }),
   };
   const prisma = {
-    scoped: { wapiConfig, bot: botModel },
+    scoped: { channel: wapiConfig, bot: botModel },
   } as never;
   return { prisma, bot, config, wapiConfig, botModel };
 }

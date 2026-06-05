@@ -720,7 +720,7 @@ export class WapiBotSandboxService {
     // `CfgSnapshot` (nombres `bot*`) para no tocar el resto del sandbox. Si el
     // config no tiene bot, devolvemos un snapshot vacío → el sandbox muestra
     // "unavailable" (no 404).
-    const row = (await this.prisma.scoped.wapiConfig.findFirst({
+    const row = (await this.prisma.scoped.channel.findFirst({
       where: { id: configId },
       select: {
         id: true,

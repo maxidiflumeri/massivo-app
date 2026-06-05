@@ -73,22 +73,26 @@ export class WapiCampaignsService {
     if (dto.scheduledAt && dto.scheduledAt.getTime() < Date.now()) {
       throw new BadRequestException('scheduledAt debe ser futuro');
     }
-    return this.prisma.scoped.wapiCampaign.create({
+    const created = await this.prisma.scoped.wapiCampaign.create({
       data: {
         name: dto.name,
         templateId: dto.templateId,
-        configId: dto.configId,
+        // 1d: el canal de la campaña vive en `channelId` (ex configId). El DTO/
+        // contrato del frontend mantiene `configId` → mapeo acá y en las lecturas.
+        channelId: dto.configId,
         scheduledAt: dto.scheduledAt,
         status: dto.scheduledAt ? 'SCHEDULED' : 'DRAFT',
       } as never,
     });
+    return toCampaignApiShape(created);
   }
 
   async findAll(): Promise<unknown[]> {
-    return this.prisma.scoped.wapiCampaign.findMany({
+    const rows = await this.prisma.scoped.wapiCampaign.findMany({
       orderBy: { createdAt: 'desc' },
       include: { _count: { select: { contacts: true, reports: true } } },
     });
+    return rows.map(toCampaignApiShape);
   }
 
   async findOne(id: string): Promise<WapiCampaign & Record<string, unknown>> {
@@ -96,12 +100,12 @@ export class WapiCampaignsService {
       where: { id },
       include: {
         template: { select: { id: true, metaName: true, language: true, category: true } },
-        configRel: { select: { id: true, name: true, phoneNumberId: true } },
+        channel: { select: { id: true, name: true, phoneNumberId: true } },
         _count: { select: { contacts: true, reports: true } },
       },
     });
     if (!c) throw new NotFoundException(`WapiCampaign ${id} no encontrada`);
-    return c as never;
+    return toCampaignApiShape(c) as never;
   }
 
   async update(id: string, dto: UpdateWapiCampaignDto): Promise<WapiCampaign> {
@@ -259,7 +263,7 @@ export class WapiCampaignsService {
       throw new ConflictException(`No se puede enviar campaign en estado ${campaign.status}`);
     }
     if (!campaign.templateId) throw new BadRequestException('Falta templateId');
-    if (!campaign.configId) throw new BadRequestException('Falta configId');
+    if (!campaign.channelId) throw new BadRequestException('Falta configId');
     if (campaign.contacts.length === 0) throw new BadRequestException('Campaign sin contactos');
 
     const quota = await this.quota.getSnapshot(ctx.organizationId, 'WAPI');
@@ -534,4 +538,18 @@ function splitName(c: WapiCampaignContactDto): {
   const parts = trimmed.split(/\s+/);
   if (parts.length === 1) return { firstName: parts[0]!, lastName: null };
   return { firstName: parts[0]!, lastName: parts.slice(1).join(' ') };
+}
+
+/**
+ * 1d — Mapea una WapiCampaign (columna interna `channelId`, relación `channel`) a
+ * la forma del contrato HTTP que el frontend ya consume (`configId`/`configRel`).
+ * Evita tocar el frontend de campañas: el rename de canal vive sólo en la DB.
+ */
+function toCampaignApiShape<T extends Record<string, unknown>>(c: T): T {
+  const { channelId, channel, ...rest } = c as Record<string, unknown>;
+  return {
+    ...rest,
+    configId: channelId ?? null,
+    ...(channel !== undefined ? { configRel: channel } : {}),
+  } as unknown as T;
 }

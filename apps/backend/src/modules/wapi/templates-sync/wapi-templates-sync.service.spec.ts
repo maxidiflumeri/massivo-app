@@ -29,7 +29,7 @@ describe('WapiTemplatesSyncService', () => {
   };
 
   let prismaScoped: {
-    wapiConfig: { findFirst: jest.Mock };
+    channel: { findFirst: jest.Mock };
     wapiTemplate: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
   };
   let encryption: { encrypt: jest.Mock; decrypt: jest.Mock; isEncrypted: jest.Mock };
@@ -39,7 +39,7 @@ describe('WapiTemplatesSyncService', () => {
 
   beforeEach(() => {
     prismaScoped = {
-      wapiConfig: { findFirst: jest.fn() },
+      channel: { findFirst: jest.fn() },
       wapiTemplate: {
         findFirst: jest.fn(),
         create: jest.fn().mockResolvedValue({}),
@@ -86,14 +86,14 @@ describe('WapiTemplatesSyncService', () => {
   });
 
   it('config no existe → NotFoundException', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(null);
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(null);
     await expect(
       TenantContext.run(ctx, () => svc.sync('cfg-x')),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('happy path 1 página: 2 templates nuevos → 2 created', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     prismaScoped.wapiTemplate.findFirst.mockResolvedValue(null);
     fetchMock.mockResolvedValueOnce(
       mkResponse(200, {
@@ -115,7 +115,7 @@ describe('WapiTemplatesSyncService', () => {
   });
 
   it('paginación: 2ª página vía paging.next', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     prismaScoped.wapiTemplate.findFirst.mockResolvedValue(null);
     fetchMock
       .mockResolvedValueOnce(
@@ -140,7 +140,7 @@ describe('WapiTemplatesSyncService', () => {
   });
 
   it('existing idéntico → skipped (no update)', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     prismaScoped.wapiTemplate.findFirst.mockResolvedValueOnce({
       id: 't-existing',
       status: 'APPROVED',
@@ -162,7 +162,7 @@ describe('WapiTemplatesSyncService', () => {
   });
 
   it('existing con status distinto → updated', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     prismaScoped.wapiTemplate.findFirst.mockResolvedValueOnce({
       id: 't-existing', status: 'PENDING', language: 'es', category: 'X', components: [],
     });
@@ -180,7 +180,7 @@ describe('WapiTemplatesSyncService', () => {
   });
 
   it('Graph API 401 → ServiceUnavailableException', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     fetchMock.mockResolvedValueOnce(
       mkResponse(401, { error: { code: 190, message: 'Invalid OAuth' } }),
     );
@@ -191,7 +191,7 @@ describe('WapiTemplatesSyncService', () => {
   });
 
   it('safety guard MAX_PAGES: paging.next infinito se corta', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     prismaScoped.wapiTemplate.findFirst.mockResolvedValue(null);
     fetchMock.mockResolvedValue(
       mkResponse(200, {
@@ -207,7 +207,7 @@ describe('WapiTemplatesSyncService', () => {
   it('decripta accessToken con EncryptionService antes de llamar', async () => {
     const cfg = mkConfig();
     cfg.accessTokenEnc = 'enc(real-token)';
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(cfg);
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(cfg);
     encryption.decrypt.mockImplementationOnce((v: string) => v.replace(/^enc\(|\)$/g, ''));
     fetchMock.mockResolvedValueOnce(mkResponse(200, { data: [] }));
     await TenantContext.run(ctx, () => svc.sync('cfg-1'));

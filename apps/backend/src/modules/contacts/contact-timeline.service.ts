@@ -265,13 +265,13 @@ export class ContactTimelineService {
     }
 
     if (phones.size > 0) {
-      const conversations = await this.prisma.scoped.wapiConversation.findMany({
-        where: { phone: { in: [...phones] } },
+      const conversations = await this.prisma.scoped.conversation.findMany({
+        where: { externalUserId: { in: [...phones] } },
         select: { id: true },
       });
       const convIds = conversations.map((c) => c.id);
       if (convIds.length > 0) {
-        const messages = await this.prisma.scoped.wapiMessage.findMany({
+        const messages = await this.prisma.scoped.message.findMany({
           where: {
             conversationId: { in: convIds },
             ...(cursorDate ? { timestamp: { lte: cursorDate } } : {}),

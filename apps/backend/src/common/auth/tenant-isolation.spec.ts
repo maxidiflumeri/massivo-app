@@ -85,7 +85,7 @@ describe('Aislamiento tenant-a-tenant', () => {
         update: jest.fn(),
         delete: jest.fn(),
       },
-      wapiConfig: {
+      channel: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
         create: jest.fn(),
@@ -297,7 +297,7 @@ describe('Aislamiento tenant-a-tenant', () => {
 
   describe('WapiConfigsService — aislamiento cross-tenant', () => {
     it('Tenant A no puede leer WapiConfig de Tenant B (NotFoundException)', async () => {
-      prismaMock['wapiConfig']!['findFirst']!.mockResolvedValue(null);
+      prismaMock['channel']!['findFirst']!.mockResolvedValue(null);
 
       await expect(
         TenantContext.run(tenantA, () => wapiConfigService.findOne('wcfg-b1')),
@@ -305,7 +305,7 @@ describe('Aislamiento tenant-a-tenant', () => {
     });
 
     it('Tenant A no puede eliminar WapiConfig de Tenant B (NotFoundException)', async () => {
-      prismaMock['wapiConfig']!['findFirst']!.mockResolvedValue(null);
+      prismaMock['channel']!['findFirst']!.mockResolvedValue(null);
 
       await expect(
         TenantContext.run(tenantA, () => wapiConfigService.remove('wcfg-b1')),
@@ -313,7 +313,7 @@ describe('Aislamiento tenant-a-tenant', () => {
     });
 
     it('Tenant A no puede actualizar WapiConfig de Tenant B (NotFoundException)', async () => {
-      prismaMock['wapiConfig']!['findFirst']!.mockResolvedValue(null);
+      prismaMock['channel']!['findFirst']!.mockResolvedValue(null);
 
       await expect(
         TenantContext.run(tenantA, () => wapiConfigService.update('wcfg-b1', { name: 'Hacked' })),

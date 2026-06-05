@@ -267,7 +267,7 @@ export class DevSimulatorService {
   }
 
   private async resolveConfig(configId: string): Promise<ResolvedSimConfig> {
-    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
+    const cfg = await this.prisma.scoped.channel.findFirst({
       where: { id: configId },
       select: {
         id: true,

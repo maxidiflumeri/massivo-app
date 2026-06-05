@@ -162,7 +162,7 @@ export class WapiBotService {
    * null si no hay bot y `create=false`.
    */
   private async resolveBot(configId: string, opts: { create: boolean }): Promise<BotRow | null> {
-    const config = (await this.prisma.scoped.wapiConfig.findFirst({
+    const config = (await this.prisma.scoped.channel.findFirst({
       where: { id: configId },
       select: {
         id: true,
@@ -200,7 +200,7 @@ export class WapiBotService {
       },
       select: BOT_SELECT,
     })) as unknown as BotRow;
-    await this.prisma.scoped.wapiConfig.update({
+    await this.prisma.scoped.channel.update({
       where: { id: configId },
       data: { botId: created.id } as never,
     });
@@ -288,7 +288,7 @@ export class WapiBotService {
 
   /** Canales (WapiConfig) conectados a un bot. */
   private async connectedChannelsFor(botId: string): Promise<ConnectedChannel[]> {
-    const configs = (await this.prisma.scoped.wapiConfig.findMany({
+    const configs = (await this.prisma.scoped.channel.findMany({
       where: { botId } as never,
       select: { id: true, name: true, phoneNumberId: true } as never,
     })) as unknown as { id: string; name: string | null; phoneNumberId: string }[];
@@ -539,7 +539,7 @@ export class WapiBotService {
       throw new BadRequestException('Sticker no está soportado en nodos del bot');
     }
 
-    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
+    const cfg = await this.prisma.scoped.channel.findFirst({
       where: { id: configId },
       select: { id: true, isTestMode: true } as never,
     });
@@ -661,7 +661,7 @@ export class WapiBotService {
         draftUpdatedAt: true,
         publishedAt: true,
         updatedAt: true,
-        configs: { select: { id: true, name: true, phoneNumberId: true } },
+        channels: { select: { id: true, name: true, phoneNumberId: true } },
       } as never,
     })) as unknown as {
       id: string;
@@ -670,7 +670,7 @@ export class WapiBotService {
       draftUpdatedAt: Date | null;
       publishedAt: Date | null;
       updatedAt: Date;
-      configs: { id: string; name: string | null; phoneNumberId: string }[];
+      channels: { id: string; name: string | null; phoneNumberId: string }[];
     }[];
     return rows.map((r) => ({
       botId: r.id,
@@ -678,7 +678,7 @@ export class WapiBotService {
       enabled: r.enabled,
       hasUnpublishedChanges:
         !!r.draftUpdatedAt && (!r.publishedAt || r.draftUpdatedAt.getTime() > r.publishedAt.getTime()),
-      connectedChannels: r.configs.map((c) => ({
+      connectedChannels: r.channels.map((c) => ({
         configId: c.id,
         name: c.name,
         phoneNumberId: c.phoneNumberId,
@@ -751,13 +751,13 @@ export class WapiBotService {
    */
   async setConfigBot(configId: string, botId: string | null): Promise<ConnectedChannel> {
     this.requireContext();
-    const config = (await this.prisma.scoped.wapiConfig.findFirst({
+    const config = (await this.prisma.scoped.channel.findFirst({
       where: { id: configId },
       select: { id: true, name: true, phoneNumberId: true } as never,
     })) as unknown as { id: string; name: string | null; phoneNumberId: string } | null;
     if (!config) throw new NotFoundException(`WapiConfig ${configId} no encontrado en este scope`);
     if (botId) await this.loadBotById(botId); // valida que el bot sea del tenant
-    await this.prisma.scoped.wapiConfig.update({
+    await this.prisma.scoped.channel.update({
       where: { id: configId },
       data: { botId } as never,
     });

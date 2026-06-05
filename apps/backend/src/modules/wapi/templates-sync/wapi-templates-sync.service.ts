@@ -74,7 +74,7 @@ export class WapiTemplatesSyncService {
 
   async sync(configId: string): Promise<SyncSummary> {
     const ctx = this.requireContext();
-    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
+    const cfg = await this.prisma.scoped.channel.findFirst({
       where: { id: configId },
       select: {
         id: true,

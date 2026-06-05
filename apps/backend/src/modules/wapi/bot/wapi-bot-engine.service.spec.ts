@@ -109,15 +109,15 @@ const cfg = {
 
 describe('WapiBotEngineService', () => {
   let prismaScoped: {
-    wapiBotSession: {
+    botSession: {
       findFirst: jest.Mock;
       update: jest.Mock;
       create: jest.Mock;
       findMany: jest.Mock;
       upsert: jest.Mock;
     };
-    wapiMessage: { create: jest.Mock };
-    wapiConversation: { findUnique: jest.Mock; update: jest.Mock };
+    message: { create: jest.Mock };
+    conversation: { findUnique: jest.Mock; update: jest.Mock };
   };
   let events: { emitToTeam: jest.Mock };
   let sender: { sendInteractiveButtons: jest.Mock; sendText: jest.Mock; sendMediaById: jest.Mock };
@@ -126,17 +126,17 @@ describe('WapiBotEngineService', () => {
 
   beforeEach(() => {
     prismaScoped = {
-      wapiBotSession: {
+      botSession: {
         findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue(undefined),
         create: jest.fn().mockResolvedValue({ id: 'sess-1' }),
         findMany: jest.fn().mockResolvedValue([]),
         upsert: jest.fn().mockResolvedValue({ id: 'sess-1' }),
       },
-      wapiMessage: {
+      message: {
         create: jest.fn().mockResolvedValue({ id: 'msg-1', content: {} }),
       },
-      wapiConversation: {
+      conversation: {
         // 4.O.6 — guard de botSuspended (1er findUnique) y lectura de status
         // antes del update en HANDOFF (2do findUnique). El mismo mock cubre ambas.
         findUnique: jest.fn().mockResolvedValue({
@@ -236,12 +236,12 @@ describe('WapiBotEngineService', () => {
         ],
       }),
     );
-    expect(prismaScoped.wapiBotSession.upsert).toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { configId_phone: { configId: 'cfg-1', phone: '5491100' } },
+        where: { channelId_externalUserId: { channelId: 'cfg-1', externalUserId: '5491100' } },
         create: expect.objectContaining({
-          configId: 'cfg-1',
-          phone: '5491100',
+          channelId: 'cfg-1',
+          externalUserId: '5491100',
           currentNodeId: 'menu1',
         }),
         update: expect.objectContaining({ currentNodeId: 'menu1', endedAt: null }),
@@ -250,7 +250,7 @@ describe('WapiBotEngineService', () => {
   });
 
   it('button bot: con sesión → avanza al nextNodeId (menu1 → menu2)', async () => {
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'menu1',
       expiresAt: new Date(Date.now() + 60_000),
@@ -269,16 +269,16 @@ describe('WapiBotEngineService', () => {
       expect.anything(),
       expect.objectContaining({ body: 'Elegí un sub-tema' }),
     );
-    expect(prismaScoped.wapiBotSession.upsert).toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { configId_phone: { configId: 'cfg-1', phone: '5491100' } },
+        where: { channelId_externalUserId: { channelId: 'cfg-1', externalUserId: '5491100' } },
         update: expect.objectContaining({ currentNodeId: 'menu2' }),
       }),
     );
   });
 
   it('button bot: sin sesión → handled=true silencioso (no rearma flow)', async () => {
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue(null);
+    prismaScoped.botSession.findFirst.mockResolvedValue(null);
     const out = await withTenant(() =>
       svc.handle(cfg, {
         configId: 'cfg-1',
@@ -305,7 +305,7 @@ describe('WapiBotEngineService', () => {
   });
 
   it('texto con sesión activa → re-muestra MENU actual', async () => {
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'menu1',
       expiresAt: new Date(Date.now() + 60_000),
@@ -325,12 +325,12 @@ describe('WapiBotEngineService', () => {
       expect.objectContaining({ body: '¿En qué te ayudamos?' }),
     );
     // No crea nueva sesión, no llama upsert porque no avanzó.
-    expect(prismaScoped.wapiBotSession.create).not.toHaveBeenCalled();
-    expect(prismaScoped.wapiBotSession.upsert).not.toHaveBeenCalled();
+    expect(prismaScoped.botSession.create).not.toHaveBeenCalled();
+    expect(prismaScoped.botSession.upsert).not.toHaveBeenCalled();
   });
 
   it('llegada a HANDOFF → ended=true + escalate=true + cierra sesión', async () => {
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'menu1',
       expiresAt: new Date(Date.now() + 60_000),
@@ -351,14 +351,14 @@ describe('WapiBotEngineService', () => {
       expect.anything(),
       expect.objectContaining({ body: 'Te derivamos.' }),
     );
-    expect(prismaScoped.wapiBotSession.update).toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'sess-1' },
         data: expect.objectContaining({ endedReason: 'handoff' }),
       }),
     );
     // 4.O.6 — además marca conversación como escalated + botSuspended.
-    expect(prismaScoped.wapiConversation.update).toHaveBeenCalledWith(
+    expect(prismaScoped.conversation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'conv-1' },
         data: expect.objectContaining({ escalated: true, botSuspended: true }),
@@ -369,7 +369,7 @@ describe('WapiBotEngineService', () => {
   // -- 4.O.6: bot suspension + reset de status post-RESOLVED -----------------
 
   it('4.O.6: conversación con botSuspended=true → handled=false (motor mudo)', async () => {
-    prismaScoped.wapiConversation.findUnique.mockResolvedValue({
+    prismaScoped.conversation.findUnique.mockResolvedValue({
       botSuspended: true,
       status: 'ASSIGNED',
       assignedUserId: 'user-1',
@@ -387,20 +387,20 @@ describe('WapiBotEngineService', () => {
     expect(sender.sendInteractiveButtons).not.toHaveBeenCalled();
     expect(sender.sendText).not.toHaveBeenCalled();
     // No tocó la sesión ni la conversación.
-    expect(prismaScoped.wapiBotSession.findFirst).not.toHaveBeenCalled();
-    expect(prismaScoped.wapiConversation.update).not.toHaveBeenCalled();
+    expect(prismaScoped.botSession.findFirst).not.toHaveBeenCalled();
+    expect(prismaScoped.conversation.update).not.toHaveBeenCalled();
   });
 
   it('4.O.6: HANDOFF desde conversación RESOLVED resetea status + reabre al inbox', async () => {
     // 1ra llamada: guard de suspensión (no suspendida, status=RESOLVED).
     // 2da llamada: lectura previa al update en HANDOFF (mismo objeto).
-    prismaScoped.wapiConversation.findUnique.mockResolvedValue({
+    prismaScoped.conversation.findUnique.mockResolvedValue({
       botSuspended: false,
       status: 'RESOLVED',
       assignedUserId: 'user-1',
       lastAssignedUserId: 'user-1',
     });
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'menu1',
       currentTopicId: null,
@@ -418,7 +418,7 @@ describe('WapiBotEngineService', () => {
     );
     expect(out.handled).toBe(true);
     expect(out.ended).toBe(true);
-    expect(prismaScoped.wapiConversation.update).toHaveBeenCalledWith(
+    expect(prismaScoped.conversation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'conv-1' },
         data: expect.objectContaining({
@@ -433,7 +433,7 @@ describe('WapiBotEngineService', () => {
   });
 
   it('sesión expirada → se cierra y se rearranca con startNode', async () => {
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-old',
       currentNodeId: 'menu2',
       expiresAt: new Date(Date.now() - 1000),
@@ -449,7 +449,7 @@ describe('WapiBotEngineService', () => {
     );
     expect(out.handled).toBe(true);
     // Cerró la sesión vencida.
-    expect(prismaScoped.wapiBotSession.update).toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'sess-old' },
         data: expect.objectContaining({ endedReason: 'expired' }),
@@ -496,7 +496,7 @@ describe('WapiBotEngineService', () => {
       expect.objectContaining({ body: '¿Qué hacemos?' }),
     );
     // Sesión queda en MENU final del chain.
-    expect(prismaScoped.wapiBotSession.upsert).toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({ currentNodeId: 'menu1' }),
         update: expect.objectContaining({ currentNodeId: 'menu1' }),
@@ -528,8 +528,8 @@ describe('WapiBotEngineService', () => {
     expect(out.ended).toBe(true);
     expect(out.escalate).toBe(false);
     expect(sender.sendText).toHaveBeenCalledTimes(3); // m1, m2, fin
-    expect(prismaScoped.wapiBotSession.create).not.toHaveBeenCalled();
-    expect(prismaScoped.wapiBotSession.upsert).not.toHaveBeenCalled();
+    expect(prismaScoped.botSession.create).not.toHaveBeenCalled();
+    expect(prismaScoped.botSession.upsert).not.toHaveBeenCalled();
   });
 
   it('DELAY pausa el tiempo configurado y avanza al siguiente nodo sin enviar mensaje', async () => {
@@ -585,7 +585,7 @@ describe('WapiBotEngineService', () => {
       expect.anything(),
       expect.objectContaining({ body: 'Gracias!' }),
     );
-    expect(prismaScoped.wapiBotSession.upsert).toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({ currentNodeId: 'thanks' }),
         update: expect.objectContaining({ currentNodeId: 'thanks' }),
@@ -609,7 +609,7 @@ describe('WapiBotEngineService', () => {
         thanks: { kind: 'MESSAGE', text: 'Gracias {{email}}!' },
       },
     };
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'ask',
       expiresAt: new Date(Date.now() + 60_000),
@@ -632,7 +632,7 @@ describe('WapiBotEngineService', () => {
       expect.anything(),
       expect.objectContaining({ body: 'Gracias maxi@ejemplo.com!' }),
     );
-    expect(prismaScoped.wapiBotSession.update).toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'sess-1' },
         data: expect.objectContaining({ data: { email: 'maxi@ejemplo.com' } }),
@@ -656,7 +656,7 @@ describe('WapiBotEngineService', () => {
         thanks: { kind: 'MESSAGE', text: 'Gracias' },
       },
     };
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'ask',
       expiresAt: new Date(Date.now() + 60_000),
@@ -679,7 +679,7 @@ describe('WapiBotEngineService', () => {
     const bodies = sender.sendText.mock.calls.map((c) => c[1].body);
     expect(bodies).toEqual(expect.arrayContaining(['Email inválido', 'Tu email?']));
     // Sesión queda en "ask" (re-prompt).
-    expect(prismaScoped.wapiBotSession.upsert).toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         update: expect.objectContaining({ currentNodeId: 'ask' }),
       }),
@@ -700,7 +700,7 @@ describe('WapiBotEngineService', () => {
         thanks: { kind: 'MESSAGE', text: 'OK' },
       },
     };
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'ask',
       expiresAt: new Date(Date.now() + 60_000),
@@ -724,7 +724,7 @@ describe('WapiBotEngineService', () => {
       expect.objectContaining({ body: 'Tu número?' }),
     );
     // No persistió data porque no validó.
-    expect(prismaScoped.wapiBotSession.update).not.toHaveBeenCalled();
+    expect(prismaScoped.botSession.update).not.toHaveBeenCalled();
   });
 
   it('MEDIA: envía sendMediaById con caption interpolado y avanza', async () => {
@@ -748,7 +748,7 @@ describe('WapiBotEngineService', () => {
         fin: { kind: 'HANDOFF', text: 'Listo' },
       },
     };
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'ask',
       expiresAt: new Date(Date.now() + 60_000),
@@ -804,7 +804,7 @@ describe('WapiBotEngineService', () => {
         pathB: { kind: 'MESSAGE', text: 'Sos B' },
       },
     };
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'ask',
       expiresAt: new Date(Date.now() + 60_000),
@@ -858,7 +858,7 @@ describe('WapiBotEngineService', () => {
         no: { kind: 'MESSAGE', text: 'no match' },
       },
     };
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'ask',
       expiresAt: new Date(Date.now() + 60_000),
@@ -908,7 +908,7 @@ describe('WapiBotEngineService', () => {
         no: { kind: 'MESSAGE', text: 'NO' },
       },
     };
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue(null);
+    prismaScoped.botSession.findFirst.mockResolvedValue(null);
     const out = await withTenant(() =>
       svc.handle(
         {
@@ -964,7 +964,7 @@ describe('WapiBotEngineService', () => {
 
   it('4.O.2 — keyword router-restart: matchea con sesión activa, la cierra y arranca el topic matched', async () => {
     // Sesión activa en topic A node "msg-a" (no MENU/CAPTURE → invalid-state path).
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-old',
       currentNodeId: 'msg-a',
       currentTopicId: 'a',
@@ -1043,7 +1043,7 @@ describe('WapiBotEngineService', () => {
       { kind: 'text', text: 'hola' },
     );
     // Cerró la sesión vieja con reason router-restart.
-    expect(prismaScoped.wapiBotSession.update).toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'sess-old' },
         data: expect.objectContaining({ endedReason: 'router-restart' }),
@@ -1057,7 +1057,7 @@ describe('WapiBotEngineService', () => {
   });
 
   it('4.O.2 — keyword fallback (via=fallback) NO interrumpe MENU activo', async () => {
-    prismaScoped.wapiBotSession.findFirst.mockResolvedValue({
+    prismaScoped.botSession.findFirst.mockResolvedValue({
       id: 'sess-1',
       currentNodeId: 'menu1',
       currentTopicId: 'default',
@@ -1106,7 +1106,7 @@ describe('WapiBotEngineService', () => {
     );
     expect(out.handled).toBe(true);
     // No cerró sesión por router-restart.
-    expect(prismaScoped.wapiBotSession.update).not.toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.update).not.toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ endedReason: 'router-restart' }),
       }),
@@ -1119,10 +1119,10 @@ describe('WapiBotEngineService', () => {
   });
 
   it('endSessionsForConversation cierra todas las sesiones activas', async () => {
-    prismaScoped.wapiBotSession.findMany.mockResolvedValue([{ id: 'sess-a' }, { id: 'sess-b' }]);
+    prismaScoped.botSession.findMany.mockResolvedValue([{ id: 'sess-a' }, { id: 'sess-b' }]);
     await withTenant(() => svc.endSessionsForConversation('cfg-1', '5491100', 'operator-assign'));
-    expect(prismaScoped.wapiBotSession.update).toHaveBeenCalledTimes(2);
-    expect(prismaScoped.wapiBotSession.update).toHaveBeenCalledWith(
+    expect(prismaScoped.botSession.update).toHaveBeenCalledTimes(2);
+    expect(prismaScoped.botSession.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'sess-a' },
         data: expect.objectContaining({ endedReason: 'operator-assign' }),

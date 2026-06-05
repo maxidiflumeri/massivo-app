@@ -99,7 +99,7 @@ describe('WapiWorkerService.process', () => {
         status: 'PROCESSING',
         config: null,
         template: { metaName: 'welcome', language: 'es' },
-        configRel: {
+        channel: {
           id: 'cfg-1',
           phoneNumberId: 'ph1',
           accessTokenEnc: 'tok-plain',
@@ -112,7 +112,7 @@ describe('WapiWorkerService.process', () => {
 
   it('happy path: sendTemplate OK → SENT + metaMessageId', async () => {
     const fix = reportFixture();
-    fix.campaign.configRel.accessTokenEnc = 'enc(real-token)';
+    fix.campaign.channel.accessTokenEnc = 'enc(real-token)';
     prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(fix);
     sender.sendTemplate.mockResolvedValueOnce({ metaMessageId: 'wamid.A', raw: {} });
 

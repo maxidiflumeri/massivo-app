@@ -29,9 +29,9 @@ describe('WapiWebhookService', () => {
 
   let prismaScoped: {
     wapiReport: { findFirst: jest.Mock; update: jest.Mock };
-    wapiConversation: { create: jest.Mock; update: jest.Mock; findFirst: jest.Mock };
-    wapiMessage: { create: jest.Mock };
-    wapiConfig: { findFirst: jest.Mock };
+    conversation: { create: jest.Mock; update: jest.Mock; findFirst: jest.Mock };
+    message: { create: jest.Mock };
+    channel: { findFirst: jest.Mock };
     wapiOptOut: { findFirst: jest.Mock; create: jest.Mock };
   };
   let events: { emitToTeamDebounced: jest.Mock; emitToTeam: jest.Mock };
@@ -47,13 +47,13 @@ describe('WapiWebhookService', () => {
     const convStub = { id: 'conv-1', status: 'UNASSIGNED', assignedUserId: null, unreadCount: 1 };
     prismaScoped = {
       wapiReport: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
-      wapiConversation: {
+      conversation: {
         create: jest.fn().mockResolvedValue(convStub),
         update: jest.fn().mockResolvedValue(convStub),
         findFirst: jest.fn().mockResolvedValue(null),
       },
-      wapiMessage: { create: jest.fn().mockResolvedValue({ id: 'msg-1', content: {} }) },
-      wapiConfig: { findFirst: jest.fn().mockResolvedValue(null) },
+      message: { create: jest.fn().mockResolvedValue({ id: 'msg-1', content: {} }) },
+      channel: { findFirst: jest.fn().mockResolvedValue(null) },
       wapiOptOut: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn() },
     };
     events = { emitToTeamDebounced: jest.fn(), emitToTeam: jest.fn() };
@@ -227,16 +227,16 @@ describe('WapiWebhookService', () => {
       }),
       mapA,
     );
-    expect(prismaScoped.wapiConversation.create).toHaveBeenCalledWith(
+    expect(prismaScoped.conversation.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ phone: '5491100', name: 'Ana', unreadCount: 1, configId: 'cfg-1' }),
+        data: expect.objectContaining({ externalUserId: '5491100', name: 'Ana', unreadCount: 1, channelId: 'cfg-1' }),
       }),
     );
-    expect(prismaScoped.wapiMessage.create).toHaveBeenCalledWith(
+    expect(prismaScoped.message.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           conversationId: 'conv-1',
-          metaMessageId: 'wamid.IN',
+          externalId: 'wamid.IN',
           fromMe: false,
           type: 'text',
           content: { text: { body: 'hola' } },
@@ -252,7 +252,7 @@ describe('WapiWebhookService', () => {
 
   it('mensaje duplicado (P2002) → swallow sin tirar', async () => {
     const err = Object.assign(new Error('unique'), { code: 'P2002' });
-    prismaScoped.wapiMessage.create.mockRejectedValueOnce(err);
+    prismaScoped.message.create.mockRejectedValueOnce(err);
     await expect(
       svc.process(
         inboundPayload({
@@ -279,7 +279,7 @@ describe('WapiWebhookService', () => {
       mapA,
     );
     expect(media.fetchInboundMedia).toHaveBeenCalledWith('cfg-1', 'media-1');
-    const data = prismaScoped.wapiMessage.create.mock.calls[0]![0].data;
+    const data = prismaScoped.message.create.mock.calls[0]![0].data;
     expect(data.content).toEqual({
       image: { id: 'media-1', mime_type: 'image/jpeg', caption: 'foto' },
     });
@@ -299,7 +299,7 @@ describe('WapiWebhookService', () => {
       }),
       mapA,
     );
-    const data = prismaScoped.wapiMessage.create.mock.calls[0]![0].data;
+    const data = prismaScoped.message.create.mock.calls[0]![0].data;
     expect(data.mediaId).toBe('media-2');
     expect(data.mediaLocalPath).toBeNull();
   });
@@ -342,19 +342,19 @@ describe('WapiWebhookService', () => {
       ],
     };
     await svc.process(payload, map);
-    expect(prismaScoped.wapiConversation.create).toHaveBeenCalledTimes(2);
-    const calls = prismaScoped.wapiConversation.create.mock.calls;
+    expect(prismaScoped.conversation.create).toHaveBeenCalledTimes(2);
+    const calls = prismaScoped.conversation.create.mock.calls;
     expect(calls[0]![0].data).toMatchObject({
-      teamId: 'team-a', configId: 'cfg-1', phone: '5491111',
+      teamId: 'team-a', channelId: 'cfg-1', externalUserId: '5491111',
     });
     expect(calls[1]![0].data).toMatchObject({
-      teamId: 'team-b', configId: 'cfg-2', phone: '5492222',
+      teamId: 'team-b', channelId: 'cfg-2', externalUserId: '5492222',
     });
   });
 
   describe('4.K — button actions', () => {
     beforeEach(() => {
-      prismaScoped.wapiConfig.findFirst.mockResolvedValue({
+      prismaScoped.channel.findFirst.mockResolvedValue({
         id: 'cfg-1',
         phoneNumberId: 'pn-A',
         accessTokenEnc: 'tok',
@@ -457,7 +457,7 @@ describe('WapiWebhookService', () => {
 
   describe('4.M — bot guiado', () => {
     beforeEach(() => {
-      prismaScoped.wapiConfig.findFirst.mockResolvedValue({
+      prismaScoped.channel.findFirst.mockResolvedValue({
         id: 'cfg-1',
         phoneNumberId: 'pn-A',
         accessTokenEnc: 'tok',
@@ -538,7 +538,7 @@ describe('WapiWebhookService', () => {
 
     it('bot termina en HANDOFF con escalate → marca priority + emite update', async () => {
       botEngine.handle.mockResolvedValue({ handled: true, ended: true, escalate: true });
-      prismaScoped.wapiConversation.update.mockResolvedValueOnce({
+      prismaScoped.conversation.update.mockResolvedValueOnce({
         id: 'conv-1', status: 'UNASSIGNED', assignedUserId: null,
         lastMessageAt: new Date('2026-05-05T10:00:00Z'),
         unreadCount: 1, priority: true,
@@ -550,7 +550,7 @@ describe('WapiWebhookService', () => {
         }),
         mapA,
       );
-      const priorityCall = prismaScoped.wapiConversation.update.mock.calls.find(
+      const priorityCall = prismaScoped.conversation.update.mock.calls.find(
         (c) => (c[0] as any).data?.priority === true,
       );
       expect(priorityCall).toBeDefined();
@@ -581,7 +581,7 @@ describe('WapiWebhookService', () => {
       text: { body: 'hola' },
     }, 'Ana', 'pn-FANTASMA');
     await svc.process(payload, mapA);
-    expect(prismaScoped.wapiConversation.create).not.toHaveBeenCalled();
-    expect(prismaScoped.wapiConversation.update).not.toHaveBeenCalled();
+    expect(prismaScoped.conversation.create).not.toHaveBeenCalled();
+    expect(prismaScoped.conversation.update).not.toHaveBeenCalled();
   });
 });

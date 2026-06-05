@@ -19,7 +19,7 @@ describe('WapiButtonActionService', () => {
     wapiReport: { findFirst: jest.Mock };
     wapiCampaign: { findFirst: jest.Mock };
     wapiTemplate: { findFirst: jest.Mock };
-    wapiConversation: { update: jest.Mock };
+    conversation: { update: jest.Mock };
   };
   let events: { emitToTeam: jest.Mock };
   let optOut: { add: jest.Mock };
@@ -30,7 +30,7 @@ describe('WapiButtonActionService', () => {
       wapiReport: { findFirst: jest.fn() },
       wapiCampaign: { findFirst: jest.fn() },
       wapiTemplate: { findFirst: jest.fn() },
-      wapiConversation: {
+      conversation: {
         update: jest.fn().mockResolvedValue({
           id: 'conv-1',
           status: 'ASSIGNED',
@@ -152,7 +152,7 @@ describe('WapiButtonActionService', () => {
       );
       // 4.O.6 — INBOX equivale a un HANDOFF disparado desde el template:
       // escalada al inbox + bot suspendido hasta que el operador resuelva.
-      expect(prismaScoped.wapiConversation.update).toHaveBeenCalledWith(
+      expect(prismaScoped.conversation.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'conv-1' },
           data: { priority: true, escalated: true, botSuspended: true },
@@ -188,7 +188,7 @@ describe('WapiButtonActionService', () => {
         reason: expect.stringContaining('No me interesa'),
         source: 'inbound_button',
       });
-      expect(prismaScoped.wapiConversation.update).not.toHaveBeenCalled();
+      expect(prismaScoped.conversation.update).not.toHaveBeenCalled();
     });
 
     it('IGNORAR → no muta DB ni dispara optOut', async () => {
@@ -201,13 +201,13 @@ describe('WapiButtonActionService', () => {
           buttonId: 'Listo',
         }),
       );
-      expect(prismaScoped.wapiConversation.update).not.toHaveBeenCalled();
+      expect(prismaScoped.conversation.update).not.toHaveBeenCalled();
       expect(optOut.add).not.toHaveBeenCalled();
       expect(events.emitToTeam).not.toHaveBeenCalled();
     });
 
     it('si la action falla, swallow sin propagar (best-effort)', async () => {
-      prismaScoped.wapiConversation.update.mockRejectedValue(new Error('boom'));
+      prismaScoped.conversation.update.mockRejectedValue(new Error('boom'));
       await expect(
         withTenant(() =>
           svc.apply({

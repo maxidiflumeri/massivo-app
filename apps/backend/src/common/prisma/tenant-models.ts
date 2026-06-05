@@ -9,18 +9,19 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'EmailEvent',
   'EmailBounce',
   'EmailUnsubscribe',
-  // WhatsApp channel (Fase 2.B)
-  'WapiConfig',
+  // WhatsApp channel (Fase 2.B). Fase 1d: Wapi* unificados → Channel/Conversation/
+  // Message/BotSession (rename de modelo; el scoping usa el nombre nuevo).
+  'Channel',
   'WapiTemplate',
   'WapiCampaign',
   'WapiContact',
   'WapiReport',
-  'WapiConversation',
-  'WapiMessage',
+  'Conversation',
+  'Message',
   'WapiOptOut',
   'WapiQuickReply',
   'WapiResolutionNote',
-  'WapiBotSession',
+  'BotSession',
   // Bot como entidad propia (Phase 0a — multi-canal)
   'Bot',
   // Cross-cutting (Fase 2.C)

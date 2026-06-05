@@ -27,16 +27,16 @@ describe('WapiInboxService', () => {
 
   beforeEach(async () => {
     prismaMock = {
-      wapiConversation: {
+      conversation: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
         update: jest.fn(),
       },
-      wapiMessage: {
+      message: {
         findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(),
       },
-      wapiConfig: { findFirst: jest.fn() },
+      channel: { findFirst: jest.fn() },
       wapiResolutionNote: {
         create: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
@@ -102,9 +102,9 @@ describe('WapiInboxService', () => {
   });
 
   it('listConversations filtra por tab=mine: ASSIGNED a mí + WAITING con lastAssignedUserId=mí', async () => {
-    prismaMock.wapiConversation.findMany.mockResolvedValue([]);
+    prismaMock.conversation.findMany.mockResolvedValue([]);
     await TenantContext.run(ctx, () => service.listConversations({ tab: 'mine' }));
-    const args = prismaMock.wapiConversation.findMany.mock.calls[0][0];
+    const args = prismaMock.conversation.findMany.mock.calls[0][0];
     // 4.O.6 — `mine` ahora es OR (ASSIGNED al usuario, WAITING con
     // lastAssignedUserId=usuario). El filtro escalated se aplica siempre.
     expect(args.where.escalated).toBe(true);
@@ -115,13 +115,13 @@ describe('WapiInboxService', () => {
   });
 
   it('sendText falla si la ventana 24h está cerrada', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
-      configId: 'cfg1',
-      phone: '+5491112345678',
+      channelId: 'cfg1',
+      externalUserId: '+5491112345678',
       status: 'ASSIGNED',
       assignedUserId: 'u1',
-      window24hAt: new Date(Date.now() - 60_000),
+      freeformWindowAt: new Date(Date.now() - 60_000),
       firstReplyAt: null,
     });
     await expect(
@@ -131,10 +131,10 @@ describe('WapiInboxService', () => {
   });
 
   it('sendText falla si la conversación está RESOLVED', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
       status: 'RESOLVED',
-      window24hAt: new Date(Date.now() + 60_000),
+      freeformWindowAt: new Date(Date.now() + 60_000),
     });
     await expect(
       TenantContext.run(ctx, () => service.sendText('c1', { body: 'hola' })),
@@ -142,27 +142,27 @@ describe('WapiInboxService', () => {
   });
 
   it('sendText feliz: persiste mensaje + reasigna si UNASSIGNED + emite eventos', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
-      configId: 'cfg1',
-      phone: '+5491112345678',
+      channelId: 'cfg1',
+      externalUserId: '+5491112345678',
       status: 'UNASSIGNED',
       assignedUserId: null,
-      window24hAt: new Date(Date.now() + 60_000),
+      freeformWindowAt: new Date(Date.now() + 60_000),
       firstReplyAt: null,
     });
-    prismaMock.wapiConfig.findFirst.mockResolvedValue({
+    prismaMock.channel.findFirst.mockResolvedValue({
       id: 'cfg1',
       phoneNumberId: 'pn1',
       accessTokenEnc: 'token',
       isActive: true,
     });
     senderMock.sendText.mockResolvedValue({ metaMessageId: 'wamid.x' });
-    prismaMock.wapiMessage.create.mockResolvedValue({
+    prismaMock.message.create.mockResolvedValue({
       id: 'msg1',
       content: { text: { body: 'hola' } },
     });
-    prismaMock.wapiConversation.update.mockResolvedValue({
+    prismaMock.conversation.update.mockResolvedValue({
       id: 'c1',
       status: 'ASSIGNED',
       assignedUserId: 'u1',
@@ -174,7 +174,7 @@ describe('WapiInboxService', () => {
     );
 
     expect(res.metaMessageId).toBe('wamid.x');
-    expect(prismaMock.wapiConversation.update).toHaveBeenCalledWith(
+    expect(prismaMock.conversation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'ASSIGNED', assignedUserId: 'u1' }),
       }),
@@ -187,11 +187,11 @@ describe('WapiInboxService', () => {
   });
 
   it('resolve persiste WapiResolutionNote si viene nota', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
       status: 'ASSIGNED',
     });
-    prismaMock.wapiConversation.update.mockResolvedValue({
+    prismaMock.conversation.update.mockResolvedValue({
       id: 'c1',
       status: 'RESOLVED',
       resolvedAt: new Date(),
@@ -212,11 +212,11 @@ describe('WapiInboxService', () => {
   });
 
   it('resolve sin nota no toca WapiResolutionNote', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
       status: 'ASSIGNED',
     });
-    prismaMock.wapiConversation.update.mockResolvedValue({
+    prismaMock.conversation.update.mockResolvedValue({
       id: 'c1',
       status: 'RESOLVED',
       resolvedAt: new Date(),
@@ -228,7 +228,7 @@ describe('WapiInboxService', () => {
   });
 
   it('reopen falla si la conversación no está RESOLVED', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
       status: 'ASSIGNED',
       assignedUserId: 'u1',
@@ -239,16 +239,16 @@ describe('WapiInboxService', () => {
   });
 
   it('sendMedia happy path: sube a Meta, persiste con campos media, emite eventos', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
-      configId: 'cfg1',
-      phone: '+5491112345678',
+      channelId: 'cfg1',
+      externalUserId: '+5491112345678',
       status: 'ASSIGNED',
       assignedUserId: 'u1',
-      window24hAt: new Date(Date.now() + 60_000),
+      freeformWindowAt: new Date(Date.now() + 60_000),
       firstReplyAt: new Date(),
     });
-    prismaMock.wapiConfig.findFirst.mockResolvedValue({
+    prismaMock.channel.findFirst.mockResolvedValue({
       id: 'cfg1',
       phoneNumberId: 'pn1',
       accessTokenEnc: 'token',
@@ -261,11 +261,11 @@ describe('WapiInboxService', () => {
       localPath: 'org1/team1/aaa.jpg',
     });
     senderMock.sendMediaById.mockResolvedValue({ metaMessageId: 'wamid.media.x' });
-    prismaMock.wapiMessage.create.mockResolvedValue({
+    prismaMock.message.create.mockResolvedValue({
       id: 'msg-media-1',
       content: { image: { id: 'meta-id-7' } },
     });
-    prismaMock.wapiConversation.update.mockResolvedValue({
+    prismaMock.conversation.update.mockResolvedValue({
       id: 'c1',
       status: 'ASSIGNED',
       assignedUserId: 'u1',
@@ -289,7 +289,7 @@ describe('WapiInboxService', () => {
     expect(mediaMock.uploadToMeta).toHaveBeenCalledWith(
       expect.objectContaining({ configId: 'cfg1', type: 'image', mime: 'image/jpeg' }),
     );
-    expect(prismaMock.wapiMessage.create).toHaveBeenCalledWith(
+    expect(prismaMock.message.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           type: 'image',
@@ -302,7 +302,7 @@ describe('WapiInboxService', () => {
   });
 
   it('listMessages 404 si la conversación no existe', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue(null);
+    prismaMock.conversation.findFirst.mockResolvedValue(null);
     await expect(
       TenantContext.run(ctx, () => service.listMessages('c1', {})),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -311,19 +311,19 @@ describe('WapiInboxService', () => {
   // -- 4.O.6: bot suspension + WAITING ----------------------------------------
 
   it('listConversations: filtra escalated=true en cualquier tab', async () => {
-    prismaMock.wapiConversation.findMany.mockResolvedValue([]);
+    prismaMock.conversation.findMany.mockResolvedValue([]);
     await TenantContext.run(ctx, () => service.listConversations({ tab: 'all' }));
-    const args = prismaMock.wapiConversation.findMany.mock.calls[0][0];
+    const args = prismaMock.conversation.findMany.mock.calls[0][0];
     expect(args.where.escalated).toBe(true);
     expect(args.where.status).toEqual({ in: ['UNASSIGNED', 'ASSIGNED', 'WAITING'] });
   });
 
   it('assign suspende el bot, escala y guarda lastAssignedUserId', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
       status: 'UNASSIGNED',
     });
-    prismaMock.wapiConversation.update.mockResolvedValue({
+    prismaMock.conversation.update.mockResolvedValue({
       id: 'c1',
       status: 'ASSIGNED',
       assignedUserId: 'u9',
@@ -331,7 +331,7 @@ describe('WapiInboxService', () => {
 
     await TenantContext.run(ctx, () => service.assign('c1', 'u9'));
 
-    expect(prismaMock.wapiConversation.update).toHaveBeenCalledWith(
+    expect(prismaMock.conversation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'c1' },
         data: expect.objectContaining({
@@ -347,11 +347,11 @@ describe('WapiInboxService', () => {
   });
 
   it('resolve libera al bot y limpia waitingUntil', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
       status: 'ASSIGNED',
     });
-    prismaMock.wapiConversation.update.mockResolvedValue({
+    prismaMock.conversation.update.mockResolvedValue({
       id: 'c1',
       status: 'RESOLVED',
       assignedUserId: 'u1',
@@ -360,7 +360,7 @@ describe('WapiInboxService', () => {
 
     await TenantContext.run(ctx, () => service.resolve('c1', {}));
 
-    expect(prismaMock.wapiConversation.update).toHaveBeenCalledWith(
+    expect(prismaMock.conversation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: 'RESOLVED',
@@ -373,14 +373,14 @@ describe('WapiInboxService', () => {
 
   it('putOnHold: ASSIGNED → WAITING con TTL del cfg, libera assignedUserId', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-05-06T12:00:00.000Z'));
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
       status: 'ASSIGNED',
       assignedUserId: 'u1',
-      configId: 'cfg1',
+      channelId: 'cfg1',
     });
-    prismaMock.wapiConfig.findFirst.mockResolvedValue({ botWaitingTtlMin: 90 });
-    prismaMock.wapiConversation.update.mockResolvedValue({
+    prismaMock.channel.findFirst.mockResolvedValue({ botWaitingTtlMin: 90 });
+    prismaMock.conversation.update.mockResolvedValue({
       id: 'c1',
       status: 'WAITING',
       assignedUserId: null,
@@ -389,7 +389,7 @@ describe('WapiInboxService', () => {
     const out = await TenantContext.run(ctx, () => service.putOnHold('c1'));
 
     expect(out.waitingUntil).toEqual(new Date('2026-05-06T13:30:00.000Z'));
-    expect(prismaMock.wapiConversation.update).toHaveBeenCalledWith(
+    expect(prismaMock.conversation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: 'WAITING',
@@ -403,11 +403,11 @@ describe('WapiInboxService', () => {
   });
 
   it('putOnHold rechaza conversaciones que no estén en ASSIGNED', async () => {
-    prismaMock.wapiConversation.findFirst.mockResolvedValue({
+    prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',
       status: 'UNASSIGNED',
       assignedUserId: null,
-      configId: 'cfg1',
+      channelId: 'cfg1',
     });
     await expect(
       TenantContext.run(ctx, () => service.putOnHold('c1')),

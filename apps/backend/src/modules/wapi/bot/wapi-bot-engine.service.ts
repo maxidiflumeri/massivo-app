@@ -116,7 +116,7 @@ export class WapiBotEngineService {
     if (!(await this.feature.isEnabled())) return { handled: false };
     // 4.O.6 — bot suspendido: un humano tomó la conversación. El motor se queda
     // en silencio hasta que el operador resuelva (webhook resetea el flag).
-    const suspended = await this.prisma.scoped.wapiConversation.findUnique({
+    const suspended = await this.prisma.scoped.conversation.findUnique({
       where: { id: input.conversationId },
       select: { botSuspended: true },
     });
@@ -585,7 +585,7 @@ export class WapiBotEngineService {
       // vuelve a operar para nuevos inbounds. Si la conversación venía
       // RESOLVED (cliente vuelve a escribir, bot la atiende y termina en
       // HANDOFF), reseteamos status para que aparezca en el inbox.
-      const conv = await this.prisma.scoped.wapiConversation.findUnique({
+      const conv = await this.prisma.scoped.conversation.findUnique({
         where: { id: conversationId },
         select: { status: true, assignedUserId: true, lastAssignedUserId: true },
       });
@@ -593,7 +593,7 @@ export class WapiBotEngineService {
         conv?.status === 'RESOLVED'
           ? { status: 'UNASSIGNED' as const, resolvedAt: null, assignedUserId: null }
           : {};
-      await this.prisma.scoped.wapiConversation.update({
+      await this.prisma.scoped.conversation.update({
         where: { id: conversationId },
         data: { escalated: true, botSuspended: true, ...reopenStatus } as never,
       });
@@ -646,7 +646,7 @@ export class WapiBotEngineService {
   async endSessionsForConversation(configId: string, phone: string, reason: string): Promise<void> {
     try {
       const sessions = await this.prismaSession.findMany({
-        where: { configId, phone, endedAt: null },
+        where: { channelId: configId, externalUserId: phone, endedAt: null },
         select: { id: true },
       });
       for (const s of sessions) {
@@ -662,16 +662,16 @@ export class WapiBotEngineService {
   // -- internals -------------------------------------------------------------
 
   private get prismaSession() {
-    return (this.prisma.scoped as unknown as { wapiBotSession: any }).wapiBotSession;
+    return (this.prisma.scoped as unknown as { botSession: any }).botSession;
   }
 
   private get prismaMessage() {
-    return this.prisma.scoped.wapiMessage;
+    return this.prisma.scoped.message;
   }
 
   private async findActiveSession(configId: string, phone: string): Promise<SessionRow | null> {
     const row: SessionRow | null = await this.prismaSession.findFirst({
-      where: { configId, phone, endedAt: null },
+      where: { channelId: configId, externalUserId: phone, endedAt: null },
       select: {
         id: true,
         currentNodeId: true,
@@ -702,7 +702,7 @@ export class WapiBotEngineService {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + ttlMs);
     const result = await this.prismaSession.upsert({
-      where: { configId_phone: { configId: cfg.id, phone } },
+      where: { channelId_externalUserId: { channelId: cfg.id, externalUserId: phone } },
       update: {
         currentNodeId: nodeId,
         currentTopicId: topicId,
@@ -716,8 +716,8 @@ export class WapiBotEngineService {
       create: {
         organizationId: ctx.organizationId,
         teamId: ctx.teamId,
-        configId: cfg.id,
-        phone,
+        channelId: cfg.id,
+        externalUserId: phone,
         currentNodeId: nodeId,
         currentTopicId: topicId,
         startedAt: now,
@@ -857,7 +857,8 @@ export class WapiBotEngineService {
       const message = await this.prismaMessage.create({
         data: {
           conversationId,
-          metaMessageId: result.externalMessageId,
+          channelId: cfg.id,
+          externalId: result.externalMessageId,
           fromMe: true,
           type: wapiType,
           content: content as Prisma.InputJsonValue,

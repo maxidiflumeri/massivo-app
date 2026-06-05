@@ -99,20 +99,20 @@ export class WapiLiveService {
         id: true,
         name: true,
         status: true,
-        configId: true,
+        channelId: true,
         sentAt: true,
         config: true,
-        configRel: { select: { name: true, sendDelayMinMs: true, sendDelayMaxMs: true } },
+        channel: { select: { name: true, sendDelayMinMs: true, sendDelayMaxMs: true } },
         template: { select: { metaName: true } },
       },
     })) as Array<{
       id: string;
       name: string;
       status: string;
-      configId: string;
+      channelId: string;
       sentAt: Date | null;
       config: unknown;
-      configRel: {
+      channel: {
         name: string | null;
         sendDelayMinMs: number;
         sendDelayMaxMs: number;
@@ -188,8 +188,8 @@ export class WapiLiveService {
         delayMinMs?: number;
         delayMaxMs?: number;
       } | null;
-      const cfgMin = r.configRel?.sendDelayMinMs ?? 30_000;
-      const cfgMax = r.configRel?.sendDelayMaxMs ?? 60_000;
+      const cfgMin = r.channel?.sendDelayMinMs ?? 30_000;
+      const cfgMax = r.channel?.sendDelayMaxMs ?? 60_000;
       const hasOverride =
         typeof cmpCfg?.delayMinMs === 'number' || typeof cmpCfg?.delayMaxMs === 'number';
       const delayMinMs = cmpCfg?.delayMinMs ?? cfgMin;
@@ -198,8 +198,8 @@ export class WapiLiveService {
         id: r.id,
         name: r.name,
         status: r.status,
-        configId: r.configId,
-        configName: r.configRel?.name ?? null,
+        configId: r.channelId,
+        configName: r.channel?.name ?? null,
         templateName: r.template?.metaName ?? null,
         startedAt: r.sentAt,
         total,
@@ -213,7 +213,7 @@ export class WapiLiveService {
   }
 
   private async collectConfigs(since24h: Date): Promise<LiveConfigUsage[]> {
-    const configs = (await this.prisma.scoped.wapiConfig.findMany({
+    const configs = (await this.prisma.scoped.channel.findMany({
       where: { isActive: true },
       orderBy: { name: 'asc' },
       select: {
@@ -241,7 +241,7 @@ export class WapiLiveService {
       where: {
         status: 'SENT',
         sentAt: { gte: since24h },
-        campaign: { configId: { in: configs.map((c) => c.id) } },
+        campaign: { channelId: { in: configs.map((c) => c.id) } },
       },
       _count: { _all: true },
     });
@@ -257,9 +257,9 @@ export class WapiLiveService {
     if (campaignIds.length > 0) {
       const camps = (await this.prisma.scoped.wapiCampaign.findMany({
         where: { id: { in: campaignIds } },
-        select: { id: true, configId: true },
-      })) as Array<{ id: string; configId: string }>;
-      for (const c of camps) campaignToConfig.set(c.id, c.configId);
+        select: { id: true, channelId: true },
+      })) as Array<{ id: string; channelId: string }>;
+      for (const c of camps) campaignToConfig.set(c.id, c.channelId);
     }
     const sentByConfig = new Map<string, number>();
     for (const g of grouped) {
@@ -287,16 +287,16 @@ export class WapiLiveService {
 
   private async collectInbox(): Promise<LiveInboxSnapshot> {
     const [unassigned, waiting, escalatedTotal, oldest] = await Promise.all([
-      this.prisma.scoped.wapiConversation.count({
+      this.prisma.scoped.conversation.count({
         where: { status: 'UNASSIGNED', escalated: true },
       }),
-      this.prisma.scoped.wapiConversation.count({
+      this.prisma.scoped.conversation.count({
         where: { status: 'WAITING' },
       }),
-      this.prisma.scoped.wapiConversation.count({
+      this.prisma.scoped.conversation.count({
         where: { escalated: true },
       }),
-      this.prisma.scoped.wapiConversation.findFirst({
+      this.prisma.scoped.conversation.findFirst({
         where: { status: 'UNASSIGNED', escalated: true },
         orderBy: { lastMessageAt: 'asc' },
         select: { lastMessageAt: true },

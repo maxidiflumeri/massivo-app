@@ -233,8 +233,8 @@ export class WapiWebhookService {
     // conversación (necesario para 4.I welcome message). El race entre dos
     // webhooks del mismo phone+config en simultáneo es muy raro y, si ocurre,
     // el unique (teamId, configId, phone) tira P2002 — capturamos abajo.
-    const existing = await this.prisma.scoped.wapiConversation.findFirst({
-      where: { configId: tenant.configId, phone },
+    const existing = await this.prisma.scoped.conversation.findFirst({
+      where: { channelId: tenant.configId, externalUserId: phone },
       select: { id: true, status: true, assignedUserId: true, unreadCount: true },
     });
     const isNewConversation = !existing;
@@ -249,11 +249,11 @@ export class WapiWebhookService {
         existing.status === 'WAITING'
           ? { status: 'UNASSIGNED', waitingUntil: null }
           : {};
-      conversation = await this.prisma.scoped.wapiConversation.update({
+      conversation = await this.prisma.scoped.conversation.update({
         where: { id: existing.id },
         data: {
           lastMessageAt: ts,
-          window24hAt: new Date(ts.getTime() + 24 * 60 * 60_000),
+          freeformWindowAt: new Date(ts.getTime() + 24 * 60 * 60_000),
           unreadCount: { increment: 1 },
           ...(profileName ? { name: profileName } : {}),
           ...waitingTransition,
@@ -262,25 +262,27 @@ export class WapiWebhookService {
       });
     } else {
       try {
-        conversation = await this.prisma.scoped.wapiConversation.create({
+        conversation = await this.prisma.scoped.conversation.create({
           data: {
             organizationId: tenant.organizationId,
             teamId: tenant.teamId,
-            configId: tenant.configId,
-            phone,
+            channelId: tenant.configId,
+            // Webhook WhatsApp-específico → kind fijo. channelKind es NOT NULL.
+            channelKind: 'WHATSAPP',
+            externalUserId: phone,
             name: profileName,
             lastMessageAt: ts,
-            window24hAt: new Date(ts.getTime() + 24 * 60 * 60_000),
+            freeformWindowAt: new Date(ts.getTime() + 24 * 60 * 60_000),
             unreadCount: 1,
-          },
+          } as never,
           select: { id: true, status: true, assignedUserId: true, unreadCount: true },
         });
       } catch (err) {
         // Race contra otro webhook simultáneo — refetch y treat as existing.
         const code = (err as { code?: string }).code;
         if (code !== 'P2002') throw err;
-        const refetched = await this.prisma.scoped.wapiConversation.findFirst({
-          where: { configId: tenant.configId, phone },
+        const refetched = await this.prisma.scoped.conversation.findFirst({
+          where: { channelId: tenant.configId, externalUserId: phone },
           select: { id: true, status: true, assignedUserId: true, unreadCount: true },
         });
         if (!refetched) throw err;
@@ -352,12 +354,15 @@ export class WapiWebhookService {
     let createdMessageId: string | null = null;
     let storedContent: unknown = null;
     try {
-      const created = await this.prisma.scoped.wapiMessage.create({
+      const created = await this.prisma.scoped.message.create({
         data: {
           organizationId: tenant.organizationId,
           teamId: tenant.teamId,
           conversationId: conversation.id,
-          metaMessageId: msg.id,
+          // 1d: channelId denormalizado (de la conversación) para el unique
+          // compuesto [channelId, externalId]. externalId ← ex metaMessageId.
+          channelId: tenant.configId,
+          externalId: msg.id,
           fromMe: false,
           type: msg.type,
           content: extractContent(msg) as Prisma.InputJsonValue,
@@ -463,7 +468,7 @@ export class WapiWebhookService {
     buttonInfo: ExtractedButtonInfo | null;
     isBotButton: boolean;
   }): Promise<void> {
-    const cfg = (await this.prisma.scoped.wapiConfig.findFirst({
+    const cfg = (await this.prisma.scoped.channel.findFirst({
       where: { id: input.configId },
       // Phase 0a (multi-canal): la definición del bot vive en la entidad `Bot`
       // (relación `WapiConfig.bot`). El config aporta los campos de canal
@@ -489,7 +494,7 @@ export class WapiWebhookService {
         },
       } as never,
     })) as
-      | (Awaited<ReturnType<typeof this.prisma.scoped.wapiConfig.findFirst>> & {
+      | (Awaited<ReturnType<typeof this.prisma.scoped.channel.findFirst>> & {
           bot: {
             enabled: boolean;
             flow: unknown;
@@ -549,7 +554,7 @@ export class WapiWebhookService {
         // Si el bot terminó con HANDOFF + escalate → marcamos priority como 4.K.
         if (result.ended && result.escalate) {
           try {
-            const updated = await this.prisma.scoped.wapiConversation.update({
+            const updated = await this.prisma.scoped.conversation.update({
               where: { id: input.conversationId },
               data: { priority: true } as never,
               select: {
@@ -765,10 +770,11 @@ export class WapiWebhookService {
         { to: input.phone, body: input.body, previewUrl: false },
       );
       const ts = new Date();
-      const message = await this.prisma.scoped.wapiMessage.create({
+      const message = await this.prisma.scoped.message.create({
         data: {
           conversationId: input.conversationId,
-          metaMessageId: result.metaMessageId,
+          channelId: input.cfg.id,
+          externalId: result.metaMessageId,
           fromMe: true,
           type: 'text',
           content: { text: { body: input.body }, system: { kind: input.kind } } as Prisma.InputJsonValue,

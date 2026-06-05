@@ -22,8 +22,8 @@ describe('ContactTimelineService', () => {
     emailEvent: Record<string, jest.Mock>;
     wapiContact: Record<string, jest.Mock>;
     wapiReport: Record<string, jest.Mock>;
-    wapiConversation: Record<string, jest.Mock>;
-    wapiMessage: Record<string, jest.Mock>;
+    conversation: Record<string, jest.Mock>;
+    message: Record<string, jest.Mock>;
     auditLog: Record<string, jest.Mock>;
   };
 
@@ -35,8 +35,8 @@ describe('ContactTimelineService', () => {
       emailEvent: { findMany: jest.fn().mockResolvedValue([]) },
       wapiContact: { findMany: jest.fn().mockResolvedValue([]) },
       wapiReport: { findMany: jest.fn().mockResolvedValue([]) },
-      wapiConversation: { findMany: jest.fn().mockResolvedValue([]) },
-      wapiMessage: { findMany: jest.fn().mockResolvedValue([]) },
+      conversation: { findMany: jest.fn().mockResolvedValue([]) },
+      message: { findMany: jest.fn().mockResolvedValue([]) },
       auditLog: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
@@ -127,8 +127,8 @@ describe('ContactTimelineService', () => {
         error: null,
       },
     ]);
-    mocks.wapiConversation.findMany!.mockResolvedValue([{ id: 'conv-1' }]);
-    mocks.wapiMessage.findMany!.mockResolvedValue([
+    mocks.conversation.findMany!.mockResolvedValue([{ id: 'conv-1' }]);
+    mocks.message.findMany!.mockResolvedValue([
       {
         id: 'm-1',
         conversationId: 'conv-1',

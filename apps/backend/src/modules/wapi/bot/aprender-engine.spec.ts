@@ -117,7 +117,7 @@ function makeSessionMock() {
     },
     // upsertSession() llama acá al final del turno (guarda dónde quedó).
     upsert: async ({ where, update, create }: any) => {
-      const { configId, phone } = where.configId_phone;
+      const { configId, phone } = where.channelId_externalUserId;
       const key = `${configId}|${phone}`;
       const existing = sessionStore.get(key);
       if (existing) {
@@ -154,11 +154,11 @@ describe('🤖 Engine del bot — recorrido paso a paso', () => {
     idSeq = 1;
 
     const prismaScoped = {
-      wapiBotSession: makeSessionMock(),
-      wapiMessage: {
+      botSession: makeSessionMock(),
+      message: {
         create: async ({ data }: any) => ({ id: 'msg-x', content: data.content }),
       },
-      wapiConversation: {
+      conversation: {
         // guard de botSuspended + lectura de status en HANDOFF
         findUnique: async () => ({
           botSuspended: false,

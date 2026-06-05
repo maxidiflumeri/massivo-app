@@ -88,7 +88,7 @@ export class WapiMediaService {
   }> {
     const ctx = TenantContext.current();
     if (!ctx) throw new WapiMediaException('Tenant context faltante', 'IO_ERROR');
-    const cfg = await this.prisma.scoped.wapiConfig.findFirst({
+    const cfg = await this.prisma.scoped.channel.findFirst({
       where: { id: configId },
       select: {
         phoneNumberId: true,

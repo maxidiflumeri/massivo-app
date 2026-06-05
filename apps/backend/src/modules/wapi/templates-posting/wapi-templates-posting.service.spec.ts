@@ -37,7 +37,7 @@ describe('WapiTemplatesPostingService', () => {
   };
 
   let prismaScoped: {
-    wapiConfig: { findFirst: jest.Mock };
+    channel: { findFirst: jest.Mock };
     wapiTemplate: { findFirst: jest.Mock; create: jest.Mock };
   };
   let encryption: { encrypt: jest.Mock; decrypt: jest.Mock; isEncrypted: jest.Mock };
@@ -47,7 +47,7 @@ describe('WapiTemplatesPostingService', () => {
 
   beforeEach(() => {
     prismaScoped = {
-      wapiConfig: { findFirst: jest.fn() },
+      channel: { findFirst: jest.fn() },
       wapiTemplate: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockImplementation(({ data }: { data: unknown }) =>
@@ -102,7 +102,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('config no existe → NotFoundException', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(null);
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(null);
     await expect(
       TenantContext.run(ctx, () => svc.submit('cfg-x', baseDto)),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -110,7 +110,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('name ya existe en (teamId, biz) → ConflictException', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     prismaScoped.wapiTemplate.findFirst.mockResolvedValueOnce({ id: 't-existing', status: 'APPROVED' });
     await expect(
       TenantContext.run(ctx, () => svc.submit('cfg-1', baseDto)),
@@ -120,7 +120,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('happy: header TEXT + body + footer + 3 botones → POST y persiste', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     fetchMock.mockResolvedValueOnce(
       mkResponse(201, { id: 'meta-id-1', status: 'PENDING', category: 'MARKETING' }),
     );
@@ -187,7 +187,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('header IMAGE sin mediaHandle → BadRequest', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     const dto: CreateWapiTemplateMetaDto = {
       ...baseDto,
       header: { format: 'IMAGE' },
@@ -199,7 +199,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('header IMAGE con mediaHandle → header_handle en payload', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     fetchMock.mockResolvedValueOnce(mkResponse(201, { id: 'm', status: 'PENDING' }));
 
     const dto: CreateWapiTemplateMetaDto = {
@@ -218,7 +218,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('header TEXT sin text → BadRequest', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     const dto: CreateWapiTemplateMetaDto = {
       ...baseDto,
       header: { format: 'TEXT' },
@@ -229,7 +229,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('button URL sin url → BadRequest', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     const dto: CreateWapiTemplateMetaDto = {
       ...baseDto,
       buttons: [{ type: 'URL', text: 'Ir' }],
@@ -240,7 +240,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('button PHONE_NUMBER sin phoneNumber → BadRequest', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     const dto: CreateWapiTemplateMetaDto = {
       ...baseDto,
       buttons: [{ type: 'PHONE_NUMBER', text: 'Llamar' }],
@@ -251,7 +251,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('Graph API 400 → ServiceUnavailableException con mensaje Meta', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     fetchMock.mockResolvedValueOnce(
       mkResponse(400, { error: { code: 100, message: 'Invalid parameter' } }),
     );
@@ -267,7 +267,7 @@ describe('WapiTemplatesPostingService', () => {
   it('decripta accessToken antes de POST', async () => {
     const cfg = mkConfig();
     cfg.accessTokenEnc = 'enc(real-token)';
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(cfg);
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(cfg);
     encryption.decrypt.mockImplementationOnce((v: string) => v.replace(/^enc\(|\)$/g, ''));
     fetchMock.mockResolvedValueOnce(mkResponse(201, { id: 'm', status: 'PENDING' }));
 
@@ -277,7 +277,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('Meta no devuelve status → persist con PENDING default', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     fetchMock.mockResolvedValueOnce(mkResponse(201, { id: 'm' })); // sin status
 
     await TenantContext.run(ctx, () => svc.submit('cfg-1', baseDto));
@@ -287,7 +287,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('body sin examples → no incluye example.body_text', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     fetchMock.mockResolvedValueOnce(mkResponse(201, { id: 'm', status: 'PENDING' }));
 
     const dto: CreateWapiTemplateMetaDto = {
@@ -303,7 +303,7 @@ describe('WapiTemplatesPostingService', () => {
   });
 
   it('header NONE → no se incluye HEADER component', async () => {
-    prismaScoped.wapiConfig.findFirst.mockResolvedValueOnce(mkConfig());
+    prismaScoped.channel.findFirst.mockResolvedValueOnce(mkConfig());
     fetchMock.mockResolvedValueOnce(mkResponse(201, { id: 'm', status: 'PENDING' }));
 
     const dto: CreateWapiTemplateMetaDto = {

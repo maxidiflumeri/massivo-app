@@ -1,13 +1,13 @@
 import { WapiBotWaitingExpirerService } from './wapi-bot-waiting-expirer.service';
 
 describe('WapiBotWaitingExpirerService', () => {
-  let prisma: { wapiConversation: { findMany: jest.Mock; update: jest.Mock } };
+  let prisma: { conversation: { findMany: jest.Mock; update: jest.Mock } };
   let events: { emitToTeam: jest.Mock };
   let svc: WapiBotWaitingExpirerService;
 
   beforeEach(() => {
     prisma = {
-      wapiConversation: {
+      conversation: {
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue(undefined),
       },
@@ -21,15 +21,15 @@ describe('WapiBotWaitingExpirerService', () => {
   });
 
   it('tick sin filas vencidas → no toca DB ni emite', async () => {
-    prisma.wapiConversation.findMany.mockResolvedValue([]);
+    prisma.conversation.findMany.mockResolvedValue([]);
     const out = await svc.tick();
     expect(out.expired).toBe(0);
-    expect(prisma.wapiConversation.update).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
     expect(events.emitToTeam).not.toHaveBeenCalled();
   });
 
   it('tick con filas vencidas → vuelve a UNASSIGNED + emite por cada team', async () => {
-    prisma.wapiConversation.findMany.mockResolvedValue([
+    prisma.conversation.findMany.mockResolvedValue([
       { id: 'c1', teamId: 't1', configId: 'cfg1', phone: '5491100' },
       { id: 'c2', teamId: 't2', configId: 'cfg2', phone: '5491200' },
     ]);
@@ -37,7 +37,7 @@ describe('WapiBotWaitingExpirerService', () => {
     const out = await svc.tick();
 
     expect(out.expired).toBe(2);
-    expect(prisma.wapiConversation.findMany).toHaveBeenCalledWith(
+    expect(prisma.conversation.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           status: 'WAITING',
@@ -45,8 +45,8 @@ describe('WapiBotWaitingExpirerService', () => {
         }),
       }),
     );
-    expect(prisma.wapiConversation.update).toHaveBeenCalledTimes(2);
-    expect(prisma.wapiConversation.update).toHaveBeenCalledWith({
+    expect(prisma.conversation.update).toHaveBeenCalledTimes(2);
+    expect(prisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'c1' },
       data: { status: 'UNASSIGNED', waitingUntil: null },
     });
@@ -63,11 +63,11 @@ describe('WapiBotWaitingExpirerService', () => {
   });
 
   it('si un update individual falla, el resto sigue', async () => {
-    prisma.wapiConversation.findMany.mockResolvedValue([
+    prisma.conversation.findMany.mockResolvedValue([
       { id: 'c1', teamId: 't1', configId: 'cfg1', phone: '5491100' },
       { id: 'c2', teamId: 't1', configId: 'cfg1', phone: '5491200' },
     ]);
-    prisma.wapiConversation.update
+    prisma.conversation.update
       .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValueOnce(undefined);
 
