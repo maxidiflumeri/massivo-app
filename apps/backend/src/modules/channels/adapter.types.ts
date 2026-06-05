@@ -83,10 +83,18 @@ export interface ChannelCapabilities {
  * Adapter de canal. Genérico en el tipo de conexión/credenciales `Conn` que cada
  * canal necesita para enviar (cada adapter conoce su propio shape).
  *
- * `verifyAndParse` (inbound) llega en la sub-fase 1c.
+ * INBOUND (1c): `parseInbound` traduce el payload crudo del proveedor (ya
+ * parseado a objeto) a `InboundMessage[]` normalizados. Es un **parser puro**: no
+ * verifica firma ni toca DB (la verificación de firma y la resolución de
+ * tenant/credenciales viven en el handler del webhook, que es específico del
+ * proveedor mientras no exista el modelo `Channel` unificado — eso llega en 1d).
+ * El diseño final lo fusiona en `verifyAndParse(req, channel)`; por ahora el
+ * parseo se aísla acá y se testea solo. Devuelve `[]` si el payload no trae
+ * mensajes entrantes (p.ej. sólo status updates).
  */
 export interface ChannelAdapter<Conn = unknown> {
   readonly kind: ChannelKind;
   readonly capabilities: ChannelCapabilities;
   send(conn: Conn, msg: OutboundMessage): Promise<SendResult>;
+  parseInbound?(payload: unknown): InboundMessage[];
 }

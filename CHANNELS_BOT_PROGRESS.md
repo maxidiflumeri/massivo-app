@@ -9,9 +9,9 @@
 ## Estado actual
 
 **Fase en curso:** **Fase 0 COMPLETA** (0a+0b, probado en runtime por el usuario) +
-**Fase 1: 1a y 1b COMPLETAS**. Próximo: **1c** (verifyAndParse + webhook genérico).
+**Fase 1: 1a, 1b y 1c COMPLETAS**. Próximo: **1d** (modelo unificado `Channel/Conversation/Message/BotSession` — RIESGO ALTO, migración en vivo).
 
-**Última actualización:** sesión 1 (2026-06-03) — fin de jornada.
+**Última actualización:** sesión 2 (2026-06-05).
 
 **Commits en `feat/multichannel-bot` (en orden):**
 - `8f13e21` — 0a: entidad `Bot` + migración/backfill + wiring backend
@@ -29,11 +29,19 @@
 número (Números), y el bot responde end-to-end en el Chat simulado.
 
 ### Para retomar mañana
-1. `git checkout feat/multichannel-bot` (todo commiteado, working tree limpio).
-2. Seguir por **1c** (ver PLAN → FASE 1).
+1. `git checkout feat/multichannel-bot`. **Ojo:** 1c está en el working tree **sin
+   commitear** — commitear antes de seguir (sugerido: `feat(channels): parseInbound
+   + webhook genérico /api/channels/:kind/:slug (Fase 1c)`).
+2. Seguir por **1d** (modelo unificado — RIESGO ALTO, migración en vivo; ver PLAN → FASE 1).
 3. **Decisión pendiente del usuario:** relocar/renombrar el módulo del bot (sacar
    de `modules/wapi/`, quitar prefijo `Wapi`). Análisis + recomendación en
    PLAN → **Sub-fase 1g** (recomendado: hacerlo justo después de 1d, no antes).
+4. **Cabos sueltos de 1c (para 1d):** (a) `parseInbound` existe y está testeado pero
+   **todavía no lo consume el flujo vivo** — `process` sigue sobre el payload Meta;
+   1d debe rewirearlo. (b) No se agregó `parseStatus` (status updates siguen
+   parseándose en `WapiWebhookService.handleStatus`). (c) La resolución de tenant
+   sigue WhatsApp-específica (`WapiConfig` por phone_number_id); con `Channel` (1d)
+   pasa a ser channel-aware y el handler se pliega al `verifyAndParse(req, channel)`.
 
 **Verificación 0a:**
 - ✅ Migración `20260603120000_extract_bot_entity` aplicada a la DB local + backfill
@@ -111,7 +119,7 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 (sub-fases detalladas en CHANNELS_BOT_PLAN.md → FASE 1)
 - [x] **1a** Capa de abstracción (módulo `channels/`): tipos `ChannelAdapter`/`Inbound`/`Outbound`/`Capabilities` + `WhatsAppAdapter` (envuelve `WapiSenderService`, capabilities) + `ChannelAdapterRegistry` + registrado en `app.module`. Aditivo, adapter spec 6/6, typecheck limpio.
 - [x] **1b** Rewire engine `deliverNode` + inbox `sendText/sendMedia` al `WhatsAppAdapter`; guard de ventana 24h → `capabilities.freeformWindow`. `WhatsAppAdapter` movido a `WapiModule` (sin ciclo con `ChannelsModule`). Specs engine/inbox con mock-adapter que reenvía al sender → 408/408 wapi+channels, typecheck limpio.
-- [ ] **1c** `verifyAndParse` + webhook genérico `/api/channels/:kind/:slug`
+- [x] **1c** `parseInbound` + webhook genérico `/api/channels/:kind/:slug` (alcance "liviana"; ver bitácora sesión 2). `parseInbound(payload)→InboundMessage[]` en `WhatsAppAdapter` (parser puro, aditivo — lo consume 1d). Lógica del webhook extraída a `WhatsAppWebhookHandler` (compartida por `/api/webhooks/wapi/:slug` legacy y `/api/channels/whatsapp/:slug` genérica). **La persistencia (`WapiWebhookService.process`) NO se tocó.** 424/424 wapi+channels, typecheck limpio. **Sin commitear (working tree).**
 - [ ] **1d** Modelo unificado `Channel/Conversation/Message/BotSession` (migración en vivo — riesgo alto)
 - [ ] **1e** Inbox unificado (API `/api/inbox` + UI con badge/filtro de canal)
 - [ ] **1f** Cleanup de tablas/columnas `Wapi*` legacy
@@ -123,6 +131,25 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 ---
 
 ## Bitácora (qué se hizo y por qué)
+
+### Sesión 2 — 2026-06-05
+- **Implementada la Sub-fase 1c (alcance "liviana", elegido por el usuario).** La
+  alternativa "completa" (rewire de `process` a `InboundMessage[]`) se descartó por
+  solaparse con 1d y tocar el service más testeado del webhook.
+- **Decisión de diseño:** como el modelo `Channel` no existe hasta 1d y la
+  persistencia está moldeada al payload de Meta, 1c se acota a (a) el parser puro y
+  (b) el routing genérico, sin tocar persistencia. `parseInbound` queda **aditivo**
+  (mismo patrón que los tipos de 1a): listo para que 1d lo consuma.
+- **Archivos tocados:**
+  - `apps/backend/src/modules/channels/adapter.types.ts` — `parseInbound?` en `ChannelAdapter`
+  - `apps/backend/src/modules/channels/adapters/whatsapp.adapter.ts` (+ `.spec.ts`) — `parseInbound` + helpers (`toInbound`/`mapType`/`mapMedia`)
+  - `apps/backend/src/modules/wapi/webhook/whatsapp-webhook.handler.ts` (+ `.spec.ts`) — **NUEVO**: lógica verify/receive + HMAC + slug-cache extraída del controller
+  - `apps/backend/src/modules/wapi/webhook/wapi-webhook.controller.ts` (+ `.spec.ts`) — adelgazado a alias delgado que delega en el handler
+  - `apps/backend/src/modules/channels/channels-webhook.controller.ts` (+ `.spec.ts`) — **NUEVO**: webhook genérico `/api/channels/:kind/:slug`, dispatch por kind
+  - `apps/backend/src/modules/wapi/wapi.module.ts` — provee+exporta `WhatsAppWebhookHandler`
+  - `apps/backend/src/modules/channels/channels.module.ts` — registra `ChannelsWebhookController`
+- **Verificación:** typecheck limpio · `npx jest src/modules/wapi src/modules/channels` → **424/424** (sumó 19 tests de 1c). El único rojo del repo sigue siendo `email/webhook/ses-webhook` (pre-existente, ajeno).
+- **Pendiente:** boot autenticado / smoke runtime del endpoint nuevo (Clerk gate, no headless) — el endpoint es público pero conviene probarlo end-to-end cuando se levante el server.
 
 ### Sesión 1 — 2026-06-03
 - Exploración completa de arquitectura de canales/bot/inbox (backend + frontend).

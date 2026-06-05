@@ -15,6 +15,7 @@ import { WapiTemplatesSyncService } from './templates-sync/wapi-templates-sync.s
 import { WapiTemplatesPostingService } from './templates-posting/wapi-templates-posting.service';
 import { WapiWebhookController } from './webhook/wapi-webhook.controller';
 import { WapiWebhookService } from './webhook/wapi-webhook.service';
+import { WhatsAppWebhookHandler } from './webhook/whatsapp-webhook.handler';
 import { WapiInboxController } from './inbox/wapi-inbox.controller';
 import { WapiInboxService } from './inbox/wapi-inbox.service';
 import { WapiMediaService } from './media/wapi-media.service';
@@ -64,6 +65,7 @@ import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
     WapiQueueService,
     WapiWorkerService,
     WapiWebhookService,
+    WhatsAppWebhookHandler,
     WapiTemplatesSyncService,
     WapiTemplatesPostingService,
     WapiInboxService,
@@ -89,6 +91,7 @@ import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
     WapiSenderService,
     WapiMediaService,
     WapiWebhookService,
+    WhatsAppWebhookHandler,
     WapiBotFeatureService,
     WhatsAppAdapter,
   ],

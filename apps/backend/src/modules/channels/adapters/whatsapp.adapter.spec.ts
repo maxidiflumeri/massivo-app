@@ -113,4 +113,132 @@ describe('WhatsAppAdapter', () => {
       adapter.send(conn, { kind: 'media', to: '549110', mediaType: 'image' }),
     ).rejects.toThrow(/mediaId/);
   });
+
+  // -- 1c: parseInbound (payload crudo Meta → InboundMessage[]) ----------------
+  describe('parseInbound', () => {
+    const adapter = new WhatsAppAdapter(makeSender() as never);
+
+    function payload(value: Record<string, unknown>) {
+      return {
+        object: 'whatsapp_business_account',
+        entry: [{ id: 'biz-1', changes: [{ field: 'messages', value }] }],
+      };
+    }
+
+    it('payload no-whatsapp → []', () => {
+      expect(adapter.parseInbound({ object: 'otra-cosa', entry: [] })).toEqual([]);
+      expect(adapter.parseInbound(null)).toEqual([]);
+      expect(adapter.parseInbound(undefined)).toEqual([]);
+    });
+
+    it('value sólo con statuses (sin messages) → []', () => {
+      const out = adapter.parseInbound(
+        payload({ metadata: { phone_number_id: 'pn-1' }, statuses: [{ id: 'wamid.X', status: 'delivered' }] }),
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('mensaje de texto → InboundMessage normalizado + senderProfile del contacto', () => {
+      const out = adapter.parseInbound(
+        payload({
+          metadata: { phone_number_id: 'pn-1' },
+          contacts: [{ wa_id: '549110', profile: { name: 'Maxi' } }],
+          messages: [{ id: 'wamid.1', from: '549110', timestamp: '1700000000', type: 'text', text: { body: 'hola' } }],
+        }),
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({
+        channelKind: 'WHATSAPP',
+        externalUserId: '549110',
+        externalMessageId: 'wamid.1',
+        type: 'text',
+        text: 'hola',
+        senderProfile: { name: 'Maxi' },
+      });
+      expect(out[0]!.timestamp).toEqual(new Date(1700000000 * 1000));
+    });
+
+    it('interactive button_reply → type interactive_reply + interactiveReplyId', () => {
+      const out = adapter.parseInbound(
+        payload({
+          metadata: { phone_number_id: 'pn-1' },
+          messages: [
+            {
+              id: 'wamid.2',
+              from: '549110',
+              timestamp: '1700000001',
+              type: 'interactive',
+              interactive: { type: 'button_reply', button_reply: { id: 'bot:soporte', title: 'Soporte' } },
+            },
+          ],
+        }),
+      );
+      expect(out[0]).toMatchObject({
+        type: 'interactive_reply',
+        interactiveReplyId: 'bot:soporte',
+        text: 'Soporte',
+      });
+    });
+
+    it('button de template (CTA legacy) → interactiveReplyId + referral source=template', () => {
+      const out = adapter.parseInbound(
+        payload({
+          metadata: { phone_number_id: 'pn-1' },
+          messages: [
+            { id: 'wamid.3', from: '549110', timestamp: '1700000002', type: 'button', button: { payload: 'OFERTA_X', text: 'Ver oferta' } },
+          ],
+        }),
+      );
+      expect(out[0]).toMatchObject({
+        type: 'interactive_reply',
+        interactiveReplyId: 'OFERTA_X',
+        referral: { payload: 'OFERTA_X', source: 'template' },
+      });
+    });
+
+    it('imagen → type image + media (id/mime/caption)', () => {
+      const out = adapter.parseInbound(
+        payload({
+          metadata: { phone_number_id: 'pn-1' },
+          messages: [
+            {
+              id: 'wamid.4',
+              from: '549110',
+              timestamp: '1700000003',
+              type: 'image',
+              image: { id: 'media-1', mime_type: 'image/jpeg', sha256: 'abc', caption: 'foto' },
+            },
+          ],
+        }),
+      );
+      expect(out[0]).toMatchObject({
+        type: 'image',
+        media: { id: 'media-1', mime: 'image/jpeg', sha256: 'abc', caption: 'foto' },
+      });
+    });
+
+    it('varios entries/messages → se aplanan todos', () => {
+      const out = adapter.parseInbound({
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: 'biz-1',
+            changes: [
+              {
+                field: 'messages',
+                value: {
+                  metadata: { phone_number_id: 'pn-1' },
+                  messages: [
+                    { id: 'wamid.a', from: '111', timestamp: '1700000000', type: 'text', text: { body: 'a' } },
+                    { id: 'wamid.b', from: '222', timestamp: '1700000000', type: 'text', text: { body: 'b' } },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      });
+      expect(out.map((m) => m.externalMessageId)).toEqual(['wamid.a', 'wamid.b']);
+    });
+  });
 });
