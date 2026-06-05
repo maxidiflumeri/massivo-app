@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(unzip -q awscliv2.zip)",
+      "Bash(./aws/install -i ~/aws-cli -b ~/.local/bin)",
+      "Bash(aws configure *)",
+      "Bash(dig +short A massivo.app)",
+      "Bash(dig +short AAAA massivo.app)",
+      "Bash(dig +short CNAME www.massivo.app)",
+      "Bash(dig +short TXT massivo.app)",
+      "Bash(dig +short SOA massivo.app)",
+      "Bash(getent hosts *)",
+      "Bash(nslookup massivo.app)",
+      "Bash(aws sesv2 *)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

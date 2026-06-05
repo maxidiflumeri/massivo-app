@@ -67,7 +67,9 @@
       "Bash(PGPASSWORD=massivo psql -h 127.0.0.1 -U massivo -d massivo -c \"\\\\d \\\\\"WapiConfig\\\\\"\")",
       "Bash(PGPASSWORD=massivo psql *)",
       "Bash(tasklist /v)",
-      "Bash(grep -n 'scoped\\\\|raw\\\\|$transaction' apps/backend/src/common/prisma/prisma.service.ts)"
+      "Bash(grep -n 'scoped\\\\|raw\\\\|$transaction' apps/backend/src/common/prisma/prisma.service.ts)",
+      "Bash(terraform init *)",
+      "Bash(terraform plan *)"
     ]
   }
 }
