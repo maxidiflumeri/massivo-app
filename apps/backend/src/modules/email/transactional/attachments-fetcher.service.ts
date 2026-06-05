@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Agent, fetch as undiciFetch } from 'undici';
-import { resolveAndValidate } from '../../wapi/bot/wapi-bot-http-ssrf';
+import { resolveAndValidate } from '../../bot/bot-http-ssrf';
 import type { EmailAttachment } from '../sender/email-sender';
 
 const PER_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024; // 5 MB

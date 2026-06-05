@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { BotRouter, BotRouterRule } from './wapi-bot.types';
+import type { BotRouter, BotRouterRule } from './bot.types';
 
 /**
  * 4.O.1 — Decide a qué tema entrar dado un input. El motor consulta acá:
@@ -31,8 +31,8 @@ export type BotRouterInput =
   | { kind: 'template-payload'; payload: string };
 
 @Injectable()
-export class WapiBotRouterService {
-  private readonly logger = new Logger(WapiBotRouterService.name);
+export class BotRouterService {
+  private readonly logger = new Logger(BotRouterService.name);
 
   resolve(router: BotRouter | null | undefined, input: BotRouterInput): BotRouterResolution | null {
     if (!router) return null;

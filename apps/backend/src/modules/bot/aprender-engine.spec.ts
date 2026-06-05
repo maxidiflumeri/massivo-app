@@ -39,10 +39,10 @@
  *   fin (HANDOFF)     ── deriva a humano + escalate
  * ----------------------------------------------------------------------------
  */
-import { TenantContext } from '../../../common/auth/tenant-context';
-import { WhatsAppAdapter } from '../../channels/adapters/whatsapp.adapter';
-import { WapiBotEngineService } from './wapi-bot-engine.service';
-import type { BotFlow } from './wapi-bot.types';
+import { TenantContext } from '../../common/auth/tenant-context';
+import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
+import { BotEngineService } from './bot-engine.service';
+import type { BotFlow } from './bot.types';
 
 const flow: BotFlow = {
   startNodeId: 'ask',
@@ -147,7 +147,7 @@ function makeSessionMock() {
 }
 
 describe('🤖 Engine del bot — recorrido paso a paso', () => {
-  let svc: WapiBotEngineService;
+  let svc: BotEngineService;
 
   beforeEach(() => {
     sessionStore.clear();
@@ -228,7 +228,7 @@ describe('🤖 Engine del bot — recorrido paso a paso', () => {
       },
     );
 
-    svc = new WapiBotEngineService(
+    svc = new BotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
       adapter as never,

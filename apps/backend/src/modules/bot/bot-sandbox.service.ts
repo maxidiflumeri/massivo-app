@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../../common/prisma/prisma.service';
-import { TenantContext } from '../../../common/auth/tenant-context';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/auth/tenant-context';
 import { interpolate, interpolateAsync } from './interpolate';
 import { evaluateExpression } from './expression-engine';
 import {
@@ -9,7 +9,7 @@ import {
   BOT_OPTION_PREFIX,
   type BotMediaNode,
   type BotNode,
-} from './wapi-bot.types';
+} from './bot.types';
 import {
   applyForeach,
   applyHttpResult,
@@ -22,9 +22,9 @@ import {
   type BotData,
   type ResolvedFlow,
 } from './bot-flow-runtime';
-import { WapiBotHttpExecutor } from './wapi-bot-http-executor.service';
-import { WapiBotMediaFetchService } from './wapi-bot-media-fetch.service';
-import { WapiBotRouterService } from './wapi-bot-router.service';
+import { BotHttpExecutor } from './bot-http-executor.service';
+import { BotMediaFetchService } from './bot-media-fetch.service';
+import { BotRouterService } from './bot-router.service';
 
 /**
  * 4.O.3 — Sandbox del bot. Corre el flow `botTopicsDraft ?? botTopics ?? botFlow`
@@ -163,15 +163,15 @@ interface CfgSnapshot {
 }
 
 @Injectable()
-export class WapiBotSandboxService {
-  private readonly logger = new Logger(WapiBotSandboxService.name);
+export class BotSandboxService {
+  private readonly logger = new Logger(BotSandboxService.name);
   private readonly stores = new Map<string, SandboxStore>();
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly router: WapiBotRouterService,
-    private readonly httpExecutor: WapiBotHttpExecutor,
-    private readonly mediaFetch: WapiBotMediaFetchService,
+    private readonly router: BotRouterService,
+    private readonly httpExecutor: BotHttpExecutor,
+    private readonly mediaFetch: BotMediaFetchService,
   ) {}
 
   /**

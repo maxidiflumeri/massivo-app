@@ -7,7 +7,7 @@ import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
 import { WhatsAppAdapter } from '../../channels/adapters/whatsapp.adapter';
 import { WapiMediaService } from '../media/wapi-media.service';
-import { WapiBotEngineService } from '../bot/wapi-bot-engine.service';
+import { BotEngineService } from '../../bot/bot-engine.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
 
 describe('WapiInboxService', () => {
@@ -88,7 +88,7 @@ describe('WapiInboxService', () => {
         },
         { provide: WapiMediaService, useValue: mediaMock },
         {
-          provide: WapiBotEngineService,
+          provide: BotEngineService,
           useValue: {
             handle: jest.fn().mockResolvedValue({ handled: false }),
             isBotButtonId: jest.fn().mockReturnValue(false),

@@ -10,9 +10,9 @@ import { EventsService } from '../../events/events.service';
 import { WapiMediaService } from '../media/wapi-media.service';
 import { WapiMediaException } from '../media/wapi-media.types';
 import { WapiButtonActionService } from '../button-actions/wapi-button-action.service';
-import { WapiBotEngineService } from '../bot/wapi-bot-engine.service';
-import { WapiBotFeatureService } from '../bot/wapi-bot-feature.service';
-import { WapiBotRouterService } from '../bot/wapi-bot-router.service';
+import { BotEngineService } from '../../bot/bot-engine.service';
+import { BotFeatureService } from '../../bot/bot-feature.service';
+import { BotRouterService } from '../../bot/bot-router.service';
 import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
 import { WapiSendException } from '../sender/wapi-sender.types';
@@ -97,9 +97,9 @@ export class WapiWebhookService {
     private readonly encryption: EncryptionService,
     private readonly optOut: WapiOptOutService,
     private readonly buttonActions: WapiButtonActionService,
-    private readonly botEngine: WapiBotEngineService,
-    private readonly botFeature: WapiBotFeatureService,
-    private readonly botRouter: WapiBotRouterService,
+    private readonly botEngine: BotEngineService,
+    private readonly botFeature: BotFeatureService,
+    private readonly botRouter: BotRouterService,
     private readonly eventLogger: EventLogger,
   ) {}
 
@@ -737,9 +737,9 @@ export class WapiWebhookService {
 
   /** Parser barato para router: el engine ya lo valida; acá sólo lo necesitamos
    *  como objeto opaco para el RouterService. */
-  private parseRouter(raw: unknown): import('../bot/wapi-bot.types').BotRouter | null {
+  private parseRouter(raw: unknown): import('../../bot/bot.types').BotRouter | null {
     if (!raw || typeof raw !== 'object') return null;
-    return raw as import('../bot/wapi-bot.types').BotRouter;
+    return raw as import('../../bot/bot.types').BotRouter;
   }
 
   /**

@@ -1,13 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@massivo/prisma';
-import { PrismaService } from '../../../common/prisma/prisma.service';
-import { TenantContext } from '../../../common/auth/tenant-context';
-import { EventLogger } from '../../../common/observability/event-logger.service';
-import { ObservabilityContext } from '../../../common/observability/observability-context';
-import { EncryptionService } from '../../../common/security/encryption.service';
-import { EventsService } from '../../events/events.service';
-import { WhatsAppAdapter } from '../../channels/adapters/whatsapp.adapter';
-import { WapiSendException } from '../sender/wapi-sender.types';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/auth/tenant-context';
+import { EventLogger } from '../../common/observability/event-logger.service';
+import { ObservabilityContext } from '../../common/observability/observability-context';
+import { EncryptionService } from '../../common/security/encryption.service';
+import { EventsService } from '../events/events.service';
+import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
+import { WapiSendException } from '../wapi/sender/wapi-sender.types';
 import { interpolate, interpolateAsync } from './interpolate';
 import { evaluateExpression } from './expression-engine';
 import {
@@ -17,7 +17,7 @@ import {
   type BotFlow,
   type BotMediaNode,
   type BotNode,
-} from './wapi-bot.types';
+} from './bot.types';
 import {
   applyForeach,
   applyHttpResult,
@@ -30,10 +30,10 @@ import {
   type BotData,
   type ResolvedFlow,
 } from './bot-flow-runtime';
-import { WapiBotFeatureService } from './wapi-bot-feature.service';
-import { WapiBotHttpExecutor } from './wapi-bot-http-executor.service';
-import { WapiBotMediaFetchService } from './wapi-bot-media-fetch.service';
-import { WapiBotRouterService, type BotRouterInput } from './wapi-bot-router.service';
+import { BotFeatureService } from './bot-feature.service';
+import { BotHttpExecutor } from './bot-http-executor.service';
+import { BotMediaFetchService } from './bot-media-fetch.service';
+import { BotRouterService, type BotRouterInput } from './bot-router.service';
 
 /**
  * Trigger del motor: el inbound puede ser un texto (cliente arrancando, sin
@@ -88,18 +88,18 @@ interface SessionRow {
  * con `{{var}}`.
  */
 @Injectable()
-export class WapiBotEngineService {
-  private readonly logger = new Logger(WapiBotEngineService.name);
+export class BotEngineService {
+  private readonly logger = new Logger(BotEngineService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventsService,
     private readonly whatsapp: WhatsAppAdapter,
     private readonly encryption: EncryptionService,
-    private readonly feature: WapiBotFeatureService,
-    private readonly router: WapiBotRouterService,
-    private readonly httpExecutor: WapiBotHttpExecutor,
-    private readonly mediaFetch: WapiBotMediaFetchService,
+    private readonly feature: BotFeatureService,
+    private readonly router: BotRouterService,
+    private readonly httpExecutor: BotHttpExecutor,
+    private readonly mediaFetch: BotMediaFetchService,
     private readonly eventLogger: EventLogger,
   ) {}
 
@@ -626,7 +626,7 @@ export class WapiBotEngineService {
   /**
    * Materializa el conjunto de topics + router via `resolveTopicsRuntime` y
    * loguea los errores de validación. La lógica pura vive en bot-flow-runtime.ts
-   * (compartida con WapiBotSandboxService).
+   * (compartida con BotSandboxService).
    */
   private resolveTopics(cfg: CfgForEngine): ResolvedFlow | null {
     const r = resolveTopicsRuntime({

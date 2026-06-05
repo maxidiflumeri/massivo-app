@@ -11,16 +11,16 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ClerkAuthGuard } from '../../../common/auth/clerk-auth.guard';
-import { TenantContextGuard } from '../../../common/auth/tenant-context.guard';
-import { TenantContextInterceptor } from '../../../common/auth/tenant-context.interceptor';
-import { PoliciesGuard } from '../../../common/auth/policies.guard';
-import { CheckPolicies } from '../../../common/auth/check-policies.decorator';
-import { Audit } from '../../../common/audit/audit.decorator';
-import { WapiBotService } from './wapi-bot.service';
-import { WapiBotSandboxService } from './wapi-bot-sandbox.service';
-import { CreateBotDto, SandboxStepDto, SaveBotDraftDto, UpdateBotConfigDto } from './wapi-bot.dto';
-import { WapiBotFeatureGuard } from './wapi-bot-feature.service';
+import { ClerkAuthGuard } from '../../common/auth/clerk-auth.guard';
+import { TenantContextGuard } from '../../common/auth/tenant-context.guard';
+import { TenantContextInterceptor } from '../../common/auth/tenant-context.interceptor';
+import { PoliciesGuard } from '../../common/auth/policies.guard';
+import { CheckPolicies } from '../../common/auth/check-policies.decorator';
+import { Audit } from '../../common/audit/audit.decorator';
+import { BotService } from './bot.service';
+import { BotSandboxService } from './bot-sandbox.service';
+import { CreateBotDto, SandboxStepDto, SaveBotDraftDto, UpdateBotConfigDto } from './bot.dto';
+import { BotFeatureGuard } from './bot-feature.service';
 import type { AppAbility } from '@massivo/permissions';
 
 /**
@@ -32,12 +32,12 @@ import type { AppAbility } from '@massivo/permissions';
  * de Meta son por-WABA, así que se sube a través de un canal conectado.
  */
 @Controller('bots')
-@UseGuards(ClerkAuthGuard, TenantContextGuard, WapiBotFeatureGuard, PoliciesGuard)
+@UseGuards(ClerkAuthGuard, TenantContextGuard, BotFeatureGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
 export class BotsController {
   constructor(
-    private readonly service: WapiBotService,
-    private readonly sandbox: WapiBotSandboxService,
+    private readonly service: BotService,
+    private readonly sandbox: BotSandboxService,
   ) {}
 
   @Get()

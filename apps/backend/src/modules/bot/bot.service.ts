@@ -4,10 +4,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../../common/prisma/prisma.service';
-import { TenantContext } from '../../../common/auth/tenant-context';
-import { WapiMediaService } from '../media/wapi-media.service';
-import { detectTypeFromMime, type WapiMediaType } from '../media/wapi-media.types';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/auth/tenant-context';
+import { WapiMediaService } from '../wapi/media/wapi-media.service';
+import { detectTypeFromMime, type WapiMediaType } from '../wapi/media/wapi-media.types';
 import {
   inferImplicitVariables,
   validateBotFlow,
@@ -18,7 +18,7 @@ import {
   type BotRouter,
   type BotTopic,
   type BotVariable,
-} from './wapi-bot.types';
+} from './bot.types';
 
 export interface BotConfigSnapshot {
   configId: string;
@@ -148,8 +148,8 @@ export interface CreateBotInput {
  * inválido se rechaza con 400 (mejor errar al guardar que al recibir un inbound).
  */
 @Injectable()
-export class WapiBotService {
-  private readonly logger = new Logger(WapiBotService.name);
+export class BotService {
+  private readonly logger = new Logger(BotService.name);
 
   constructor(
     private readonly prisma: PrismaService,

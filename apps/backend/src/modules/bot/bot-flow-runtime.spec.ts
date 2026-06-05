@@ -7,7 +7,7 @@ import {
   type BotData,
   type HttpExecResult,
 } from './bot-flow-runtime';
-import type { BotForeachNode, BotHttpNode } from './wapi-bot.types';
+import type { BotForeachNode, BotHttpNode } from './bot.types';
 
 const ORIG_ENV = { ...process.env };
 

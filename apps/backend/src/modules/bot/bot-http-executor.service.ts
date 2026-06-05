@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { XMLParser } from 'fast-xml-parser';
-import { AuditLogService } from '../../../common/audit/audit-log.service';
+import { AuditLogService } from '../../common/audit/audit-log.service';
 import { interpolateAsync } from './interpolate';
-import { resolveAndValidate } from './wapi-bot-http-ssrf';
-import { WapiBotHttpRateLimiterService } from './wapi-bot-http-rate-limiter.service';
+import { resolveAndValidate } from './bot-http-ssrf';
+import { BotHttpRateLimiterService } from './bot-http-rate-limiter.service';
 import type { HttpExecResult } from './bot-flow-runtime';
-import type { BotHttpNode } from './wapi-bot.types';
+import type { BotHttpNode } from './bot.types';
 import type { BotData } from './bot-flow-runtime';
 
 /**
@@ -61,11 +61,11 @@ interface ExecuteOptions {
 }
 
 @Injectable()
-export class WapiBotHttpExecutor {
-  private readonly logger = new Logger(WapiBotHttpExecutor.name);
+export class BotHttpExecutor {
+  private readonly logger = new Logger(BotHttpExecutor.name);
 
   constructor(
-    private readonly rateLimiter: WapiBotHttpRateLimiterService,
+    private readonly rateLimiter: BotHttpRateLimiterService,
     private readonly audit: AuditLogService,
   ) {}
 

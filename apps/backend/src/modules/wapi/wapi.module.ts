@@ -23,20 +23,20 @@ import { WapiQuickRepliesController } from './quick-replies/wapi-quick-replies.c
 import { WapiQuickRepliesService } from './quick-replies/wapi-quick-replies.service';
 import { WapiOptOutService } from './opt-out/wapi-opt-out.service';
 import { WapiButtonActionService } from './button-actions/wapi-button-action.service';
-import { WapiBotEngineService } from './bot/wapi-bot-engine.service';
-import { WapiBotService } from './bot/wapi-bot.service';
-import { WapiBotController } from './bot/wapi-bot.controller';
-import { BotsController } from './bot/bots.controller';
+import { BotEngineService } from '../bot/bot-engine.service';
+import { BotService } from '../bot/bot.service';
+import { BotController } from '../bot/bot.controller';
+import { BotsController } from '../bot/bots.controller';
 import {
-  WapiBotFeatureGuard,
-  WapiBotFeatureService,
-} from './bot/wapi-bot-feature.service';
-import { WapiBotRouterService } from './bot/wapi-bot-router.service';
-import { WapiBotSandboxService } from './bot/wapi-bot-sandbox.service';
-import { WapiBotWaitingExpirerService } from './bot/wapi-bot-waiting-expirer.service';
-import { WapiBotHttpExecutor } from './bot/wapi-bot-http-executor.service';
-import { WapiBotHttpRateLimiterService } from './bot/wapi-bot-http-rate-limiter.service';
-import { WapiBotMediaFetchService } from './bot/wapi-bot-media-fetch.service';
+  BotFeatureGuard,
+  BotFeatureService,
+} from '../bot/bot-feature.service';
+import { BotRouterService } from '../bot/bot-router.service';
+import { BotSandboxService } from '../bot/bot-sandbox.service';
+import { BotWaitingExpirerService } from '../bot/bot-waiting-expirer.service';
+import { BotHttpExecutor } from '../bot/bot-http-executor.service';
+import { BotHttpRateLimiterService } from '../bot/bot-http-rate-limiter.service';
+import { BotMediaFetchService } from '../bot/bot-media-fetch.service';
 import { WapiLiveController } from './live/wapi-live.controller';
 import { WapiLiveService } from './live/wapi-live.service';
 // Fase 1b — el adapter de WhatsApp vive acá (depende sólo de WapiSenderService)
@@ -52,7 +52,7 @@ import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
     WapiWebhookController,
     WapiInboxController,
     WapiQuickRepliesController,
-    WapiBotController,
+    BotController,
     BotsController,
     WapiLiveController,
   ],
@@ -73,16 +73,16 @@ import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
     WapiQuickRepliesService,
     WapiOptOutService,
     WapiButtonActionService,
-    WapiBotEngineService,
-    WapiBotService,
-    WapiBotFeatureService,
-    WapiBotFeatureGuard,
-    WapiBotRouterService,
-    WapiBotSandboxService,
-    WapiBotWaitingExpirerService,
-    WapiBotHttpRateLimiterService,
-    WapiBotHttpExecutor,
-    WapiBotMediaFetchService,
+    BotEngineService,
+    BotService,
+    BotFeatureService,
+    BotFeatureGuard,
+    BotRouterService,
+    BotSandboxService,
+    BotWaitingExpirerService,
+    BotHttpRateLimiterService,
+    BotHttpExecutor,
+    BotMediaFetchService,
     WapiLiveService,
     WhatsAppAdapter,
   ],
@@ -92,7 +92,7 @@ import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
     WapiMediaService,
     WapiWebhookService,
     WhatsAppWebhookHandler,
-    WapiBotFeatureService,
+    BotFeatureService,
     WhatsAppAdapter,
   ],
 })

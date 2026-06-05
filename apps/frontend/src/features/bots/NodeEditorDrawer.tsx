@@ -24,7 +24,7 @@ import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import CloseIcon from '@mui/icons-material/Close';
 import UploadIcon from '@mui/icons-material/Upload';
-import { useApi } from '../../../api/client';
+import { useApi } from '../../api/client';
 import { botApi } from './api';
 import type {
   BotCaptureNode,

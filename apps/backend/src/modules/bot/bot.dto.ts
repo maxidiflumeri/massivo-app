@@ -79,7 +79,7 @@ export class CreateBotDto {
 
 /**
  * 4.O.3 — DTO para POST /wapi/configs/:id/bot/sandbox/step. Cliente virtual
- * del simulador (no se manda nada a Meta). Ver `WapiBotSandboxService.step`.
+ * del simulador (no se manda nada a Meta). Ver `BotSandboxService.step`.
  */
 export class SandboxStepDto {
   @IsString()

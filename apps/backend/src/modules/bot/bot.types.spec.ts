@@ -3,7 +3,7 @@
  * inválidas antes de persistir, así nunca queda un flow roto en DB que
  * tire al recibir un inbound.
  */
-import { validateBotFlow, type BotFlow } from './wapi-bot.types';
+import { validateBotFlow, type BotFlow } from './bot.types';
 
 describe('validateBotFlow', () => {
   function v(flow: unknown) {

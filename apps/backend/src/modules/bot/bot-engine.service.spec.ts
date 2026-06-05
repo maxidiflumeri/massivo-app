@@ -1,5 +1,5 @@
 /**
- * Tests del WapiBotEngineService (4.M). Mocks: prisma scoped + events + sender + encryption.
+ * Tests del BotEngineService (4.M). Mocks: prisma scoped + events + sender + encryption.
  *
  * Cubre:
  *  - bot deshabilitado → handled=false
@@ -13,9 +13,9 @@
  *  - sesión expirada → la cierra y rearranca
  *  - botSessionTtlMin se respeta (expiresAt = now + ttl)
  */
-import { TenantContext } from '../../../common/auth/tenant-context';
-import { WapiBotEngineService } from './wapi-bot-engine.service';
-import type { BotFlow } from './wapi-bot.types';
+import { TenantContext } from '../../common/auth/tenant-context';
+import { BotEngineService } from './bot-engine.service';
+import type { BotFlow } from './bot.types';
 
 // 4.R — EventLogger no se asserta en estos tests; Proxy noop para autocompletar
 // cualquier método llamado por el engine (botNodeEntered, botSetVar, etc).
@@ -107,7 +107,7 @@ const cfg = {
   botSessionTtlMin: 30,
 };
 
-describe('WapiBotEngineService', () => {
+describe('BotEngineService', () => {
   let prismaScoped: {
     botSession: {
       findFirst: jest.Mock;
@@ -122,7 +122,7 @@ describe('WapiBotEngineService', () => {
   let events: { emitToTeam: jest.Mock };
   let sender: { sendInteractiveButtons: jest.Mock; sendText: jest.Mock; sendMediaById: jest.Mock };
   let encryption: { decrypt: jest.Mock };
-  let svc: WapiBotEngineService;
+  let svc: BotEngineService;
 
   beforeEach(() => {
     prismaScoped = {
@@ -170,7 +170,7 @@ describe('WapiBotEngineService', () => {
         durationMs: 0,
       }),
     };
-    svc = new WapiBotEngineService(
+    svc = new BotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
       makeForwardingAdapter(sender) as never,
@@ -986,7 +986,7 @@ describe('WapiBotEngineService', () => {
       isOrgEnabled: jest.fn().mockResolvedValue(true),
       assertEnabled: jest.fn().mockResolvedValue(undefined),
     };
-    const localSvc = new WapiBotEngineService(
+    const localSvc = new BotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
       makeForwardingAdapter(sender) as never,
@@ -1078,7 +1078,7 @@ describe('WapiBotEngineService', () => {
       isOrgEnabled: jest.fn().mockResolvedValue(true),
       assertEnabled: jest.fn().mockResolvedValue(undefined),
     };
-    const localSvc = new WapiBotEngineService(
+    const localSvc = new BotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
       makeForwardingAdapter(sender) as never,

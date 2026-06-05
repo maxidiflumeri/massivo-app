@@ -1,18 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Agent, fetch as undiciFetch } from 'undici';
-import { AuditLogService } from '../../../common/audit/audit-log.service';
-import { WapiMediaService } from '../media/wapi-media.service';
+import { AuditLogService } from '../../common/audit/audit-log.service';
+import { WapiMediaService } from '../wapi/media/wapi-media.service';
 import {
   ALLOWED_MIMES_BY_TYPE,
   MEDIA_LIMITS_BY_TYPE,
   WapiMediaException,
   type WapiMediaType,
-} from '../media/wapi-media.types';
+} from '../wapi/media/wapi-media.types';
 import { interpolateAsync } from './interpolate';
-import { resolveAndValidate } from './wapi-bot-http-ssrf';
-import { WapiBotHttpRateLimiterService } from './wapi-bot-http-rate-limiter.service';
+import { resolveAndValidate } from './bot-http-ssrf';
+import { BotHttpRateLimiterService } from './bot-http-rate-limiter.service';
 import type { BotData } from './bot-flow-runtime';
-import type { BotMediaFromUrlNode } from './wapi-bot.types';
+import type { BotMediaFromUrlNode } from './bot.types';
 
 /**
  * 4.P.3 — Ejecutor de nodos MEDIA_FROM_URL. Descarga un binario desde una URL
@@ -106,11 +106,11 @@ interface ExecuteOptions {
 }
 
 @Injectable()
-export class WapiBotMediaFetchService {
-  private readonly logger = new Logger(WapiBotMediaFetchService.name);
+export class BotMediaFetchService {
+  private readonly logger = new Logger(BotMediaFetchService.name);
 
   constructor(
-    private readonly rateLimiter: WapiBotHttpRateLimiterService,
+    private readonly rateLimiter: BotHttpRateLimiterService,
     private readonly media: WapiMediaService,
     private readonly audit: AuditLogService,
   ) {}

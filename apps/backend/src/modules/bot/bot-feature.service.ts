@@ -6,8 +6,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../../common/prisma/prisma.service';
-import { TenantContext } from '../../../common/auth/tenant-context';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/auth/tenant-context';
 
 /**
  * 4.O.1 — Feature gate del bot. Dos niveles AND:
@@ -22,8 +22,8 @@ import { TenantContext } from '../../../common/auth/tenant-context';
  * SELECT con índice y cada inbound ya hace varios queries.
  */
 @Injectable()
-export class WapiBotFeatureService {
-  private readonly logger = new Logger(WapiBotFeatureService.name);
+export class BotFeatureService {
+  private readonly logger = new Logger(BotFeatureService.name);
 
   constructor(
     private readonly config: ConfigService,
@@ -87,8 +87,8 @@ export class WapiBotFeatureService {
  * después de los guards).
  */
 @Injectable()
-export class WapiBotFeatureGuard implements CanActivate {
-  constructor(private readonly feature: WapiBotFeatureService) {}
+export class BotFeatureGuard implements CanActivate {
+  constructor(private readonly feature: BotFeatureService) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<{ tenantContext?: { organizationId?: string } }>();

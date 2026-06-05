@@ -11,10 +11,10 @@
  * (devuelve el `botId`) y `prisma.scoped.bot` (estado mutable del bot).
  */
 import { BadRequestException } from '@nestjs/common';
-import { WapiBotService } from './wapi-bot.service';
-import { TenantContext } from '../../../common/auth/tenant-context';
+import { BotService } from './bot.service';
+import { TenantContext } from '../../common/auth/tenant-context';
 import type { RequestContext } from '@massivo/shared-types';
-import type { BotTopic } from './wapi-bot.types';
+import type { BotTopic } from './bot.types';
 
 const ctx: RequestContext = {
   organizationId: 'org-1',
@@ -94,12 +94,12 @@ function makeMedia() {
   return {} as never;
 }
 
-describe('WapiBotService — 4.O.3 Draft/Publish', () => {
+describe('BotService — 4.O.3 Draft/Publish', () => {
   it('saveDraft escribe en topicsDraft sin tocar topics activos', async () => {
     const { prisma, bot } = makePrisma({
       topics: [makeTopic('A', 'Activo')],
     });
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
 
     await TenantContext.run(ctx, async () => {
       const newDraft = [makeTopic('A', 'Activo'), makeTopic('B', 'Borrador')];
@@ -120,7 +120,7 @@ describe('WapiBotService — 4.O.3 Draft/Publish', () => {
       routerDraft: { rules: [], defaultTopicId: 'A' },
       draftUpdatedAt: new Date('2026-05-01T10:00:00Z'),
     });
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
 
     await TenantContext.run(ctx, async () => {
       const snap = await svc.publish('cfg-1');
@@ -141,7 +141,7 @@ describe('WapiBotService — 4.O.3 Draft/Publish', () => {
       draftUpdatedAt: new Date('2026-05-01T10:00:00Z'),
       publishedAt: new Date('2026-04-30T10:00:00Z'),
     });
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
 
     await TenantContext.run(ctx, async () => {
       const snap = await svc.discardDraft('cfg-1');
@@ -157,7 +157,7 @@ describe('WapiBotService — 4.O.3 Draft/Publish', () => {
       draftUpdatedAt: new Date('2026-04-01T10:00:00Z'),
       publishedAt: new Date('2026-05-01T10:00:00Z'),
     });
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
 
     await TenantContext.run(ctx, async () => {
       const snap = await svc.get('cfg-1');
@@ -172,7 +172,7 @@ describe('WapiBotService — 4.O.3 Draft/Publish', () => {
       routerDraft: { rules: [{ kind: 'keyword', keywords: ['x'], topicId: 'FANTASMA' }] },
       draftUpdatedAt: new Date('2026-05-01T10:00:00Z'),
     });
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
 
     await TenantContext.run(ctx, async () => {
       await expect(svc.publish('cfg-1')).rejects.toBeInstanceOf(BadRequestException);
@@ -184,7 +184,7 @@ describe('WapiBotService — 4.O.3 Draft/Publish', () => {
       topics: [makeTopic('A', 'A')],
       draftUpdatedAt: null,
     });
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
 
     await TenantContext.run(ctx, async () => {
       await expect(svc.publish('cfg-1')).rejects.toBeInstanceOf(BadRequestException);

@@ -1,13 +1,13 @@
 /**
- * Phase 0b — Tests del API bot-centric de WapiBotService (operan por botId):
+ * Phase 0b — Tests del API bot-centric de BotService (operan por botId):
  * createBot, getBot, updateBot (guard de activación), listBots, deleteBot,
  * setConfigBot (conectar/desconectar canal).
  */
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { WapiBotService } from './wapi-bot.service';
-import { TenantContext } from '../../../common/auth/tenant-context';
+import { BotService } from './bot.service';
+import { TenantContext } from '../../common/auth/tenant-context';
 import type { RequestContext } from '@massivo/shared-types';
-import type { BotTopic } from './wapi-bot.types';
+import type { BotTopic } from './bot.types';
 
 const ctx: RequestContext = {
   organizationId: 'org-1',
@@ -103,10 +103,10 @@ function makeMedia() {
   return {} as never;
 }
 
-describe('WapiBotService — API bot-centric (Phase 0b)', () => {
+describe('BotService — API bot-centric (Phase 0b)', () => {
   it('createBot crea un bot vacío y devuelve snapshot con botId/name', async () => {
     const { prisma, bots } = makePrisma();
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
     await TenantContext.run(ctx, async () => {
       const snap = await svc.createBot({ name: '  Mi Bot  ' });
       expect(snap.botId).toBe('bot-1');
@@ -119,7 +119,7 @@ describe('WapiBotService — API bot-centric (Phase 0b)', () => {
 
   it('createBot rechaza nombre vacío', async () => {
     const { prisma } = makePrisma();
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
     await TenantContext.run(ctx, async () => {
       await expect(svc.createBot({ name: '   ' })).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -128,7 +128,7 @@ describe('WapiBotService — API bot-centric (Phase 0b)', () => {
   it('getBot devuelve snapshot + canales conectados', async () => {
     const { prisma, configs } = makePrisma([{ id: 'bot-9', name: 'Bot 9', topics: [makeTopic('A')] }]);
     (configs.get('cfg-1') as Row).botId = 'bot-9';
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
     await TenantContext.run(ctx, async () => {
       const snap = await svc.getBot('bot-9');
       expect(snap.botId).toBe('bot-9');
@@ -140,7 +140,7 @@ describe('WapiBotService — API bot-centric (Phase 0b)', () => {
 
   it('getBot lanza 404 si el bot no existe en el scope', async () => {
     const { prisma } = makePrisma();
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
     await TenantContext.run(ctx, async () => {
       await expect(svc.getBot('nope')).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -148,7 +148,7 @@ describe('WapiBotService — API bot-centric (Phase 0b)', () => {
 
   it('updateBot bloquea activar un bot sin flow ni topics', async () => {
     const { prisma } = makePrisma([{ id: 'bot-2', name: 'Vacío' }]);
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
     await TenantContext.run(ctx, async () => {
       await expect(svc.updateBot('bot-2', { botEnabled: true })).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -156,7 +156,7 @@ describe('WapiBotService — API bot-centric (Phase 0b)', () => {
 
   it('updateBot permite activar si ya hay topics', async () => {
     const { prisma } = makePrisma([{ id: 'bot-3', name: 'Con topics', topics: [makeTopic('A')] }]);
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
     await TenantContext.run(ctx, async () => {
       const snap = await svc.updateBot('bot-3', { botEnabled: true });
       expect(snap.botEnabled).toBe(true);
@@ -169,7 +169,7 @@ describe('WapiBotService — API bot-centric (Phase 0b)', () => {
       { id: 'bot-b', name: 'B' },
     ]);
     (configs.get('cfg-1') as Row).botId = 'bot-a';
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
     await TenantContext.run(ctx, async () => {
       const list = await svc.listBots();
       expect(list.map((b) => b.botId).sort()).toEqual(['bot-a', 'bot-b']);
@@ -180,7 +180,7 @@ describe('WapiBotService — API bot-centric (Phase 0b)', () => {
 
   it('setConfigBot conecta un canal a un bot', async () => {
     const { prisma, configs } = makePrisma([{ id: 'bot-x', name: 'X' }]);
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
     await TenantContext.run(ctx, async () => {
       const ch = await svc.setConfigBot('cfg-1', 'bot-x');
       expect(ch.configId).toBe('cfg-1');
@@ -191,7 +191,7 @@ describe('WapiBotService — API bot-centric (Phase 0b)', () => {
   it('setConfigBot desconecta (botId=null)', async () => {
     const { prisma, configs } = makePrisma([{ id: 'bot-x', name: 'X' }]);
     (configs.get('cfg-1') as Row).botId = 'bot-x';
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
     await TenantContext.run(ctx, async () => {
       await svc.setConfigBot('cfg-1', null);
       expect((configs.get('cfg-1') as Row).botId).toBeNull();
@@ -200,7 +200,7 @@ describe('WapiBotService — API bot-centric (Phase 0b)', () => {
 
   it('deleteBot borra el bot del scope', async () => {
     const { prisma, bots } = makePrisma([{ id: 'bot-del', name: 'Del' }]);
-    const svc = new WapiBotService(prisma, makeMedia());
+    const svc = new BotService(prisma, makeMedia());
     await TenantContext.run(ctx, async () => {
       await svc.deleteBot('bot-del');
       expect(bots.has('bot-del')).toBe(false);

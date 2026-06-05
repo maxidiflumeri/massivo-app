@@ -14,7 +14,7 @@ import { EventsService } from '../../events/events.service';
 import { WhatsAppAdapter } from '../../channels/adapters/whatsapp.adapter';
 import { WapiSendException } from '../sender/wapi-sender.types';
 import { WapiMediaService } from '../media/wapi-media.service';
-import { WapiBotEngineService } from '../bot/wapi-bot-engine.service';
+import { BotEngineService } from '../../bot/bot-engine.service';
 import {
   WapiMediaException,
   type WapiMediaType,
@@ -80,7 +80,7 @@ export class WapiInboxService {
     private readonly events: EventsService,
     private readonly encryption: EncryptionService,
     private readonly media: WapiMediaService,
-    private readonly botEngine: WapiBotEngineService,
+    private readonly botEngine: BotEngineService,
   ) {}
 
   /**

@@ -2,7 +2,7 @@ import {
   isPrivateOrReservedIPv4,
   isPrivateOrReservedIPv6,
   resolveAndValidate,
-} from './wapi-bot-http-ssrf';
+} from './bot-http-ssrf';
 
 describe('wapi-bot-http-ssrf', () => {
   describe('isPrivateOrReservedIPv4', () => {

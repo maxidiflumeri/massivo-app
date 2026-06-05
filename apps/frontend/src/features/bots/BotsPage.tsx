@@ -54,10 +54,10 @@ import {
   type Connection,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useApi } from '../../../api/client';
-import { useNotify } from '../../../feedback/NotifyProvider';
-import { useConfirm } from '../../../feedback/ConfirmProvider';
-import { useColorMode } from '../../../theme/ThemeProvider';
+import { useApi } from '../../api/client';
+import { useNotify } from '../../feedback/NotifyProvider';
+import { useConfirm } from '../../feedback/ConfirmProvider';
+import { useColorMode } from '../../theme/ThemeProvider';
 import { botsApi } from './api';
 import type {
   BotCaptureNode,
@@ -172,7 +172,7 @@ function defaultRouter(topics: BotTopic[]): BotRouter {
 
 type View = 'list' | 'topic' | 'router' | 'variables';
 
-export function WapiBotsPage() {
+export function BotsPage() {
   return (
     <ReactFlowProvider>
       <BotsEditorInner />

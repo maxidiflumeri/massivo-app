@@ -28,9 +28,9 @@ import SendIcon from '@mui/icons-material/Send';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ScienceIcon from '@mui/icons-material/Science';
 import TouchAppIcon from '@mui/icons-material/TouchApp';
-import { useApi } from '../../../api/client';
-import { useNotify } from '../../../feedback/NotifyProvider';
-import { useConfirm } from '../../../feedback/ConfirmProvider';
+import { useApi } from '../../api/client';
+import { useNotify } from '../../feedback/NotifyProvider';
+import { useConfirm } from '../../feedback/ConfirmProvider';
 import { botsApi } from './api';
 import type { SandboxHttpCallSummary, SandboxOutMessage, SandboxSource } from './types';
 

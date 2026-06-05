@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { PrismaService } from '../../../common/prisma/prisma.service';
-import { EventsService } from '../../events/events.service';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { EventsService } from '../events/events.service';
 
 const TICK_MS = 5 * 60_000;
 
@@ -20,8 +20,8 @@ const TICK_MS = 5 * 60_000;
  * — el frontend dedupea por `id` al actualizar.
  */
 @Injectable()
-export class WapiBotWaitingExpirerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(WapiBotWaitingExpirerService.name);
+export class BotWaitingExpirerService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(BotWaitingExpirerService.name);
   private timer: NodeJS.Timeout | null = null;
 
   constructor(

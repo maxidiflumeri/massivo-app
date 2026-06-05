@@ -1,8 +1,8 @@
-import { WapiBotRouterService } from './wapi-bot-router.service';
-import type { BotRouter } from './wapi-bot.types';
+import { BotRouterService } from './bot-router.service';
+import type { BotRouter } from './bot.types';
 
-describe('WapiBotRouterService', () => {
-  const svc = new WapiBotRouterService();
+describe('BotRouterService', () => {
+  const svc = new BotRouterService();
 
   it('matchea template-payload con regex sin named groups', () => {
     const router: BotRouter = {

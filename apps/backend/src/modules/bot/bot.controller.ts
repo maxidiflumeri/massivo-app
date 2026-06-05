@@ -13,16 +13,16 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ClerkAuthGuard } from '../../../common/auth/clerk-auth.guard';
-import { TenantContextGuard } from '../../../common/auth/tenant-context.guard';
-import { TenantContextInterceptor } from '../../../common/auth/tenant-context.interceptor';
-import { PoliciesGuard } from '../../../common/auth/policies.guard';
-import { CheckPolicies } from '../../../common/auth/check-policies.decorator';
-import { Audit } from '../../../common/audit/audit.decorator';
-import { WapiBotService } from './wapi-bot.service';
-import { WapiBotSandboxService } from './wapi-bot-sandbox.service';
-import { SandboxStepDto, SaveBotDraftDto, UpdateBotConfigDto } from './wapi-bot.dto';
-import { WapiBotFeatureGuard } from './wapi-bot-feature.service';
+import { ClerkAuthGuard } from '../../common/auth/clerk-auth.guard';
+import { TenantContextGuard } from '../../common/auth/tenant-context.guard';
+import { TenantContextInterceptor } from '../../common/auth/tenant-context.interceptor';
+import { PoliciesGuard } from '../../common/auth/policies.guard';
+import { CheckPolicies } from '../../common/auth/check-policies.decorator';
+import { Audit } from '../../common/audit/audit.decorator';
+import { BotService } from './bot.service';
+import { BotSandboxService } from './bot-sandbox.service';
+import { SandboxStepDto, SaveBotDraftDto, UpdateBotConfigDto } from './bot.dto';
+import { BotFeatureGuard } from './bot-feature.service';
 import type { AppAbility } from '@massivo/permissions';
 
 const BOT_MEDIA_MAX_BYTES = 100 * 1024 * 1024;
@@ -33,12 +33,12 @@ const BOT_MEDIA_MAX_BYTES = 100 * 1024 * 1024;
  * proliferar.
  */
 @Controller('wapi/configs/:id/bot')
-@UseGuards(ClerkAuthGuard, TenantContextGuard, WapiBotFeatureGuard, PoliciesGuard)
+@UseGuards(ClerkAuthGuard, TenantContextGuard, BotFeatureGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
-export class WapiBotController {
+export class BotController {
   constructor(
-    private readonly service: WapiBotService,
-    private readonly sandbox: WapiBotSandboxService,
+    private readonly service: BotService,
+    private readonly sandbox: BotSandboxService,
   ) {}
 
   @Get()

@@ -1,9 +1,9 @@
 import http, { type Server } from 'node:http';
 import { AddressInfo } from 'node:net';
-import { WapiBotHttpExecutor } from './wapi-bot-http-executor.service';
-import { WapiBotHttpRateLimiterService } from './wapi-bot-http-rate-limiter.service';
-import type { AuditLogService } from '../../../common/audit/audit-log.service';
-import type { BotHttpNode } from './wapi-bot.types';
+import { BotHttpExecutor } from './bot-http-executor.service';
+import { BotHttpRateLimiterService } from './bot-http-rate-limiter.service';
+import type { AuditLogService } from '../../common/audit/audit-log.service';
+import type { BotHttpNode } from './bot.types';
 
 /**
  * Tests del executor HTTP. Para evitar mockear undici al nivel de bajo nivel,
@@ -30,7 +30,7 @@ function makeNode(overrides: Partial<BotHttpNode> = {}): BotHttpNode {
 
 const ORIG_ENV = { ...process.env };
 
-describe('WapiBotHttpExecutor', () => {
+describe('BotHttpExecutor', () => {
   let server: Server | null = null;
   let baseUrl = '';
   let lastRequest: { url?: string; method?: string; headers: Record<string, string>; body: string } = {
@@ -86,9 +86,9 @@ describe('WapiBotHttpExecutor', () => {
 
   describe('modo mock', () => {
     it('devuelve mockResponse cuando está definido', async () => {
-      const limiter = new WapiBotHttpRateLimiterService();
+      const limiter = new BotHttpRateLimiterService();
       const audit = makeAuditMock();
-      const exec = new WapiBotHttpExecutor(limiter, audit);
+      const exec = new BotHttpExecutor(limiter, audit);
       const r = await exec.execute(
         makeNode({ mockResponse: { status: 200, body: { nombre: 'Mock' } } }),
         {},
@@ -101,9 +101,9 @@ describe('WapiBotHttpExecutor', () => {
     });
 
     it('mockResponse con status 5xx → ok=false', async () => {
-      const limiter = new WapiBotHttpRateLimiterService();
+      const limiter = new BotHttpRateLimiterService();
       const audit = makeAuditMock();
-      const exec = new WapiBotHttpExecutor(limiter, audit);
+      const exec = new BotHttpExecutor(limiter, audit);
       const r = await exec.execute(
         makeNode({ mockResponse: { status: 503, body: { error: 'down' } } }),
         {},
@@ -115,9 +115,9 @@ describe('WapiBotHttpExecutor', () => {
     });
 
     it('sin mockResponse → error mock-undefined', async () => {
-      const limiter = new WapiBotHttpRateLimiterService();
+      const limiter = new BotHttpRateLimiterService();
       const audit = makeAuditMock();
-      const exec = new WapiBotHttpExecutor(limiter, audit);
+      const exec = new BotHttpExecutor(limiter, audit);
       const r = await exec.execute(makeNode(), {}, {
         mode: 'mock',
         configId: 'c1',
@@ -136,9 +136,9 @@ describe('WapiBotHttpExecutor', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ nombre: 'Juan', pedidos: 3 }),
       };
-      const limiter = new WapiBotHttpRateLimiterService();
+      const limiter = new BotHttpRateLimiterService();
       const audit = makeAuditMock();
-      const exec = new WapiBotHttpExecutor(limiter, audit);
+      const exec = new BotHttpExecutor(limiter, audit);
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/clientes/123` }),
         {},
@@ -166,8 +166,8 @@ describe('WapiBotHttpExecutor', () => {
 
     it('POST con body JSON y Content-Type auto', async () => {
       nextResponse = { status: 201, headers: { 'content-type': 'application/json' }, body: '{"id":42}' };
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({
           method: 'POST',
@@ -186,8 +186,8 @@ describe('WapiBotHttpExecutor', () => {
 
     it('interpola url con {{var}}', async () => {
       nextResponse = { status: 200, body: '{}' };
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       await exec.execute(
         makeNode({ url: `${baseUrl}/u/{{userId}}` }),
         { userId: 'abc-123' },
@@ -198,8 +198,8 @@ describe('WapiBotHttpExecutor', () => {
 
     it('interpola body JSON-safe con comillas (no rompe el JSON)', async () => {
       nextResponse = { status: 200, body: '{}' };
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       await exec.execute(
         makeNode({
           method: 'POST',
@@ -216,8 +216,8 @@ describe('WapiBotHttpExecutor', () => {
 
     it('interpola headers con {{var}}', async () => {
       nextResponse = { status: 200, body: '{}' };
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       await exec.execute(
         makeNode({
           url: `${baseUrl}/x`,
@@ -231,8 +231,8 @@ describe('WapiBotHttpExecutor', () => {
 
     it('content-type text/plain devuelve string', async () => {
       nextResponse = { status: 200, headers: { 'content-type': 'text/plain' }, body: 'hola mundo' };
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/text` }),
         {},
@@ -247,8 +247,8 @@ describe('WapiBotHttpExecutor', () => {
         headers: { 'content-type': 'application/octet-stream' },
         body: '\x00\x01\x02\x03',
       };
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/bin` }),
         {},
@@ -271,8 +271,8 @@ describe('WapiBotHttpExecutor', () => {
           '<motivo>L&#xED;mites de velocidad</motivo>' +
           '</root>',
       };
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/xml-entities` }),
         {},
@@ -311,8 +311,8 @@ describe('WapiBotHttpExecutor', () => {
 
       const soapRequestBody = `<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><getActas><dni>33689563</dni></getActas></soapenv:Body></soapenv:Envelope>`;
 
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({
           url: `${baseUrl}/soap`,
@@ -346,8 +346,8 @@ describe('WapiBotHttpExecutor', () => {
       // y no setea Content-Type, NO lo asumimos como JSON. El cliente debe
       // setearlo explícito; mientras tanto fetch manda sin Content-Type.
       nextResponse = { status: 200, headers: { 'content-type': 'text/plain' }, body: 'ok' };
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       await exec.execute(
         makeNode({
           url: `${baseUrl}/raw`,
@@ -370,8 +370,8 @@ describe('WapiBotHttpExecutor', () => {
       process.env.NODE_ENV = 'production';
       process.env.WAPI_BOT_HTTP_INSECURE_HOSTS = 'allowed.example.com';
       try {
-        const limiter = new WapiBotHttpRateLimiterService();
-        const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+        const limiter = new BotHttpRateLimiterService();
+        const exec = new BotHttpExecutor(limiter, makeAuditMock());
         const r = await exec.execute(
           makeNode({ url: `${baseUrl}/blocked` }),
           {},
@@ -393,8 +393,8 @@ describe('WapiBotHttpExecutor', () => {
       process.env.NODE_ENV = 'production';
       process.env.WAPI_BOT_HTTP_INSECURE_HOSTS = '127.0.0.1, another.example.com';
       try {
-        const limiter = new WapiBotHttpRateLimiterService();
-        const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+        const limiter = new BotHttpRateLimiterService();
+        const exec = new BotHttpExecutor(limiter, makeAuditMock());
         const r = await exec.execute(
           makeNode({ url: `${baseUrl}/allowed` }),
           {},
@@ -417,8 +417,8 @@ describe('WapiBotHttpExecutor', () => {
         headers: { 'content-type': 'application/json' },
         body: '{"error":"down"}',
       };
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/fail` }),
         {},
@@ -432,8 +432,8 @@ describe('WapiBotHttpExecutor', () => {
 
     it('redirect 302 → error redirect-not-followed', async () => {
       nextResponse = { status: 302, headers: { location: '/elsewhere' }, body: '' };
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/redir` }),
         {},
@@ -445,8 +445,8 @@ describe('WapiBotHttpExecutor', () => {
     });
 
     it('URL inválida → error invalid-url', async () => {
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: 'not-a-url' }),
         {},
@@ -457,8 +457,8 @@ describe('WapiBotHttpExecutor', () => {
     });
 
     it('scheme ftp:// → error invalid-scheme', async () => {
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: 'ftp://example.com/x' }),
         {},
@@ -470,8 +470,8 @@ describe('WapiBotHttpExecutor', () => {
 
     it('SSRF bloquea cuando allowPrivate=false', async () => {
       process.env.WAPI_BOT_HTTP_ALLOW_PRIVATE_IPS = 'false';
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: 'http://169.254.169.254/latest/meta-data/' }),
         {},
@@ -483,11 +483,11 @@ describe('WapiBotHttpExecutor', () => {
     });
 
     it('rate limited cuando se acaban los tokens', async () => {
-      const limiter = new WapiBotHttpRateLimiterService();
+      const limiter = new BotHttpRateLimiterService();
       const audit = makeAuditMock();
       // Vaciar tokens: capacity (60 default) — drenamos.
       for (let i = 0; i < 60; i++) limiter.tryAcquire('org1');
-      const exec = new WapiBotHttpExecutor(limiter, audit);
+      const exec = new BotHttpExecutor(limiter, audit);
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/x` }),
         {},
@@ -500,8 +500,8 @@ describe('WapiBotHttpExecutor', () => {
 
     it('feature disabled vía env → error feature-disabled', async () => {
       process.env.WAPI_BOT_HTTP_ENABLED = 'false';
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/x` }),
         {},
@@ -515,7 +515,7 @@ describe('WapiBotHttpExecutor', () => {
 
   describe('rate limiter (token bucket)', () => {
     it('permite los primeros N requests y bloquea el N+1', () => {
-      const lim = new WapiBotHttpRateLimiterService();
+      const lim = new BotHttpRateLimiterService();
       const cap = lim.capacityForTests;
       for (let i = 0; i < cap; i++) {
         expect(lim.tryAcquire('org-x')).toBe(true);
@@ -524,7 +524,7 @@ describe('WapiBotHttpExecutor', () => {
     });
 
     it('orgs distintas tienen buckets separados', () => {
-      const lim = new WapiBotHttpRateLimiterService();
+      const lim = new BotHttpRateLimiterService();
       for (let i = 0; i < lim.capacityForTests; i++) lim.tryAcquire('org-a');
       expect(lim.tryAcquire('org-a')).toBe(false);
       expect(lim.tryAcquire('org-b')).toBe(true);
@@ -537,8 +537,8 @@ describe('WapiBotHttpExecutor', () => {
     // atajo de IP literal en la URL → undici hace el lookup). Lo simulamos
     // usando `localhost` que en Linux suele resolverse a 127.0.0.1 vía /etc/hosts.
     it('apunta a un hostname que necesita lookup y conecta a localhost server', async () => {
-      const limiter = new WapiBotHttpRateLimiterService();
-      const exec = new WapiBotHttpExecutor(limiter, makeAuditMock());
+      const limiter = new BotHttpRateLimiterService();
+      const exec = new BotHttpExecutor(limiter, makeAuditMock());
       // Sustituimos 127.0.0.1 por 'localhost' para forzar a undici a llamar lookup.
       const localUrl = baseUrl.replace('127.0.0.1', 'localhost');
       nextResponse = {

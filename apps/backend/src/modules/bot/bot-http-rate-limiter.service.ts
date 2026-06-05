@@ -21,7 +21,7 @@ interface Bucket {
 const DEFAULT_CAPACITY = 60;
 
 @Injectable()
-export class WapiBotHttpRateLimiterService {
+export class BotHttpRateLimiterService {
   private readonly buckets = new Map<string, Bucket>();
   private readonly capacity: number;
 

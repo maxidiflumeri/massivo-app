@@ -1,9 +1,9 @@
-import { WapiBotWaitingExpirerService } from './wapi-bot-waiting-expirer.service';
+import { BotWaitingExpirerService } from './bot-waiting-expirer.service';
 
-describe('WapiBotWaitingExpirerService', () => {
+describe('BotWaitingExpirerService', () => {
   let prisma: { conversation: { findMany: jest.Mock; update: jest.Mock } };
   let events: { emitToTeam: jest.Mock };
-  let svc: WapiBotWaitingExpirerService;
+  let svc: BotWaitingExpirerService;
 
   beforeEach(() => {
     prisma = {
@@ -13,7 +13,7 @@ describe('WapiBotWaitingExpirerService', () => {
       },
     };
     events = { emitToTeam: jest.fn() };
-    svc = new WapiBotWaitingExpirerService(prisma as never, events as never);
+    svc = new BotWaitingExpirerService(prisma as never, events as never);
   });
 
   afterEach(() => {

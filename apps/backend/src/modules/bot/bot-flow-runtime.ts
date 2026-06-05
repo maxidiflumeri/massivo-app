@@ -1,7 +1,7 @@
 /**
  * 4.O.3 — Helpers puros del runtime del bot. Reusables por:
- *  - `WapiBotEngineService` (motor de prod — habla con Meta + DB).
- *  - `WapiBotSandboxService` (sandbox — corre en memoria sin tocar Meta/DB).
+ *  - `BotEngineService` (motor de prod — habla con Meta + DB).
+ *  - `BotSandboxService` (sandbox — corre en memoria sin tocar Meta/DB).
  *
  * Mantener acá garantiza que el sandbox interpreta exactamente la misma lógica
  * que prod (un bug en uno se reproduce en el otro). Sin logger, sin DB, sin
@@ -23,7 +23,7 @@ import {
   type BotTopic,
   type BotVariable,
   type BotVariableType,
-} from './wapi-bot.types';
+} from './bot.types';
 
 export const DEFAULT_TOPIC_ID = 'default';
 

@@ -8,10 +8,12 @@
 
 ## Estado actual
 
-**Fase en curso:** **Fase 0 COMPLETA** (0a+0b) + **Fase 1: 1a–1d COMPLETAS** (1d
-verificado: migración aplicada + cero drift + backend/frontend tsc limpio + specs
-verdes). Próximo: **1e** (inbox unificado API+UI + rename de contrato) o **1g**
-(rename de clases/módulo del bot). **Pendiente smoke runtime de 1d** (Chat simulado).
+**Fase en curso:** **Fase 0 COMPLETA** (0a+0b) + **Fase 1: 1a–1d + 1g COMPLETAS**.
+1d (modelo unificado) y 1g (bot fuera de `wapi/`, sin prefijo `Wapi`) commiteadas y
+verificadas (tsc limpio, specs verdes salvo 5 email pre-existentes). Próximo: **1e**
+(inbox unificado API+UI + rename del contrato socket/DTO) o **1f** (cleanup columnas
+`bot*` legacy) o **Fase 2 — Messenger**. **Smoke runtime de 1d ya OK** (usuario probó
+la página de Bots; tras fix de `Bot.configs→channels`).
 
 **Última actualización:** sesión 3 (2026-06-05).
 
@@ -131,7 +133,7 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 - [x] **1d** Modelo unificado `Channel/Conversation/Message/BotSession` (rename big-bang, greenfield). Migración `20260605120000_rename_channel_entities` aplicada + **cero drift**. Enum `ChannelType` (no `ChannelKind` por colisión legacy). Contrato HTTP/socket mantiene keys legacy (`configId`/`phone`/`window24hAt`/`metaMessageId`/`configRel`) mapeadas en la frontera → frontend intacto. Backend+frontend tsc limpio; specs verdes (full backend salvo 5 email pre-existentes). **Sin commitear; smoke runtime pendiente.**
 - [ ] **1e** Inbox unificado (API `/api/inbox` + UI con badge/filtro de canal)
 - [ ] **1f** Cleanup de tablas/columnas `Wapi*` legacy
-- [ ] **1g** Relocar/renombrar el módulo del bot (sacar de `wapi/`, quitar prefijo `Wapi`) — propuesta del usuario; recomendado hacerlo justo después de 1d (ver PLAN §1g)
+- [x] **1g** Bot fuera de `wapi/` + sin prefijo `Wapi`. Clases `WapiBot*Service→Bot*Service`, `WapiBotController→BotController`; archivos `wapi-bot-*.ts→bot-*.ts`; folder `modules/wapi/bot→modules/bot`; frontend `features/wapi/bots→features/bots`, `WapiBotsPage→BotsPage`. Los providers del bot **siguen registrados en WapiModule** (NO se creó `BotModule` propio: el engine depende directo de `WhatsAppAdapter` de WapiModule y webhook/inbox dependen del engine → módulo separado daría dependencia circular; queda para cuando el adapter se resuelva por registry). **No renombrado** (nota): enum Prisma `WapiConversationStatus` (requiere migración `ALTER TYPE`) e interfaz interna `CfgForEngine`. tsc backend+frontend limpio; 782/787 (5 email pre-existentes).
 
 ### Fases siguientes
 - [ ] Fase 2 — Messenger · Fase 3 — Instagram · Fase 4 — Webchat

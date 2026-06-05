@@ -106,7 +106,7 @@ export class WapiButtonActionService {
           );
           break;
         case 'BOT':
-          // BOT no se aplica acá — requiere WapiBotEngineService + WapiBotRouterService
+          // BOT no se aplica acá — requiere BotEngineService + BotRouterService
           // y rompería el ciclo de imports. El webhook detecta action=BOT y
           // dispara `engine.startTopic` con el topic resuelto por el router.
           this.logger.log(
