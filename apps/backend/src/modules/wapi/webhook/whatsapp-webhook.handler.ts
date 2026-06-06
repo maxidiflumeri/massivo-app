@@ -127,7 +127,7 @@ export class WhatsAppWebhookHandler {
 
     const map = new Map<string, ResolvedWebhookConfig>(
       configs.map((c) => [
-        c.phoneNumberId,
+        c.phoneNumberId!,
         {
           configId: c.id,
           organizationId: c.organizationId,

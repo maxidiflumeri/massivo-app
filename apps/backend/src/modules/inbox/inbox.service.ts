@@ -372,7 +372,7 @@ export class InboxService {
       // Fase 1b — envío vía WhatsAppAdapter (capa de canal).
       const result = await this.whatsapp.send(
         {
-          phoneNumberId: cfg.phoneNumberId,
+          phoneNumberId: cfg.phoneNumberId!,
           accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
           isTestMode: cfg.isTestMode,
         },
@@ -500,7 +500,7 @@ export class InboxService {
       // Fase 1b — envío vía WhatsAppAdapter (capa de canal).
       const result = await this.whatsapp.send(
         {
-          phoneNumberId: cfg.phoneNumberId,
+          phoneNumberId: cfg.phoneNumberId!,
           accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
           isTestMode: cfg.isTestMode,
         },

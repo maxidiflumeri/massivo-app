@@ -310,7 +310,7 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
       try {
         const result = await this.sender.sendTemplate(
           {
-            phoneNumberId: cfg.phoneNumberId,
+            phoneNumberId: cfg.phoneNumberId!,
             accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
             isTestMode: cfg.isTestMode,
           },

@@ -63,7 +63,7 @@ function toListItem(row: any): WapiConfigListItem {
   return {
     id: row.id,
     name: row.name,
-    phoneNumberId: row.phoneNumberId,
+    phoneNumberId: row.phoneNumberId ?? '',
     businessAccountId: row.businessAccountId,
     isActive: row.isActive,
     isTestMode: row.isTestMode ?? false,
@@ -109,7 +109,7 @@ export class WapiConfigsService {
     return {
       id: row.id,
       name: row.name,
-      phoneNumberId: row.phoneNumberId,
+      phoneNumberId: row.phoneNumberId ?? '',
       businessAccountId: row.businessAccountId,
       isActive: row.isActive,
       isTestMode: row.isTestMode ?? false,

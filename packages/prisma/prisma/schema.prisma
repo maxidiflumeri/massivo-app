@@ -649,10 +649,21 @@ model Channel {
   teamId                String
   name                  String?
   kind                  ChannelType @default(WHATSAPP)
-  phoneNumberId         String
+  // Identificador del proveedor por kind:
+  //  - WHATSAPP: phoneNumberId (id del número en Meta Cloud API).
+  //  - MESSENGER/INSTAGRAM: pageId (id de la página de Facebook / cuenta IG).
+  // Cada uno es nullable y tiene su propio unique por team (los NULLs no colisionan
+  // en Postgres, así un Channel WhatsApp y uno Messenger conviven sin chocar).
+  phoneNumberId         String?
+  pageId                String?
+  // WhatsApp-only (WABA). Para canales no-WhatsApp queda en '' (no tiene unique).
   businessAccountId     String
+  // Token para llamar la send API del proveedor (WhatsApp: Cloud API token;
+  // Messenger/IG: page access token). Compartido entre kinds Meta.
   accessTokenEnc        String
+  // Verify token del webhook (hub.verify_token) — compartido entre kinds Meta.
   webhookVerifyTokenEnc String
+  // App secret para validar la firma HMAC del webhook — compartido entre kinds Meta.
   appSecretEnc          String?
   welcomeMessage        String?
   optOutConfirmMessage  String?
@@ -693,6 +704,7 @@ model Channel {
   botSessions   BotSession[]
 
   @@unique([teamId, phoneNumberId])
+  @@unique([teamId, pageId])
   @@index([organizationId])
   @@index([teamId])
   @@index([botId])

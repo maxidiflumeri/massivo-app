@@ -534,7 +534,7 @@ export class WapiWebhookService {
         const result = await this.botEngine.handle(
           {
             id: cfg.id,
-            phoneNumberId: cfg.phoneNumberId,
+            phoneNumberId: cfg.phoneNumberId!,
             accessTokenEnc: cfg.accessTokenEnc,
             isTestMode: cfg.isTestMode,
             // Campos de definición desde la entidad `Bot` (Phase 0a).
@@ -647,7 +647,7 @@ export class WapiWebhookService {
   private async handleButtonAction(input: {
     cfg: {
       id: string;
-      phoneNumberId: string;
+      phoneNumberId: string | null;
       accessTokenEnc: string;
       isTestMode: boolean;
       optOutConfirmMessage: string | null;
@@ -719,7 +719,7 @@ export class WapiWebhookService {
       await this.botEngine.startTopic(
         {
           id: input.cfg.id,
-          phoneNumberId: input.cfg.phoneNumberId,
+          phoneNumberId: input.cfg.phoneNumberId!,
           accessTokenEnc: input.cfg.accessTokenEnc,
           isTestMode: input.cfg.isTestMode,
           // Campos de definición desde la entidad `Bot` (Phase 0a).
@@ -754,7 +754,7 @@ export class WapiWebhookService {
   private async sendAutoReply(input: {
     cfg: {
       id: string;
-      phoneNumberId: string;
+      phoneNumberId: string | null;
       accessTokenEnc: string;
       isTestMode: boolean;
     };
@@ -766,7 +766,7 @@ export class WapiWebhookService {
     try {
       const result = await this.sender.sendText(
         {
-          phoneNumberId: input.cfg.phoneNumberId,
+          phoneNumberId: input.cfg.phoneNumberId!,
           accessToken: this.encryption.decrypt(input.cfg.accessTokenEnc),
           isTestMode: input.cfg.isTestMode,
         },

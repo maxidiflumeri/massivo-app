@@ -284,7 +284,7 @@ export class DevSimulatorService {
       configId: cfg.id,
       organizationId: cfg.organizationId,
       teamId: cfg.teamId,
-      phoneNumberId: cfg.phoneNumberId,
+      phoneNumberId: cfg.phoneNumberId!,
       businessAccountId: cfg.businessAccountId,
     };
   }

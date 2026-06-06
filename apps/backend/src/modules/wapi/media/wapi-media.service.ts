@@ -102,7 +102,7 @@ export class WapiMediaService {
     if (!cfg) throw new WapiMediaException(`WapiConfig ${configId} no encontrado`, 'IO_ERROR');
     if (!cfg.isActive) throw new WapiMediaException('WapiConfig deshabilitada', 'IO_ERROR');
     return {
-      phoneNumberId: cfg.phoneNumberId,
+      phoneNumberId: cfg.phoneNumberId!,
       // En test mode el accessToken puede ser un placeholder no encriptado (ej
       // creado vía seed dev). Evitamos el decrypt para no romper resolveConfig.
       accessToken: cfg.isTestMode ? 'SIM_TOKEN' : this.encryption.decrypt(cfg.accessTokenEnc),
