@@ -18,41 +18,41 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import type { AppAbility } from '@massivo/permissions';
-import { ClerkAuthGuard } from '../../../common/auth/clerk-auth.guard';
-import { TenantContextGuard } from '../../../common/auth/tenant-context.guard';
-import { TenantContextInterceptor } from '../../../common/auth/tenant-context.interceptor';
-import { PoliciesGuard } from '../../../common/auth/policies.guard';
-import { CheckPolicies } from '../../../common/auth/check-policies.decorator';
-import { Audit } from '../../../common/audit/audit.decorator';
-import { WapiInboxService } from './wapi-inbox.service';
-import { WapiMediaService } from '../media/wapi-media.service';
-import { MEDIA_LIMITS_BY_TYPE } from '../media/wapi-media.types';
+import { ClerkAuthGuard } from '../../common/auth/clerk-auth.guard';
+import { TenantContextGuard } from '../../common/auth/tenant-context.guard';
+import { TenantContextInterceptor } from '../../common/auth/tenant-context.interceptor';
+import { PoliciesGuard } from '../../common/auth/policies.guard';
+import { CheckPolicies } from '../../common/auth/check-policies.decorator';
+import { Audit } from '../../common/audit/audit.decorator';
+import { InboxService } from './inbox.service';
+import { WapiMediaService } from '../wapi/media/wapi-media.service';
+import { MEDIA_LIMITS_BY_TYPE } from '../wapi/media/wapi-media.types';
 import {
-  AssignWapiConversationDto,
-  ListWapiConversationsQueryDto,
-  ListWapiMessagesQueryDto,
+  AssignConversationDto,
+  ListConversationsQueryDto,
+  ListMessagesQueryDto,
   MarkReadStateDto,
-  ResolveWapiConversationDto,
-  SendWapiInboxMediaDto,
-  SendWapiInboxTextDto,
-} from './wapi-inbox.dto';
+  ResolveConversationDto,
+  SendInboxMediaDto,
+  SendInboxTextDto,
+} from './inbox.dto';
 
 // Cap superior global para multer (100 MB = el mayor de los limites por tipo).
 // La validación fina por tipo la hace WapiMediaService.validateUpload.
 const MAX_UPLOAD_BYTES = Math.max(...Object.values(MEDIA_LIMITS_BY_TYPE));
 
-@Controller('wapi/inbox')
+@Controller('inbox')
 @UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
-export class WapiInboxController {
+export class InboxController {
   constructor(
-    private readonly service: WapiInboxService,
+    private readonly service: InboxService,
     private readonly mediaService: WapiMediaService,
   ) {}
 
   @Get('conversations')
   @CheckPolicies((a: AppAbility) => a.can('read', 'Conversation'))
-  list(@Query() query: ListWapiConversationsQueryDto) {
+  list(@Query() query: ListConversationsQueryDto) {
     return this.service.listConversations(query);
   }
 
@@ -64,15 +64,15 @@ export class WapiInboxController {
 
   @Get('conversations/:id/messages')
   @CheckPolicies((a: AppAbility) => a.can('read', 'Conversation'))
-  listMessages(@Param('id') id: string, @Query() query: ListWapiMessagesQueryDto) {
+  listMessages(@Param('id') id: string, @Query() query: ListMessagesQueryDto) {
     return this.service.listMessages(id, query);
   }
 
   @Post('conversations/:id/messages')
   @HttpCode(HttpStatus.CREATED)
   @CheckPolicies((a: AppAbility) => a.can('send', 'Conversation'))
-  @Audit({ action: 'wapi.conversation.messageSent', resourceType: 'WapiConversation', resourceIdFrom: 'param:id' })
-  sendText(@Param('id') id: string, @Body() dto: SendWapiInboxTextDto) {
+  @Audit({ action: 'inbox.conversation.messageSent', resourceType: 'Conversation', resourceIdFrom: 'param:id' })
+  sendText(@Param('id') id: string, @Body() dto: SendInboxTextDto) {
     return this.service.sendText(id, dto);
   }
 
@@ -80,10 +80,10 @@ export class WapiInboxController {
   @HttpCode(HttpStatus.CREATED)
   @CheckPolicies((a: AppAbility) => a.can('send', 'Conversation'))
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }))
-  @Audit({ action: 'wapi.conversation.mediaSent', resourceType: 'WapiConversation', resourceIdFrom: 'param:id', includeBody: false })
+  @Audit({ action: 'inbox.conversation.mediaSent', resourceType: 'Conversation', resourceIdFrom: 'param:id', includeBody: false })
   sendMedia(
     @Param('id') id: string,
-    @Body() dto: SendWapiInboxMediaDto,
+    @Body() dto: SendInboxMediaDto,
     @UploadedFile() file: Express.Multer.File | undefined,
   ) {
     if (!file) {
@@ -131,35 +131,35 @@ export class WapiInboxController {
 
   @Post('conversations/:id/take')
   @CheckPolicies((a: AppAbility) => a.can('update', 'Conversation'))
-  @Audit({ action: 'wapi.conversation.taken', resourceType: 'WapiConversation', resourceIdFrom: 'param:id' })
+  @Audit({ action: 'inbox.conversation.taken', resourceType: 'Conversation', resourceIdFrom: 'param:id' })
   take(@Param('id') id: string) {
     return this.service.take(id);
   }
 
   @Post('conversations/:id/assign')
   @CheckPolicies((a: AppAbility) => a.can('update', 'Conversation'))
-  @Audit({ action: 'wapi.conversation.assigned', resourceType: 'WapiConversation', resourceIdFrom: 'param:id' })
-  assign(@Param('id') id: string, @Body() dto: AssignWapiConversationDto) {
+  @Audit({ action: 'inbox.conversation.assigned', resourceType: 'Conversation', resourceIdFrom: 'param:id' })
+  assign(@Param('id') id: string, @Body() dto: AssignConversationDto) {
     return this.service.assignDto(id, dto);
   }
 
   @Post('conversations/:id/unassign')
   @CheckPolicies((a: AppAbility) => a.can('update', 'Conversation'))
-  @Audit({ action: 'wapi.conversation.unassigned', resourceType: 'WapiConversation', resourceIdFrom: 'param:id' })
+  @Audit({ action: 'inbox.conversation.unassigned', resourceType: 'Conversation', resourceIdFrom: 'param:id' })
   unassign(@Param('id') id: string) {
     return this.service.unassign(id);
   }
 
   @Post('conversations/:id/resolve')
   @CheckPolicies((a: AppAbility) => a.can('update', 'Conversation'))
-  @Audit({ action: 'wapi.conversation.resolved', resourceType: 'WapiConversation', resourceIdFrom: 'param:id' })
-  resolve(@Param('id') id: string, @Body() dto: ResolveWapiConversationDto) {
+  @Audit({ action: 'inbox.conversation.resolved', resourceType: 'Conversation', resourceIdFrom: 'param:id' })
+  resolve(@Param('id') id: string, @Body() dto: ResolveConversationDto) {
     return this.service.resolve(id, dto);
   }
 
   @Post('conversations/:id/reopen')
   @CheckPolicies((a: AppAbility) => a.can('update', 'Conversation'))
-  @Audit({ action: 'wapi.conversation.reopened', resourceType: 'WapiConversation', resourceIdFrom: 'param:id' })
+  @Audit({ action: 'inbox.conversation.reopened', resourceType: 'Conversation', resourceIdFrom: 'param:id' })
   reopen(@Param('id') id: string) {
     return this.service.reopen(id);
   }
@@ -167,7 +167,7 @@ export class WapiInboxController {
   // 4.O.6 — "Poner en espera": ASSIGNED → WAITING con TTL.
   @Post('conversations/:id/hold')
   @CheckPolicies((a: AppAbility) => a.can('update', 'Conversation'))
-  @Audit({ action: 'wapi.conversation.held', resourceType: 'WapiConversation', resourceIdFrom: 'param:id' })
+  @Audit({ action: 'inbox.conversation.held', resourceType: 'Conversation', resourceIdFrom: 'param:id' })
   hold(@Param('id') id: string) {
     return this.service.putOnHold(id);
   }

@@ -395,10 +395,11 @@ export class WapiWebhookService {
 
     // Eventos del inbox (4.F.3): el frontend usa estos para append a la lista
     // y a la conversación abierta sin necesidad de re-fetchear.
-    this.events.emitToTeam(tenant.teamId, 'wapi.message.new', {
+    this.events.emitToTeam(tenant.teamId, 'conversation.message.new', {
       conversationId: conversation.id,
-      configId: tenant.configId,
-      phone,
+      channelId: tenant.configId,
+      channelKind: 'WHATSAPP',
+      externalUserId: phone,
       message: {
         id: createdMessageId,
         fromMe: false,
@@ -406,7 +407,7 @@ export class WapiWebhookService {
         content: storedContent,
         status: 'received',
         timestamp: ts.toISOString(),
-        metaMessageId: msg.id,
+        externalId: msg.id,
         ...(mediaPersisted
           ? {
               mediaMime: mediaPersisted.mediaMime,
@@ -417,10 +418,11 @@ export class WapiWebhookService {
           : {}),
       },
     });
-    this.events.emitToTeam(tenant.teamId, 'wapi.conversation.updated', {
+    this.events.emitToTeam(tenant.teamId, 'conversation.updated', {
       id: conversation.id,
-      configId: tenant.configId,
-      phone,
+      channelId: tenant.configId,
+      channelKind: 'WHATSAPP',
+      externalUserId: phone,
       status: conversation.status,
       assignedUserId: conversation.assignedUserId,
       lastMessageAt: ts.toISOString(),
@@ -574,10 +576,11 @@ export class WapiWebhookService {
               unreadCount: number;
               priority: boolean;
             };
-            this.events.emitToTeam(input.teamId, 'wapi.conversation.updated', {
+            this.events.emitToTeam(input.teamId, 'conversation.updated', {
               id: u.id,
-              configId: cfg.id,
-              phone: input.phone,
+              channelId: cfg.id,
+              channelKind: 'WHATSAPP',
+              externalUserId: input.phone,
               status: u.status,
               assignedUserId: u.assignedUserId,
               lastMessageAt: u.lastMessageAt?.toISOString() ?? null,
@@ -785,10 +788,11 @@ export class WapiWebhookService {
       });
       const ctx = TenantContext.current();
       if (ctx) {
-        this.events.emitToTeam(ctx.teamId, 'wapi.message.new', {
+        this.events.emitToTeam(ctx.teamId, 'conversation.message.new', {
           conversationId: input.conversationId,
-          configId: input.cfg.id,
-          phone: input.phone,
+          channelId: input.cfg.id,
+          channelKind: 'WHATSAPP',
+          externalUserId: input.phone,
           message: {
             id: message.id,
             fromMe: true,
@@ -796,7 +800,7 @@ export class WapiWebhookService {
             content: message.content,
             status: 'sent',
             timestamp: ts.toISOString(),
-            metaMessageId: result.metaMessageId,
+            externalId: result.metaMessageId,
           },
         });
       }

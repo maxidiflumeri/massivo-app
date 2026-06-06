@@ -79,12 +79,12 @@ export class BotWaitingExpirerService implements OnModuleInit, OnModuleDestroy {
           // operador resolvió o el cliente respondió, no pisamos el cambio.
           data: { status: 'UNASSIGNED', waitingUntil: null },
         });
-        // Contrato de socket: mantenemos las keys legacy configId/phone (mapeadas
-        // desde channelId/externalUserId) para no tocar el frontend en 1d.
-        this.events.emitToTeam(row.teamId, 'wapi.conversation.updated', {
+        // Contrato de socket omnicanal (1e): channelId/externalUserId/channelKind.
+        this.events.emitToTeam(row.teamId, 'conversation.updated', {
           id: row.id,
-          configId: row.channelId,
-          phone: row.externalUserId,
+          channelId: row.channelId,
+          channelKind: 'WHATSAPP',
+          externalUserId: row.externalUserId,
           status: 'UNASSIGNED',
           waitingUntil: null,
         });

@@ -7,40 +7,41 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Prisma } from '@massivo/prisma';
-import { PrismaService } from '../../../common/prisma/prisma.service';
-import { TenantContext } from '../../../common/auth/tenant-context';
-import { EncryptionService } from '../../../common/security/encryption.service';
-import { EventsService } from '../../events/events.service';
-import { WhatsAppAdapter } from '../../channels/adapters/whatsapp.adapter';
-import { WapiSendException } from '../sender/wapi-sender.types';
-import { WapiMediaService } from '../media/wapi-media.service';
-import { BotEngineService } from '../../bot/bot-engine.service';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/auth/tenant-context';
+import { EncryptionService } from '../../common/security/encryption.service';
+import { EventsService } from '../events/events.service';
+import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
+import { WapiSendException } from '../wapi/sender/wapi-sender.types';
+import { WapiMediaService } from '../wapi/media/wapi-media.service';
+import { BotEngineService } from '../bot/bot-engine.service';
 import {
   WapiMediaException,
   type WapiMediaType,
-} from '../media/wapi-media.types';
+} from '../wapi/media/wapi-media.types';
 import type {
-  AssignWapiConversationDto,
+  AssignConversationDto,
   InboxTab,
-  ListWapiConversationsQueryDto,
-  ListWapiMessagesQueryDto,
-  ResolveWapiConversationDto,
-  SendWapiInboxMediaDto,
-  SendWapiInboxTextDto,
-} from './wapi-inbox.dto';
+  ListConversationsQueryDto,
+  ListMessagesQueryDto,
+  ResolveConversationDto,
+  SendInboxMediaDto,
+  SendInboxTextDto,
+} from './inbox.dto';
 
 const DEFAULT_LIST_LIMIT = 30;
 const DEFAULT_MESSAGES_LIMIT = 50;
 
 export interface ConversationListItem {
   id: string;
-  configId: string;
-  phone: string;
+  channelId: string;
+  channelKind: string;
+  externalUserId: string;
   name: string | null;
   status: string;
   assignedUserId: string | null;
   lastMessageAt: Date | null;
-  window24hAt: Date | null;
+  freeformWindowAt: Date | null;
   unreadCount: number;
   campaignName: string | null;
   resolvedAt: Date | null;
@@ -63,7 +64,7 @@ export interface MessagePayload {
   content: unknown;
   status: string;
   timestamp: Date;
-  metaMessageId: string | null;
+  externalId: string | null;
   mediaMime?: string | null;
   mediaSize?: number | null;
   mediaFilename?: string | null;
@@ -71,8 +72,8 @@ export interface MessagePayload {
 }
 
 @Injectable()
-export class WapiInboxService {
-  private readonly logger = new Logger(WapiInboxService.name);
+export class InboxService {
+  private readonly logger = new Logger(InboxService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -103,12 +104,12 @@ export class WapiInboxService {
   private requireContext() {
     const ctx = TenantContext.current();
     if (!ctx) {
-      throw new ForbiddenException('No hay contexto de tenant para inbox WhatsApp');
+      throw new ForbiddenException('No hay contexto de tenant para el inbox');
     }
     return ctx;
   }
 
-  async listConversations(query: ListWapiConversationsQueryDto): Promise<{
+  async listConversations(query: ListConversationsQueryDto): Promise<{
     items: ConversationListItem[];
     nextCursor: string | null;
   }> {
@@ -117,8 +118,10 @@ export class WapiInboxService {
     const limit = query.limit ?? DEFAULT_LIST_LIMIT;
 
     const where: Record<string, unknown> = {};
-    // El query DTO mantiene `configId` (contrato del frontend) → mapeo a channelId.
-    if (query.configId) where.channelId = query.configId;
+    // Filtro por canal puntual (una línea/Channel).
+    if (query.channelId) where.channelId = query.channelId;
+    // Filtro por tipo de canal (omnicanal). Dormido mientras haya un solo kind.
+    if (query.channelKind) where.channelKind = query.channelKind;
     if (query.priority) where.priority = true;
 
     // 4.O.6 — el inbox sólo muestra conversaciones escaladas. Las que están
@@ -211,13 +214,14 @@ export class WapiInboxService {
       const r = row as unknown as { waitingUntil: Date | null; lastAssignedUserId: string | null };
       return {
         id: row.id,
-        configId: row.channelId,
-        phone: row.externalUserId,
+        channelId: row.channelId,
+        channelKind: row.channelKind,
+        externalUserId: row.externalUserId,
         name: row.name,
         status: row.status,
         assignedUserId: row.assignedUserId,
         lastMessageAt: row.lastMessageAt,
-        window24hAt: row.freeformWindowAt,
+        freeformWindowAt: row.freeformWindowAt,
         unreadCount: row.unreadCount,
         campaignName: row.campaignName,
         resolvedAt: row.resolvedAt,
@@ -263,13 +267,14 @@ export class WapiInboxService {
     const r = row as unknown as { waitingUntil: Date | null; lastAssignedUserId: string | null };
     return {
       id: row.id,
-      configId: row.channelId,
-      phone: row.externalUserId,
+      channelId: row.channelId,
+      channelKind: row.channelKind,
+      externalUserId: row.externalUserId,
       name: row.name,
       status: row.status,
       assignedUserId: row.assignedUserId,
       lastMessageAt: row.lastMessageAt,
-      window24hAt: row.freeformWindowAt,
+      freeformWindowAt: row.freeformWindowAt,
       unreadCount: row.unreadCount,
       campaignName: row.campaignName,
       resolvedAt: row.resolvedAt,
@@ -291,7 +296,7 @@ export class WapiInboxService {
 
   async listMessages(
     conversationId: string,
-    query: ListWapiMessagesQueryDto,
+    query: ListMessagesQueryDto,
   ): Promise<{ items: MessagePayload[]; nextCursor: string | null }> {
     this.requireContext();
     const conv = await this.prisma.scoped.conversation.findFirst({
@@ -324,7 +329,7 @@ export class WapiInboxService {
       content: row.content,
       status: row.status,
       timestamp: row.timestamp,
-      metaMessageId: row.externalId,
+      externalId: row.externalId,
       mediaMime: row.mediaMime,
       mediaSize: row.mediaSize,
       mediaFilename: row.mediaFilename,
@@ -334,7 +339,7 @@ export class WapiInboxService {
     return { items, nextCursor };
   }
 
-  async sendText(conversationId: string, dto: SendWapiInboxTextDto): Promise<MessagePayload> {
+  async sendText(conversationId: string, dto: SendInboxTextDto): Promise<MessagePayload> {
     const ctx = this.requireContext();
     const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
@@ -346,10 +351,10 @@ export class WapiInboxService {
 
     // Fase 1b — guard de ventana de freeform dirigido por la capability del canal.
     // WhatsApp la aplica (24h); canales sin ventana (ej. webchat) la saltean.
-    const window24hAt = conv.freeformWindowAt;
+    const freeformWindowAt = conv.freeformWindowAt;
     if (
       this.whatsapp.capabilities.freeformWindow.enforced &&
-      (!window24hAt || window24hAt.getTime() < Date.now())
+      (!freeformWindowAt || freeformWindowAt.getTime() < Date.now())
     ) {
       throw new BadRequestException(
         'Ventana de 24h cerrada — sólo se puede responder con plantilla. Iniciá una campaña con template.',
@@ -359,10 +364,10 @@ export class WapiInboxService {
     const cfg = await this.prisma.scoped.channel.findFirst({
       where: { id: conv.channelId },
     });
-    if (!cfg) throw new ConflictException('La config WhatsApp asociada ya no existe');
-    if (!cfg.isActive) throw new ConflictException('La config WhatsApp está deshabilitada');
+    if (!cfg) throw new ConflictException('El canal asociado ya no existe');
+    if (!cfg.isActive) throw new ConflictException('El canal está deshabilitado');
 
-    let metaMessageId: string;
+    let externalId: string;
     try {
       // Fase 1b — envío vía WhatsAppAdapter (capa de canal).
       const result = await this.whatsapp.send(
@@ -373,7 +378,7 @@ export class WapiInboxService {
         },
         { kind: 'text', to: conv.externalUserId, text: dto.body, previewUrl: dto.previewUrl ?? false },
       );
-      metaMessageId = result.externalMessageId;
+      externalId = result.externalMessageId;
     } catch (err) {
       if (err instanceof WapiSendException) {
         throw new BadRequestException(`Meta API: ${err.detail.message}`);
@@ -386,7 +391,7 @@ export class WapiInboxService {
       data: {
         conversationId: conv.id,
         channelId: conv.channelId,
-        externalId: metaMessageId,
+        externalId,
         fromMe: true,
         type: 'text',
         content: { text: { body: dto.body } } as Prisma.InputJsonValue,
@@ -407,9 +412,10 @@ export class WapiInboxService {
       } as never,
     });
 
-    this.events.emitToTeam(ctx.teamId, 'wapi.message.new', {
+    this.events.emitToTeam(ctx.teamId, 'conversation.message.new', {
       conversationId: conv.id,
-      configId: conv.channelId,
+      channelId: conv.channelId,
+      channelKind: conv.channelKind,
       message: {
         id: message.id,
         fromMe: true,
@@ -417,10 +423,10 @@ export class WapiInboxService {
         content: message.content,
         status: 'sent',
         timestamp: ts.toISOString(),
-        metaMessageId,
+        externalId,
       },
     });
-    this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+    this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
       id: updated.id,
       status: updated.status,
       assignedUserId: updated.assignedUserId,
@@ -434,13 +440,13 @@ export class WapiInboxService {
       content: message.content,
       status: 'sent',
       timestamp: ts,
-      metaMessageId,
+      externalId,
     };
   }
 
   async sendMedia(
     conversationId: string,
-    dto: SendWapiInboxMediaDto,
+    dto: SendInboxMediaDto,
     file: { buffer: Buffer; mimetype: string; originalname: string; size: number },
   ): Promise<MessagePayload> {
     const ctx = this.requireContext();
@@ -452,10 +458,10 @@ export class WapiInboxService {
       throw new ConflictException('No se puede responder una conversación resuelta — reabrila primero');
     }
     // Fase 1b — guard de ventana dirigido por capability del canal (ver sendText).
-    const window24hAt = conv.freeformWindowAt;
+    const freeformWindowAt = conv.freeformWindowAt;
     if (
       this.whatsapp.capabilities.freeformWindow.enforced &&
-      (!window24hAt || window24hAt.getTime() < Date.now())
+      (!freeformWindowAt || freeformWindowAt.getTime() < Date.now())
     ) {
       throw new BadRequestException(
         'Ventana de 24h cerrada — sólo se puede responder con plantilla.',
@@ -465,8 +471,8 @@ export class WapiInboxService {
     const cfg = await this.prisma.scoped.channel.findFirst({
       where: { id: conv.channelId },
     });
-    if (!cfg) throw new ConflictException('La config WhatsApp asociada ya no existe');
-    if (!cfg.isActive) throw new ConflictException('La config WhatsApp está deshabilitada');
+    if (!cfg) throw new ConflictException('El canal asociado ya no existe');
+    if (!cfg.isActive) throw new ConflictException('El canal está deshabilitado');
 
     const type: WapiMediaType = dto.type;
     let upload;
@@ -489,7 +495,7 @@ export class WapiInboxService {
       throw err;
     }
 
-    let metaMessageId: string;
+    let externalId: string;
     try {
       // Fase 1b — envío vía WhatsAppAdapter (capa de canal).
       const result = await this.whatsapp.send(
@@ -507,7 +513,7 @@ export class WapiInboxService {
           filename: type === 'document' ? file.originalname : undefined,
         },
       );
-      metaMessageId = result.externalMessageId;
+      externalId = result.externalMessageId;
     } catch (err) {
       if (err instanceof WapiSendException) {
         throw new BadRequestException(`Meta API: ${err.detail.message}`);
@@ -523,7 +529,7 @@ export class WapiInboxService {
       data: {
         conversationId: conv.id,
         channelId: conv.channelId,
-        externalId: metaMessageId,
+        externalId,
         fromMe: true,
         type,
         content: { [type]: contentMedia } as Prisma.InputJsonValue,
@@ -551,9 +557,10 @@ export class WapiInboxService {
       } as never,
     });
 
-    this.events.emitToTeam(ctx.teamId, 'wapi.message.new', {
+    this.events.emitToTeam(ctx.teamId, 'conversation.message.new', {
       conversationId: conv.id,
-      configId: conv.channelId,
+      channelId: conv.channelId,
+      channelKind: conv.channelKind,
       message: {
         id: message.id,
         fromMe: true,
@@ -561,14 +568,14 @@ export class WapiInboxService {
         content: message.content,
         status: 'sent',
         timestamp: ts.toISOString(),
-        metaMessageId,
+        externalId,
         mediaMime: file.mimetype,
         mediaSize: upload.size,
         mediaFilename: file.originalname,
         mediaCaption: dto.caption ?? null,
       },
     });
-    this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+    this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
       id: updated.id,
       status: updated.status,
       assignedUserId: updated.assignedUserId,
@@ -582,12 +589,12 @@ export class WapiInboxService {
       content: message.content,
       status: 'sent',
       timestamp: ts,
-      metaMessageId,
+      externalId,
     };
   }
 
   /**
-   * Resuelve un WapiMessage por id y devuelve la metadata necesaria para que el
+   * Resuelve un Message por id y devuelve la metadata necesaria para que el
    * controller streamee el binario local. No expone el path absoluto.
    */
   async getMessageMediaMeta(messageId: string): Promise<{
@@ -635,7 +642,7 @@ export class WapiInboxService {
       select: { unreadCount: true },
     });
 
-    this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+    this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
       id: conv.id,
       unreadCount: updated.unreadCount,
     });
@@ -672,7 +679,7 @@ export class WapiInboxService {
       select: { id: true, assignedUserId: true, status: true },
     });
     await this.endBotSessionsFor(updated.id, 'operator-assign');
-    this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+    this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
       id: updated.id,
       status: updated.status,
       assignedUserId: updated.assignedUserId,
@@ -701,7 +708,7 @@ export class WapiInboxService {
       } as never,
       select: { id: true, status: true, assignedUserId: true },
     });
-    this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+    this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
       id: updated.id,
       status: updated.status,
       assignedUserId: updated.assignedUserId,
@@ -711,7 +718,7 @@ export class WapiInboxService {
 
   async resolve(
     conversationId: string,
-    dto: ResolveWapiConversationDto,
+    dto: ResolveConversationDto,
   ): Promise<{ id: string; resolvedAt: Date }> {
     const ctx = this.requireContext();
     const conv = await this.prisma.scoped.conversation.findFirst({
@@ -749,7 +756,7 @@ export class WapiInboxService {
     }
 
     await this.endBotSessionsFor(updated.id, 'resolved');
-    this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+    this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
       id: updated.id,
       status: updated.status,
       assignedUserId: updated.assignedUserId,
@@ -779,7 +786,7 @@ export class WapiInboxService {
       } as never,
       select: { id: true, status: true, assignedUserId: true },
     });
-    this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+    this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
       id: updated.id,
       status: updated.status,
       assignedUserId: updated.assignedUserId,
@@ -824,7 +831,7 @@ export class WapiInboxService {
       select: { id: true, status: true, assignedUserId: true } as never,
     });
     const u = updated as unknown as { id: string; status: string; assignedUserId: string | null };
-    this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+    this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
       id: u.id,
       status: u.status,
       assignedUserId: u.assignedUserId,
@@ -852,7 +859,7 @@ export class WapiInboxService {
 
   async assignDto(
     conversationId: string,
-    dto: AssignWapiConversationDto,
+    dto: AssignConversationDto,
   ): Promise<{ id: string; assignedUserId: string }> {
     return this.assign(conversationId, dto.userId);
   }

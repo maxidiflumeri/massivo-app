@@ -25,18 +25,18 @@ import { ApiError, useApi } from '../../api/client';
 import { useNotify } from '../../feedback/NotifyProvider';
 import { useTeamSocket } from '../../realtime/useTeamSocket';
 import type { WapiConfigListItem } from '../wapi/configs/types';
-import { inboxApi, quickRepliesApi } from '../wapi/inbox/api';
-import { ConversationHeader } from '../wapi/inbox/ConversationHeader';
-import { ConversationThread } from '../wapi/inbox/ConversationThread';
-import { MessageComposer } from '../wapi/inbox/MessageComposer';
-import { isBotInteractionMessage } from '../wapi/inbox/MessageBubble';
+import { inboxApi, quickRepliesApi } from '../inbox/api';
+import { ConversationHeader } from '../inbox/ConversationHeader';
+import { ConversationThread } from '../inbox/ConversationThread';
+import { MessageComposer } from '../inbox/MessageComposer';
+import { isBotInteractionMessage } from '../inbox/MessageBubble';
 import type {
-  WapiConversationDetail,
-  WapiInboxMediaType,
-  WapiInboxMessage,
-  WapiMessageNewEvent,
-  WapiQuickReply,
-} from '../wapi/inbox/types';
+  ConversationDetail,
+  InboxMediaType,
+  InboxMessage,
+  ConversationMessageNewEvent,
+  QuickReply,
+} from '../inbox/types';
 
 const STORAGE_KEY = 'massivo:dev-chat:state';
 
@@ -93,13 +93,13 @@ export function WapiSimulatorChatPage() {
   );
 
   // Conversación resuelta (existente o creada por primer inbound)
-  const [conversation, setConversation] = useState<WapiConversationDetail | null>(null);
-  const [messages, setMessages] = useState<WapiInboxMessage[]>([]);
+  const [conversation, setConversation] = useState<ConversationDetail | null>(null);
+  const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [loadingConv, setLoadingConv] = useState(false);
-  const [quickReplies, setQuickReplies] = useState<WapiQuickReply[]>([]);
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  const conversationRef = useRef<WapiConversationDetail | null>(null);
+  const conversationRef = useRef<ConversationDetail | null>(null);
   conversationRef.current = conversation;
 
   // Cargar configs
@@ -164,7 +164,7 @@ export function WapiSimulatorChatPage() {
         // el chat queda vacío hasta que el bot haga HANDOFF.
         includeBotHandled: true,
       });
-      const match = res.items.find((c) => c.phone === phone.trim()) ?? res.items[0];
+      const match = res.items.find((c) => c.externalUserId === phone.trim()) ?? res.items[0];
       if (!match) {
         setConversation(null);
         setMessages([]);
@@ -200,11 +200,11 @@ export function WapiSimulatorChatPage() {
   // Socket: append a la conversación abierta
   useEffect(() => {
     if (!socket) return;
-    const onNew = (ev: WapiMessageNewEvent) => {
+    const onNew = (ev: ConversationMessageNewEvent) => {
       const conv = conversationRef.current;
       if (!conv || ev.conversationId !== conv.id) {
-        // Si no hay conv resuelta pero el inbound coincide con configId+phone, re-resolver
-        if (!conv && ev.configId === configId && ev.phone === phone.trim()) {
+        // Si no hay conv resuelta pero el inbound coincide con canal+usuario, re-resolver
+        if (!conv && ev.channelId === configId && ev.externalUserId === phone.trim()) {
           void resolveConversation();
         }
         return;
@@ -214,9 +214,9 @@ export function WapiSimulatorChatPage() {
         return [ev.message, ...prev];
       });
     };
-    socket.on('wapi.message.new', onNew);
+    socket.on('conversation.message.new', onNew);
     return () => {
-      socket.off('wapi.message.new', onNew);
+      socket.off('conversation.message.new', onNew);
     };
   }, [socket, configId, phone, resolveConversation]);
 
@@ -269,7 +269,7 @@ export function WapiSimulatorChatPage() {
     }
   }
 
-  async function sendClientMedia(file: File, type: WapiInboxMediaType, caption?: string) {
+  async function sendClientMedia(file: File, type: InboxMediaType, caption?: string) {
     if (!configId || !phone.trim()) {
       notify.error('Faltan config o phone');
       return;
@@ -304,7 +304,7 @@ export function WapiSimulatorChatPage() {
     }
   }
 
-  async function operatorSendMedia(file: File, type: WapiInboxMediaType, caption?: string) {
+  async function operatorSendMedia(file: File, type: InboxMediaType, caption?: string) {
     if (!conversation) return;
     try {
       const msg = await inboxApi.sendMedia(api, conversation.id, file, type, caption);
@@ -496,7 +496,8 @@ export function WapiSimulatorChatPage() {
               />
               <MessageComposer
                 conversationId={conversation.id}
-                window24hAt={conversation.window24hAt}
+                channelKind={conversation.channelKind}
+                freeformWindowAt={conversation.freeformWindowAt}
                 isResolved={conversation.status === 'RESOLVED'}
                 quickReplies={quickReplies}
                 onSend={operatorSendText}
@@ -535,9 +536,9 @@ function ClientThread({
   onSendButton,
   loading,
 }: {
-  messages: WapiInboxMessage[];
+  messages: InboxMessage[];
   onSendText: (body: string) => Promise<unknown>;
-  onSendMedia: (file: File, type: WapiInboxMediaType, caption?: string) => Promise<void>;
+  onSendMedia: (file: File, type: InboxMediaType, caption?: string) => Promise<void>;
   onSendButton: (buttonId: string, buttonText?: string) => Promise<void>;
   loading: boolean;
 }) {
@@ -546,7 +547,7 @@ function ClientThread({
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   // Invertir fromMe para que se vea desde la perspectiva del cliente
-  const flipped = useMemo<WapiInboxMessage[]>(
+  const flipped = useMemo<InboxMessage[]>(
     () => messages.map((m) => ({ ...m, fromMe: !m.fromMe })),
     [messages],
   );
@@ -567,7 +568,7 @@ function ClientThread({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    const type: WapiInboxMediaType = file.type.startsWith('image/')
+    const type: InboxMediaType = file.type.startsWith('image/')
       ? 'image'
       : file.type.startsWith('video/')
         ? 'video'

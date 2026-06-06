@@ -15,8 +15,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useApi } from '../../../api/client';
-import { useActiveTeam } from '../../../team/TeamContext';
+import { useApi } from '../../api/client';
+import { useActiveTeam } from '../../team/TeamContext';
 import { initials } from './formatters';
 
 interface TeamMember {

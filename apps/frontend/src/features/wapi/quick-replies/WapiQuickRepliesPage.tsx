@@ -27,8 +27,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { useApi } from '../../../api/client';
 import { useNotify } from '../../../feedback/NotifyProvider';
 import { useConfirm } from '../../../feedback/ConfirmProvider';
-import { quickRepliesApi } from '../inbox/api';
-import type { WapiQuickReply } from '../inbox/types';
+import { quickRepliesApi } from '../../inbox/api';
+import type { QuickReply } from '../../inbox/types';
 
 const SHORTCUT_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 
@@ -36,9 +36,9 @@ export function WapiQuickRepliesPage() {
   const api = useApi();
   const notify = useNotify();
   const confirm = useConfirm();
-  const [items, setItems] = useState<WapiQuickReply[] | null>(null);
+  const [items, setItems] = useState<QuickReply[] | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editing, setEditing] = useState<WapiQuickReply | null>(null);
+  const [editing, setEditing] = useState<QuickReply | null>(null);
 
   async function load() {
     try {
@@ -60,12 +60,12 @@ export function WapiQuickRepliesPage() {
     setEditorOpen(true);
   }
 
-  function openEdit(qr: WapiQuickReply) {
+  function openEdit(qr: QuickReply) {
     setEditing(qr);
     setEditorOpen(true);
   }
 
-  async function handleDelete(qr: WapiQuickReply) {
+  async function handleDelete(qr: QuickReply) {
     const ok = await confirm({
       title: 'Eliminar respuesta rápida',
       message: `¿Eliminar /${qr.shortcut}? Esta acción no se puede deshacer.`,
@@ -202,7 +202,7 @@ function QuickReplyEditor({
 }: {
   open: boolean;
   onClose: () => void;
-  editing: WapiQuickReply | null;
+  editing: QuickReply | null;
   onSaved: () => void;
 }) {
   const api = useApi();

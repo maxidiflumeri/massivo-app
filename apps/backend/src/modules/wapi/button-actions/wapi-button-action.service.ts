@@ -144,10 +144,11 @@ export class WapiButtonActionService {
     });
     const ctx = TenantContext.current();
     if (ctx) {
-      this.events.emitToTeam(ctx.teamId, 'wapi.conversation.updated', {
+      this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
         id: updated.id,
-        configId,
-        phone,
+        channelId: configId,
+        channelKind: 'WHATSAPP',
+        externalUserId: phone,
         status: updated.status,
         assignedUserId: updated.assignedUserId,
         lastMessageAt: updated.lastMessageAt?.toISOString() ?? null,

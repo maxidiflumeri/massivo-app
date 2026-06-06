@@ -14,14 +14,14 @@ import DownloadIcon from '@mui/icons-material/Download';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import BrokenImageIcon from '@mui/icons-material/BrokenImage';
 import CloseIcon from '@mui/icons-material/Close';
-import { useApi } from '../../../api/client';
-import { renderWhatsAppMarkdown } from '../templates/whatsappMarkdown';
+import { useApi } from '../../api/client';
+import { renderWhatsAppMarkdown } from '../wapi/templates/whatsappMarkdown';
 import { formatTime } from './formatters';
 import { inboxApi } from './api';
-import type { WapiInboxMessage } from './types';
+import type { InboxMessage } from './types';
 
 interface Props {
-  message: WapiInboxMessage;
+  message: InboxMessage;
   showTail: boolean;
   /** Si está seteado, los botones interactivos del bubble se vuelven clickeables. */
   onInteractiveButtonClick?: (buttonId: string, title: string) => void;
@@ -187,7 +187,7 @@ function ReceiptIcon({ status }: { status: string }) {
   return <DoneIcon sx={{ fontSize: 14, opacity: 0.6 }} />;
 }
 
-function MediaContent({ message }: { message: WapiInboxMessage }) {
+function MediaContent({ message }: { message: InboxMessage }) {
   const type = message.type;
   if (type === 'image' || type === 'sticker') return <ImageBubble message={message} />;
   if (type === 'video') return <VideoBubble message={message} />;
@@ -196,7 +196,7 @@ function MediaContent({ message }: { message: WapiInboxMessage }) {
   return null;
 }
 
-function hasMediaContent(m: WapiInboxMessage): boolean {
+function hasMediaContent(m: InboxMessage): boolean {
   return m.type === 'image' || m.type === 'sticker' || m.type === 'video' || m.type === 'audio' || m.type === 'document';
 }
 
@@ -241,7 +241,7 @@ function useMediaBlobUrl(messageId: string, enabled: boolean) {
   return { url, loading, error };
 }
 
-function ImageBubble({ message }: { message: WapiInboxMessage }) {
+function ImageBubble({ message }: { message: InboxMessage }) {
   const { url, loading, error } = useMediaBlobUrl(message.id, true);
   const [zoomOpen, setZoomOpen] = useState(false);
   const isSticker = message.type === 'sticker';
@@ -316,7 +316,7 @@ function ImageBubble({ message }: { message: WapiInboxMessage }) {
   );
 }
 
-function VideoBubble({ message }: { message: WapiInboxMessage }) {
+function VideoBubble({ message }: { message: InboxMessage }) {
   const { url, loading, error } = useMediaBlobUrl(message.id, true);
   if (loading) {
     return (
@@ -338,7 +338,7 @@ function VideoBubble({ message }: { message: WapiInboxMessage }) {
   );
 }
 
-function AudioBubble({ message }: { message: WapiInboxMessage }) {
+function AudioBubble({ message }: { message: InboxMessage }) {
   const { url, loading, error } = useMediaBlobUrl(message.id, true);
   if (loading) {
     return (
@@ -353,7 +353,7 @@ function AudioBubble({ message }: { message: WapiInboxMessage }) {
   return <Box component="audio" src={url} controls sx={{ minWidth: 240, maxWidth: 320 }} />;
 }
 
-function DocumentBubble({ message }: { message: WapiInboxMessage }) {
+function DocumentBubble({ message }: { message: InboxMessage }) {
   const api = useApi();
   const [downloading, setDownloading] = useState(false);
 
@@ -437,7 +437,7 @@ function MediaErrorBox({ icon, text }: { icon: React.ReactNode; text: string }) 
  * El handoff (`bot-handoff`) sí se muestra: le da contexto al operador de por qué
  * la conversación quedó en su inbox.
  */
-export function isBotInteractionMessage(m: WapiInboxMessage): boolean {
+export function isBotInteractionMessage(m: InboxMessage): boolean {
   if (!m.content || typeof m.content !== 'object') return false;
   const c = m.content as Record<string, unknown>;
   const sys = c.system as { kind?: string } | undefined;
@@ -453,7 +453,7 @@ export function isBotInteractionMessage(m: WapiInboxMessage): boolean {
   return false;
 }
 
-function extractText(m: WapiInboxMessage): string | null {
+function extractText(m: InboxMessage): string | null {
   if (m.mediaCaption) return m.mediaCaption;
   if (!m.content || typeof m.content !== 'object') return null;
   const c = m.content as Record<string, unknown>;
@@ -480,7 +480,7 @@ interface InteractiveButton {
   title: string;
 }
 
-function extractInteractiveButtons(m: WapiInboxMessage): InteractiveButton[] {
+function extractInteractiveButtons(m: InboxMessage): InteractiveButton[] {
   if (m.type !== 'interactive' || !m.content || typeof m.content !== 'object') return [];
   const c = m.content as Record<string, unknown>;
   const inter = c.interactive as
@@ -492,7 +492,7 @@ function extractInteractiveButtons(m: WapiInboxMessage): InteractiveButton[] {
     .filter((b) => b.title);
 }
 
-function extractReactionEmoji(m: WapiInboxMessage): string | null {
+function extractReactionEmoji(m: InboxMessage): string | null {
   if (!m.content || typeof m.content !== 'object') return null;
   const c = m.content as Record<string, unknown>;
   const r = c.reaction as { emoji?: string } | undefined;

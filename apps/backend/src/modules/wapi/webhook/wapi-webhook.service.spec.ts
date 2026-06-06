@@ -555,7 +555,7 @@ describe('WapiWebhookService', () => {
       );
       expect(priorityCall).toBeDefined();
       const eventNames = events.emitToTeam.mock.calls.map((c) => c[1]);
-      expect(eventNames).toContain('wapi.conversation.updated');
+      expect(eventNames).toContain('conversation.updated');
     });
 
     it('si bot devuelve handled=false → flujo normal (welcome de primera conv)', async () => {

@@ -21,10 +21,11 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import HourglassBottomIcon from '@mui/icons-material/HourglassBottom';
 import { formatPhone, initials } from './formatters';
-import type { WapiConversationDetail } from './types';
+import { ChannelBadge } from './ChannelBadge';
+import type { ConversationDetail } from './types';
 
 interface Props {
-  conversation: WapiConversationDetail;
+  conversation: ConversationDetail;
   currentUserId: string | null;
   onTake: () => void;
   onAssign: () => void;
@@ -55,7 +56,7 @@ export function ConversationHeader({
   const isWaiting = conversation.status === 'WAITING';
   const wasMineWaiting =
     !!currentUserId && isWaiting && conversation.lastAssignedUserId === currentUserId;
-  const display = conversation.name?.trim() || formatPhone(conversation.phone);
+  const display = conversation.name?.trim() || formatPhone(conversation.externalUserId);
 
   return (
     <Box
@@ -69,7 +70,7 @@ export function ConversationHeader({
     >
       <Stack direction="row" alignItems="center" gap={1.5}>
         <Avatar sx={{ width: 40, height: 40, bgcolor: 'primary.main', fontSize: 14 }}>
-          {initials(conversation.name, conversation.phone)}
+          {initials(conversation.name, conversation.externalUserId)}
         </Avatar>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
@@ -86,10 +87,13 @@ export function ConversationHeader({
               />
             )}
           </Stack>
-          <Typography variant="caption" color="text.secondary">
-            {formatPhone(conversation.phone)}
-            {conversation.campaignName && ` · ${conversation.campaignName}`}
-          </Typography>
+          <Stack direction="row" alignItems="center" gap={0.5}>
+            <ChannelBadge kind={conversation.channelKind} size={13} />
+            <Typography variant="caption" color="text.secondary">
+              {formatPhone(conversation.externalUserId)}
+              {conversation.campaignName && ` · ${conversation.campaignName}`}
+            </Typography>
+          </Stack>
         </Box>
         <Stack direction="row" gap={0.5}>
           {!isResolved && !isMine && !isWaiting && (
@@ -172,7 +176,7 @@ export function ConversationHeader({
   );
 }
 
-function StatusChip({ conversation }: { conversation: WapiConversationDetail }) {
+function StatusChip({ conversation }: { conversation: ConversationDetail }) {
   if (conversation.status === 'RESOLVED') {
     return <Chip size="small" label="Resuelta" color="success" sx={{ height: 22 }} />;
   }

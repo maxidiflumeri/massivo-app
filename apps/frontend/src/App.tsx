@@ -21,7 +21,7 @@ import { WapiCampaignDetailPage } from './features/wapi/campaigns/WapiCampaignDe
 import { WapiConfigsPage } from './features/wapi/configs/WapiConfigsPage';
 import { WapiTemplatesListPage } from './features/wapi/templates/WapiTemplatesListPage';
 import { WapiTemplateEditorPage } from './features/wapi/templates/WapiTemplateEditorPage';
-import { WapiInboxPage } from './features/wapi/inbox/WapiInboxPage';
+import { InboxPage } from './features/inbox/InboxPage';
 import { WapiQuickRepliesPage } from './features/wapi/quick-replies/WapiQuickRepliesPage';
 import { BotsPage } from './features/bots/BotsPage';
 import { WapiLivePage } from './features/wapi/live/WapiLivePage';
@@ -73,7 +73,10 @@ export function App() {
         <Route path="wapi/campaigns" element={<WapiCampaignsListPage />} />
         <Route path="wapi/campaigns/:id" element={<WapiCampaignDetailPage />} />
         <Route path="wapi/configs" element={<WapiConfigsPage />} />
-        <Route path="wapi/inbox" element={<WapiInboxPage />} />
+        <Route path="inbox" element={<InboxPage />} />
+        {/* El inbox dejó de ser sub-feature de WhatsApp (es omnicanal) →
+            /dashboard/inbox. Redirect del path viejo por compat. */}
+        <Route path="wapi/inbox" element={<Navigate to="/dashboard/inbox" replace />} />
         <Route path="wapi/quick-replies" element={<WapiQuickRepliesPage />} />
         <Route path="bots" element={<BotsPage />} />
         {/* Bot dejó de ser sub-feature de WhatsApp (es cross-canal) → /dashboard/bots.

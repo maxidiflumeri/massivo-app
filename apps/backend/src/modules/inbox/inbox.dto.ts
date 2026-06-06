@@ -15,14 +15,21 @@ import {
 export const INBOX_TABS = ['mine', 'unassigned', 'others', 'resolved', 'all'] as const;
 export type InboxTab = (typeof INBOX_TABS)[number];
 
-export class ListWapiConversationsQueryDto {
+export class ListConversationsQueryDto {
   @IsOptional()
   @IsIn(INBOX_TABS as unknown as string[])
   tab?: InboxTab;
 
+  // Filtro por canal puntual (una línea/Channel). Multi-canal: el id de Channel.
   @IsOptional()
   @IsString()
-  configId?: string;
+  channelId?: string;
+
+  // Filtro por tipo de canal (WHATSAPP/INSTAGRAM/…). Se enciende en la UI cuando
+  // hay más de un kind; con un solo canal queda dormido.
+  @IsOptional()
+  @IsString()
+  channelKind?: string;
 
   @IsOptional()
   @IsString()
@@ -55,7 +62,7 @@ export class ListWapiConversationsQueryDto {
   includeBotHandled?: boolean;
 }
 
-export class ListWapiMessagesQueryDto {
+export class ListMessagesQueryDto {
   @IsOptional()
   @IsString()
   cursor?: string;
@@ -68,7 +75,7 @@ export class ListWapiMessagesQueryDto {
   limit?: number;
 }
 
-export class SendWapiInboxTextDto {
+export class SendInboxTextDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(1)
@@ -80,20 +87,20 @@ export class SendWapiInboxTextDto {
   previewUrl?: boolean;
 }
 
-export class AssignWapiConversationDto {
+export class AssignConversationDto {
   @IsString()
   @IsNotEmpty()
   userId!: string;
 }
 
-export class ResolveWapiConversationDto {
+export class ResolveConversationDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
   note?: string;
 }
 
-export class ReopenWapiConversationDto {
+export class ReopenConversationDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
@@ -105,13 +112,13 @@ export class MarkReadStateDto {
   read!: boolean;
 }
 
-export const WAPI_INBOX_MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'] as const;
-export type WapiInboxMediaType = (typeof WAPI_INBOX_MEDIA_TYPES)[number];
+export const INBOX_MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'] as const;
+export type InboxMediaType = (typeof INBOX_MEDIA_TYPES)[number];
 
-export class SendWapiInboxMediaDto {
+export class SendInboxMediaDto {
   /** Tipo declarado por el cliente. El service revalida con `detectTypeFromMime`. */
-  @IsIn(WAPI_INBOX_MEDIA_TYPES as unknown as string[])
-  type!: WapiInboxMediaType;
+  @IsIn(INBOX_MEDIA_TYPES as unknown as string[])
+  type!: InboxMediaType;
 
   @IsOptional()
   @IsString()

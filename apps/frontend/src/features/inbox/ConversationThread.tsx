@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Box, Chip, CircularProgress, Stack } from '@mui/material';
 import { formatDateHeader } from './formatters';
 import { MessageBubble } from './MessageBubble';
-import type { WapiInboxMessage } from './types';
+import type { InboxMessage } from './types';
 
 interface Props {
-  messages: WapiInboxMessage[];
+  messages: InboxMessage[];
   loading: boolean;
   hasMore: boolean;
   onLoadMore: () => void;

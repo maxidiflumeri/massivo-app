@@ -55,9 +55,9 @@ export function formatDateHeader(iso: string): string {
   });
 }
 
-export function isWindowOpen(window24hAt: string | null): boolean {
-  if (!window24hAt) return false;
-  return new Date(window24hAt).getTime() > Date.now();
+export function isWindowOpen(freeformWindowAt: string | null): boolean {
+  if (!freeformWindowAt) return false;
+  return new Date(freeformWindowAt).getTime() > Date.now();
 }
 
 export function initials(name: string | null, phone: string): string {

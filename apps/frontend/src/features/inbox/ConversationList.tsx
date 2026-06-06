@@ -23,11 +23,14 @@ import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import HourglassBottomIcon from '@mui/icons-material/HourglassBottom';
 import { formatPhone, formatRelative, initials } from './formatters';
-import type { InboxTab, WapiConversationListItem } from './types';
+import { ChannelBadge } from './ChannelBadge';
+import { channelLabel } from './capabilities';
+import type { ChannelKind, InboxTab, ConversationListItem } from './types';
 
-export interface InboxConfigOption {
+export interface InboxChannelOption {
   id: string;
   label: string;
+  kind: ChannelKind;
 }
 
 interface Props {
@@ -35,16 +38,18 @@ interface Props {
   onTabChange: (tab: InboxTab) => void;
   search: string;
   onSearchChange: (v: string) => void;
-  items: WapiConversationListItem[];
+  items: ConversationListItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   loading: boolean;
   hasMore: boolean;
   onLoadMore: () => void;
   loadingMore: boolean;
-  configs: InboxConfigOption[];
-  selectedConfigId: string | null;
-  onConfigChange: (id: string | null) => void;
+  channels: InboxChannelOption[];
+  selectedChannelId: string | null;
+  onChannelChange: (id: string | null) => void;
+  selectedChannelKind: ChannelKind | null;
+  onChannelKindChange: (kind: ChannelKind | null) => void;
   priorityOnly: boolean;
   onPriorityChange: (v: boolean) => void;
 }
@@ -68,20 +73,29 @@ export function ConversationList({
   hasMore,
   onLoadMore,
   loadingMore,
-  configs,
-  selectedConfigId,
-  onConfigChange,
+  channels,
+  selectedChannelId,
+  onChannelChange,
+  selectedChannelKind,
+  onChannelKindChange,
   priorityOnly,
   onPriorityChange,
 }: Props) {
   const empty = !loading && items.length === 0;
-  const showConfigSelector = configs.length > 1;
-  const showLineLabel = showConfigSelector && selectedConfigId === null;
-  const configLabelById = useMemo(() => {
+  const showChannelSelector = channels.length > 1;
+  const showLineLabel = showChannelSelector && selectedChannelId === null;
+  const channelLabelById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const c of configs) map.set(c.id, c.label);
+    for (const c of channels) map.set(c.id, c.label);
     return map;
-  }, [configs]);
+  }, [channels]);
+  // Filtro por tipo de canal (omnicanal): sólo cuando hay más de un kind vivo.
+  const distinctKinds = useMemo(() => {
+    const set = new Set<ChannelKind>();
+    for (const c of channels) set.add(c.kind);
+    return Array.from(set);
+  }, [channels]);
+  const showKindFilter = distinctKinds.length > 1;
 
   return (
     <Stack
@@ -99,7 +113,7 @@ export function ConversationList({
         <TextField
           size="small"
           fullWidth
-          placeholder="Buscar por nombre o teléfono"
+          placeholder="Buscar por nombre o usuario"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           InputProps={{
@@ -122,19 +136,44 @@ export function ConversationList({
           />
         </Stack>
       </Box>
-      {showConfigSelector && (
+      {showKindFilter && (
         <Box sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider' }}>
           <ToggleButtonGroup
-            value={selectedConfigId}
+            value={selectedChannelKind}
             exclusive
-            onChange={(_, v: string | null) => onConfigChange(v)}
+            onChange={(_, v: ChannelKind | null) => onChannelKindChange(v)}
+            size="small"
+            sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, width: '100%' }}
+          >
+            <ToggleButton value={null} sx={{ flex: 1, minWidth: 56, fontSize: 11, py: 0.5 }}>
+              Todos
+            </ToggleButton>
+            {distinctKinds.map((k) => (
+              <ToggleButton
+                key={k}
+                value={k}
+                sx={{ flex: 1, minWidth: 56, fontSize: 11, py: 0.5, gap: 0.5 }}
+              >
+                <ChannelBadge kind={k} size={14} />
+                {channelLabel(k)}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        </Box>
+      )}
+      {showChannelSelector && (
+        <Box sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider' }}>
+          <ToggleButtonGroup
+            value={selectedChannelId}
+            exclusive
+            onChange={(_, v: string | null) => onChannelChange(v)}
             size="small"
             sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, width: '100%' }}
           >
             <ToggleButton value={null} sx={{ flex: 1, minWidth: 60, fontSize: 11, py: 0.5 }}>
               Todas
             </ToggleButton>
-            {configs.map((c) => (
+            {channels.map((c) => (
               <ToggleButton
                 key={c.id}
                 value={c.id}
@@ -183,7 +222,7 @@ export function ConversationList({
                 selected={c.id === selectedId}
                 onSelect={() => onSelect(c.id)}
                 lineLabel={
-                  showLineLabel ? configLabelById.get(c.configId) ?? null : null
+                  showLineLabel ? channelLabelById.get(c.channelId) ?? null : null
                 }
               />
             ))}
@@ -235,12 +274,12 @@ function ConversationRow({
   onSelect,
   lineLabel,
 }: {
-  item: WapiConversationListItem;
+  item: ConversationListItem;
   selected: boolean;
   onSelect: () => void;
   lineLabel: string | null;
 }) {
-  const display = item.name?.trim() || formatPhone(item.phone);
+  const display = item.name?.trim() || formatPhone(item.externalUserId);
   const subtitle = coerceSubtitle(item.lastMessage?.preview);
   const time = useMemo(
     () => formatRelative(item.lastMessageAt ?? item.lastMessage?.timestamp ?? null),
@@ -272,11 +311,12 @@ function ConversationRow({
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Avatar sx={{ width: 40, height: 40, bgcolor: 'primary.main', fontSize: 14 }}>
-          {initials(item.name, item.phone)}
+          {initials(item.name, item.externalUserId)}
         </Avatar>
       </Badge>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+          <ChannelBadge kind={item.channelKind} size={15} />
           {item.priority && (
             <StarIcon
               sx={{ fontSize: 14, color: 'warning.main', flexShrink: 0 }}

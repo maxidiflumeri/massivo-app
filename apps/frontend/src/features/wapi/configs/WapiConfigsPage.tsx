@@ -47,8 +47,8 @@ import type {
   WapiConfigDetail,
   WapiConfigListItem,
 } from './types';
-import { botsApi } from '../bots/api';
-import type { BotListItem } from '../bots/types';
+import { botsApi } from '../../bots/api';
+import type { BotListItem } from '../../bots/types';
 
 interface FormState {
   name: string;

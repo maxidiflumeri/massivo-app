@@ -870,10 +870,11 @@ export class BotEngineService {
       });
       const ctx = TenantContext.current();
       if (ctx) {
-        this.events.emitToTeam(ctx.teamId, 'wapi.message.new', {
+        this.events.emitToTeam(ctx.teamId, 'conversation.message.new', {
           conversationId,
-          configId: cfg.id,
-          phone,
+          channelId: cfg.id,
+          channelKind: 'WHATSAPP',
+          externalUserId: phone,
           message: {
             id: message.id,
             fromMe: true,
@@ -881,7 +882,7 @@ export class BotEngineService {
             content: message.content,
             status: 'sent',
             timestamp: ts.toISOString(),
-            metaMessageId: result.externalMessageId,
+            externalId: result.externalMessageId,
           },
         });
       }

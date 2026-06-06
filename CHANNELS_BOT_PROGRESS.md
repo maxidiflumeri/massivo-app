@@ -8,14 +8,17 @@
 
 ## Estado actual
 
-**Fase en curso:** **Fase 0 COMPLETA** (0a+0b) + **Fase 1: 1a–1d + 1g COMPLETAS**.
-1d (modelo unificado) y 1g (bot fuera de `wapi/`, sin prefijo `Wapi`) commiteadas y
-verificadas (tsc limpio, specs verdes salvo 5 email pre-existentes). Próximo: **1e**
-(inbox unificado API+UI + rename del contrato socket/DTO) o **1f** (cleanup columnas
-`bot*` legacy) o **Fase 2 — Messenger**. **Smoke runtime de 1d ya OK** (usuario probó
-la página de Bots; tras fix de `Bot.configs→channels`).
+**Fase en curso:** **Fase 0 COMPLETA** (0a+0b) + **Fase 1: 1a–1e + 1g COMPLETAS**.
+1d (modelo unificado), 1g (bot fuera de `wapi/`) y **1e** (inbox omnicanal: relocación
+completa `modules/inbox` + `features/inbox`, contrato `channelId/externalUserId/
+freeformWindowAt/externalId/channelKind`, eventos `conversation.message.new`/
+`conversation.updated`, UI con badge/filtro de canal + composer por capabilities)
+commiteadas y verificadas (tsc back+front limpio, specs verdes salvo 5 email
+pre-existentes). Próximo: **1f** (cleanup columnas `bot*` legacy + tablas `Wapi*`) o
+**Fase 2 — Messenger**. **Smoke runtime de 1d ya OK**; **smoke de 1e pendiente** (ruta
+nueva `/dashboard/inbox`, eventos renombrados).
 
-**Última actualización:** sesión 3 (2026-06-05).
+**Última actualización:** sesión 4 (2026-06-05).
 
 **Commits en `feat/multichannel-bot` (en orden):**
 - `8f13e21` — 0a: entidad `Bot` + migración/backfill + wiring backend
@@ -131,7 +134,22 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 - [x] **1b** Rewire engine `deliverNode` + inbox `sendText/sendMedia` al `WhatsAppAdapter`; guard de ventana 24h → `capabilities.freeformWindow`. `WhatsAppAdapter` movido a `WapiModule` (sin ciclo con `ChannelsModule`). Specs engine/inbox con mock-adapter que reenvía al sender → 408/408 wapi+channels, typecheck limpio.
 - [x] **1c** `parseInbound` + webhook genérico `/api/channels/:kind/:slug` (alcance "liviana"; ver bitácora sesión 2). `parseInbound(payload)→InboundMessage[]` en `WhatsAppAdapter` (parser puro, aditivo — lo consume 1d). Lógica del webhook extraída a `WhatsAppWebhookHandler` (compartida por `/api/webhooks/wapi/:slug` legacy y `/api/channels/whatsapp/:slug` genérica). **La persistencia (`WapiWebhookService.process`) NO se tocó.** 424/424 wapi+channels, typecheck limpio. **Sin commitear (working tree).**
 - [x] **1d** Modelo unificado `Channel/Conversation/Message/BotSession` (rename big-bang, greenfield). Migración `20260605120000_rename_channel_entities` aplicada + **cero drift**. Enum `ChannelType` (no `ChannelKind` por colisión legacy). Contrato HTTP/socket mantiene keys legacy (`configId`/`phone`/`window24hAt`/`metaMessageId`/`configRel`) mapeadas en la frontera → frontend intacto. Backend+frontend tsc limpio; specs verdes (full backend salvo 5 email pre-existentes). **Sin commitear; smoke runtime pendiente.**
-- [ ] **1e** Inbox unificado (API `/api/inbox` + UI con badge/filtro de canal)
+- [x] **1e** Inbox unificado (relocación completa + contrato omnicanal + UI).
+  **Backend:** `modules/wapi/inbox → modules/inbox` (clases `WapiInbox*→Inbox*`,
+  DTOs sin prefijo, archivos `inbox.*`); nuevo `InboxModule` que importa `WapiModule`
+  (que ahora exporta `BotEngineService`) — dependencia de una vía, sin ciclo. Route
+  `/api/wapi/inbox → /api/inbox`. **Contrato:** keys `configId→channelId`,
+  `phone→externalUserId`, `window24hAt→freeformWindowAt`, `metaMessageId→externalId`,
+  +`channelKind`; eventos socket `wapi.message.new→conversation.message.new`,
+  `wapi.conversation.updated→conversation.updated` (renombrados en TODOS los emisores:
+  inbox, webhook ×3, bot-engine, button-action, waiting-expirer). Audit actions
+  `wapi.conversation.*→inbox.conversation.*`. **Frontend:** `features/wapi/inbox →
+  features/inbox` (`WapiInboxPage→InboxPage`, tipos sin prefijo); **badge de canal por
+  fila** (`ChannelBadge`), **filtro por tipo de canal** (dormido con 1 kind),
+  **composer dirigido por capabilities** (`capabilities.ts`, banner de ventana sólo si
+  el kind la impone). `/dashboard/wapi/inbox → /dashboard/inbox` (+redirect compat).
+  `WapiConfigListItem.kind` expuesto. tsc back+front 0; backend 782/787 (5 email
+  pre-existentes). **Smoke runtime pendiente.**
 - [ ] **1f** Cleanup de tablas/columnas `Wapi*` legacy
 - [x] **1g** Bot fuera de `wapi/` + sin prefijo `Wapi`. Clases `WapiBot*Service→Bot*Service`, `WapiBotController→BotController`; archivos `wapi-bot-*.ts→bot-*.ts`; folder `modules/wapi/bot→modules/bot`; frontend `features/wapi/bots→features/bots`, `WapiBotsPage→BotsPage`. Los providers del bot **siguen registrados en WapiModule** (NO se creó `BotModule` propio: el engine depende directo de `WhatsAppAdapter` de WapiModule y webhook/inbox dependen del engine → módulo separado daría dependencia circular; queda para cuando el adapter se resuelva por registry). **No renombrado** (nota): enum Prisma `WapiConversationStatus` (requiere migración `ALTER TYPE`) e interfaz interna `CfgForEngine`. tsc backend+frontend limpio; 782/787 (5 email pre-existentes).
 
@@ -141,6 +159,51 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 ---
 
 ## Bitácora (qué se hizo y por qué)
+
+### Sesión 4 — 2026-06-05 (Fase 1e — inbox omnicanal)
+- **Implementada toda la Fase 1e** (alcance "completa" + "relocación completa",
+  elegido por el usuario). Tres ejes: relocación de módulo/folder, rename del
+  contrato (HTTP+socket+keys), y UI omnicanal.
+- **Relocación backend:** `modules/wapi/inbox → modules/inbox`. Clases
+  `WapiInboxController/Service → InboxController/Service`; DTOs sin prefijo
+  (`ListConversationsQueryDto`, `SendInboxTextDto`, etc.); archivos `inbox.*`.
+  Nuevo **`InboxModule`** que importa `WapiModule` (que ahora **exporta
+  `BotEngineService`**) + `EventsModule`; registrado en `app.module`. Verificado
+  que nada en WapiModule consume el inbox → dependencia de una vía, sin ciclo
+  (mismo criterio que 1g, pero acá sí se pudo extraer el módulo).
+- **Contrato (rename big-bang, greenfield):** route `/api/wapi/inbox → /api/inbox`;
+  keys del DTO/socket `configId→channelId`, `phone→externalUserId`,
+  `window24hAt→freeformWindowAt`, `metaMessageId→externalId`, **+`channelKind`**;
+  eventos `wapi.message.new→conversation.message.new`,
+  `wapi.conversation.updated→conversation.updated`. Los eventos se renombraron en
+  **todos** los emisores (inbox ×8, webhook ×3, bot-engine, button-action,
+  waiting-expirer) con `channelId/externalUserId/channelKind` en el payload, y en
+  **todos** los consumidores (InboxPage, WapiLivePage, simulador). Audit actions
+  `wapi.conversation.* → inbox.conversation.*`, resourceType `WapiConversation →
+  Conversation`.
+- **UI omnicanal:** `features/wapi/inbox → features/inbox` (`WapiInboxPage→InboxPage`,
+  tipos sin prefijo); imports cross-folder reapuntados por el cambio de profundidad.
+  **`ChannelBadge`** (ícono+color por kind) en cada fila y en el header.
+  **Filtro por tipo de canal** (ToggleButton, sólo visible con >1 kind → dormido
+  hoy). **`capabilities.ts`** (espejo del backend) → composer dirige el banner de
+  ventana por `freeformWindow.enforced`. `WapiConfigListItem.kind` agregado
+  (back+front) para alimentar el filtro. Ruta `/dashboard/wapi/inbox →
+  /dashboard/inbox` (+redirect compat, igual patrón que 1g con bots).
+- **No tocado (a propósito):** evento legacy `wapi.message.inbound` (sin consumidor,
+  se deja); endpoint `/api/wapi/quick-replies` (feature aparte); `metaMessageId` en
+  contratos de campañas y dev-simulate (no son el inbox). El filtro por kind queda
+  dormido hasta que entre un 2º canal (Fase 2).
+- **Verificación:** tsc back+front 0; `jest src/modules/{inbox,wapi,bot,channels}`
+  424/424; full backend **782/787** (los 5 son email `prepare-html`/`ses-webhook`,
+  pre-existentes y ajenos); **`vite build` verde** (1706 módulos). **Smoke runtime
+  pendiente** (ruta + eventos nuevos).
+- **Lección (caché incremental de tsc):** `tsc --noEmit` daba 0 pero `vite build`
+  fallaba por imports relativos rotos a módulos movidos (`WapiQuickRepliesPage →
+  ../inbox/api` por el move de 1e; y un leftover de 1g: `WapiConfigsPage →
+  ../bots/api`). El `.tsbuildinfo` saltea archivos cuyo *contenido* no cambió aunque
+  el target del import se haya movido. → Tras mover/renombrar un folder, **correr
+  `vite build` (o borrar `*.tsbuildinfo` antes de tsc)**, no confiar sólo en tsc
+  incremental. Ambos imports corregidos en esta sesión.
 
 ### Sesión 3 — 2026-06-05 (Fase 1d)
 - **Implementada toda la Fase 1d** (rename big-bang `WapiConfig→Channel`,

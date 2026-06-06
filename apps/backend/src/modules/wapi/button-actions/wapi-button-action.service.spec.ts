@@ -140,7 +140,7 @@ describe('WapiButtonActionService', () => {
   });
 
   describe('apply', () => {
-    it('INBOX → marca priority + escalated + botSuspended y emite wapi.conversation.updated', async () => {
+    it('INBOX → marca priority + escalated + botSuspended y emite conversation.updated', async () => {
       await withTenant(() =>
         svc.apply({
           conversationId: 'conv-1',
@@ -160,11 +160,11 @@ describe('WapiButtonActionService', () => {
       );
       expect(events.emitToTeam).toHaveBeenCalledWith(
         'team-a',
-        'wapi.conversation.updated',
+        'conversation.updated',
         expect.objectContaining({
           id: 'conv-1',
-          configId: 'cfg-1',
-          phone: '5491100',
+          channelId: 'cfg-1',
+          externalUserId: '5491100',
           priority: true,
         }),
       );

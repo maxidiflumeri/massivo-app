@@ -21,6 +21,8 @@ export interface WapiConfigListItem {
   createdAt: Date;
   /** Phase 0b (multi-canal): bot conectado a este canal (null si ninguno). */
   botId: string | null;
+  /** Fase 1 (multi-canal): tipo de canal (WHATSAPP/INSTAGRAM/…). */
+  kind: string;
 }
 
 export interface WapiConfigDetail extends WapiConfigListItem {
@@ -67,6 +69,7 @@ function toListItem(row: any): WapiConfigListItem {
     isTestMode: row.isTestMode ?? false,
     createdAt: row.createdAt,
     botId: row.botId ?? null,
+    kind: row.kind ?? 'WHATSAPP',
   };
 }
 
@@ -111,6 +114,7 @@ export class WapiConfigsService {
       isActive: row.isActive,
       isTestMode: row.isTestMode ?? false,
       botId: row.botId ?? null,
+      kind: row.kind ?? 'WHATSAPP',
       welcomeMessage: row.welcomeMessage,
       optOutConfirmMessage: row.optOutConfirmMessage,
       optOutKeywords: row.optOutKeywords ?? [],

@@ -30,8 +30,8 @@ describe('BotWaitingExpirerService', () => {
 
   it('tick con filas vencidas → vuelve a UNASSIGNED + emite por cada team', async () => {
     prisma.conversation.findMany.mockResolvedValue([
-      { id: 'c1', teamId: 't1', configId: 'cfg1', phone: '5491100' },
-      { id: 'c2', teamId: 't2', configId: 'cfg2', phone: '5491200' },
+      { id: 'c1', teamId: 't1', channelId: 'cfg1', externalUserId: '5491100' },
+      { id: 'c2', teamId: 't2', channelId: 'cfg2', externalUserId: '5491200' },
     ]);
 
     const out = await svc.tick();
@@ -52,20 +52,20 @@ describe('BotWaitingExpirerService', () => {
     });
     expect(events.emitToTeam).toHaveBeenCalledWith(
       't1',
-      'wapi.conversation.updated',
+      'conversation.updated',
       expect.objectContaining({ id: 'c1', status: 'UNASSIGNED', waitingUntil: null }),
     );
     expect(events.emitToTeam).toHaveBeenCalledWith(
       't2',
-      'wapi.conversation.updated',
+      'conversation.updated',
       expect.objectContaining({ id: 'c2' }),
     );
   });
 
   it('si un update individual falla, el resto sigue', async () => {
     prisma.conversation.findMany.mockResolvedValue([
-      { id: 'c1', teamId: 't1', configId: 'cfg1', phone: '5491100' },
-      { id: 'c2', teamId: 't1', configId: 'cfg1', phone: '5491200' },
+      { id: 'c1', teamId: 't1', channelId: 'cfg1', externalUserId: '5491100' },
+      { id: 'c2', teamId: 't1', channelId: 'cfg1', externalUserId: '5491200' },
     ]);
     prisma.conversation.update
       .mockRejectedValueOnce(new Error('boom'))

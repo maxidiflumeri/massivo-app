@@ -73,7 +73,7 @@ export class WapiLiveService {
    * y resumen del inbox (sin asignar / en espera / escaladas + más antigua).
    *
    * No persiste estado ni emite — el frontend gatilla re-fetch ante eventos
-   * `wapi.report.updated` / `wapi.report.log` / `wapi.conversation.updated`
+   * `wapi.report.updated` / `wapi.report.log` / `conversation.updated`
    * que ya se emiten desde el worker, campañas e inbox.
    */
   async snapshot(): Promise<LiveSnapshot> {

@@ -95,7 +95,7 @@ export function WapiLivePage() {
     socket.on('disconnect', onDisconnect);
     socket.on('wapi.report.updated', trigger);
     socket.on('wapi.report.log', trigger);
-    socket.on('wapi.conversation.updated', trigger);
+    socket.on('conversation.updated', trigger);
 
     return () => {
       if (timer) clearTimeout(timer);
@@ -103,7 +103,7 @@ export function WapiLivePage() {
       socket.off('disconnect', onDisconnect);
       socket.off('wapi.report.updated', trigger);
       socket.off('wapi.report.log', trigger);
-      socket.off('wapi.conversation.updated', trigger);
+      socket.off('conversation.updated', trigger);
     };
   }, [socket, fetchSnapshot]);
 
@@ -417,7 +417,7 @@ function InboxWidget({ inbox }: { inbox: LiveSnapshot['inbox'] }) {
         />
       </Box>
       <Box sx={{ mt: 2, textAlign: 'right' }}>
-        <Button component={RouterLink} to="/dashboard/wapi/inbox" size="small">
+        <Button component={RouterLink} to="/dashboard/inbox" size="small">
           Ir al inbox
         </Button>
       </Box>

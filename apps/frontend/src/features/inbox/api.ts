@@ -1,18 +1,21 @@
-import type { ApiClient } from '../../../api/client';
+import type { ApiClient } from '../../api/client';
 import type {
+  ConversationDetail,
+  ConversationListItem,
+  InboxMediaType,
+  InboxMessage,
   InboxTab,
   ListResult,
-  WapiConversationDetail,
-  WapiConversationListItem,
-  WapiInboxMediaType,
-  WapiInboxMessage,
-  WapiQuickReply,
-  WapiResolutionNoteItem,
+  QuickReply,
+  ResolutionNoteItem,
 } from './types';
 
 export interface ListConversationsParams {
   tab?: InboxTab;
-  configId?: string;
+  /** Filtro por canal puntual (una línea/Channel). */
+  channelId?: string;
+  /** Filtro por tipo de canal (WHATSAPP/INSTAGRAM/…). */
+  channelKind?: string;
   search?: string;
   cursor?: string;
   limit?: number;
@@ -33,13 +36,13 @@ function qs(params: Record<string, string | number | boolean | undefined>): stri
 
 export const inboxApi = {
   listConversations(api: ApiClient, params: ListConversationsParams = {}) {
-    return api.get<ListResult<WapiConversationListItem>>(
-      `/api/wapi/inbox/conversations${qs(params)}`,
+    return api.get<ListResult<ConversationListItem>>(
+      `/api/inbox/conversations${qs(params)}`,
     );
   },
 
   getConversation(api: ApiClient, id: string) {
-    return api.get<WapiConversationDetail>(`/api/wapi/inbox/conversations/${id}`);
+    return api.get<ConversationDetail>(`/api/inbox/conversations/${id}`);
   },
 
   listMessages(
@@ -47,13 +50,13 @@ export const inboxApi = {
     id: string,
     params: { cursor?: string; limit?: number } = {},
   ) {
-    return api.get<ListResult<WapiInboxMessage>>(
-      `/api/wapi/inbox/conversations/${id}/messages${qs(params)}`,
+    return api.get<ListResult<InboxMessage>>(
+      `/api/inbox/conversations/${id}/messages${qs(params)}`,
     );
   },
 
   sendText(api: ApiClient, id: string, body: string, previewUrl = false) {
-    return api.post<WapiInboxMessage>(`/api/wapi/inbox/conversations/${id}/messages`, {
+    return api.post<InboxMessage>(`/api/inbox/conversations/${id}/messages`, {
       body,
       previewUrl,
     });
@@ -63,15 +66,15 @@ export const inboxApi = {
     api: ApiClient,
     id: string,
     file: File,
-    type: WapiInboxMediaType,
+    type: InboxMediaType,
     caption?: string,
   ) {
     const form = new FormData();
     form.append('file', file, file.name);
     form.append('type', type);
     if (caption) form.append('caption', caption);
-    return api.postForm<WapiInboxMessage>(
-      `/api/wapi/inbox/conversations/${id}/media`,
+    return api.postForm<InboxMessage>(
+      `/api/inbox/conversations/${id}/media`,
       form,
     );
   },
@@ -82,63 +85,63 @@ export const inboxApi = {
    * `<img src>` directo, porque no se puede pasar el Authorization header).
    */
   mediaPath(messageId: string) {
-    return `/api/wapi/inbox/messages/${messageId}/media`;
+    return `/api/inbox/messages/${messageId}/media`;
   },
 
   setRead(api: ApiClient, id: string, read: boolean) {
-    return api.post<{ unreadCount: number }>(`/api/wapi/inbox/conversations/${id}/read`, {
+    return api.post<{ unreadCount: number }>(`/api/inbox/conversations/${id}/read`, {
       read,
     });
   },
 
   take(api: ApiClient, id: string) {
     return api.post<{ id: string; assignedUserId: string }>(
-      `/api/wapi/inbox/conversations/${id}/take`,
+      `/api/inbox/conversations/${id}/take`,
     );
   },
 
   assign(api: ApiClient, id: string, userId: string) {
     return api.post<{ id: string; assignedUserId: string }>(
-      `/api/wapi/inbox/conversations/${id}/assign`,
+      `/api/inbox/conversations/${id}/assign`,
       { userId },
     );
   },
 
   unassign(api: ApiClient, id: string) {
-    return api.post<{ id: string }>(`/api/wapi/inbox/conversations/${id}/unassign`);
+    return api.post<{ id: string }>(`/api/inbox/conversations/${id}/unassign`);
   },
 
   resolve(api: ApiClient, id: string, note?: string) {
     return api.post<{ id: string; resolvedAt: string }>(
-      `/api/wapi/inbox/conversations/${id}/resolve`,
+      `/api/inbox/conversations/${id}/resolve`,
       note ? { note } : {},
     );
   },
 
   reopen(api: ApiClient, id: string) {
-    return api.post<{ id: string }>(`/api/wapi/inbox/conversations/${id}/reopen`);
+    return api.post<{ id: string }>(`/api/inbox/conversations/${id}/reopen`);
   },
 
   hold(api: ApiClient, id: string) {
     return api.post<{ id: string; waitingUntil: string }>(
-      `/api/wapi/inbox/conversations/${id}/hold`,
+      `/api/inbox/conversations/${id}/hold`,
     );
   },
 
   listNotes(api: ApiClient, id: string) {
-    return api.get<WapiResolutionNoteItem[]>(`/api/wapi/inbox/conversations/${id}/notes`);
+    return api.get<ResolutionNoteItem[]>(`/api/inbox/conversations/${id}/notes`);
   },
 };
 
 export const quickRepliesApi = {
   list(api: ApiClient) {
-    return api.get<WapiQuickReply[]>('/api/wapi/quick-replies');
+    return api.get<QuickReply[]>('/api/wapi/quick-replies');
   },
   create(api: ApiClient, input: { shortcut: string; body: string }) {
-    return api.post<WapiQuickReply>('/api/wapi/quick-replies', input);
+    return api.post<QuickReply>('/api/wapi/quick-replies', input);
   },
   update(api: ApiClient, id: string, input: { shortcut?: string; body?: string }) {
-    return api.patch<WapiQuickReply>(`/api/wapi/quick-replies/${id}`, input);
+    return api.patch<QuickReply>(`/api/wapi/quick-replies/${id}`, input);
   },
   remove(api: ApiClient, id: string) {
     return api.delete<void>(`/api/wapi/quick-replies/${id}`);

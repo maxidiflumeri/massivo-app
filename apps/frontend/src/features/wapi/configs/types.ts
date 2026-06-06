@@ -8,6 +8,8 @@ export interface WapiConfigListItem {
   createdAt: string;
   /** Phase 0b (multi-canal): bot conectado a este canal (null si ninguno). */
   botId: string | null;
+  /** Fase 1 (multi-canal): tipo de canal (WHATSAPP/INSTAGRAM/…). */
+  kind: string;
 }
 
 export interface WapiConfigDetail extends WapiConfigListItem {

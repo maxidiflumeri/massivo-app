@@ -134,7 +134,7 @@ const NAV_GROUPS: NavGroupSpec[] = [
         icon: <MonitorHeartIcon fontSize="small" />,
       },
       {
-        to: '/dashboard/wapi/inbox',
+        to: '/dashboard/inbox',
         label: 'Inbox',
         icon: <InboxIcon fontSize="small" />,
       },

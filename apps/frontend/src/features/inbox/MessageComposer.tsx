@@ -31,19 +31,21 @@ import AudiotrackIcon from '@mui/icons-material/Audiotrack';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { isWindowOpen } from './formatters';
-import type { WapiInboxMediaType, WapiQuickReply } from './types';
+import { capabilitiesFor } from './capabilities';
+import type { ChannelKind, InboxMediaType, QuickReply } from './types';
 
 interface Props {
   conversationId: string;
-  window24hAt: string | null;
+  channelKind: ChannelKind;
+  freeformWindowAt: string | null;
   isResolved: boolean;
-  quickReplies: WapiQuickReply[];
+  quickReplies: QuickReply[];
   onSend: (body: string) => Promise<void>;
-  onSendMedia: (file: File, type: WapiInboxMediaType, caption?: string) => Promise<void>;
+  onSendMedia: (file: File, type: InboxMediaType, caption?: string) => Promise<void>;
 }
 
 // Límites en MB que muestra el front (deben matchear MEDIA_LIMITS_BY_TYPE backend).
-const MEDIA_LIMITS_MB: Record<WapiInboxMediaType, number> = {
+const MEDIA_LIMITS_MB: Record<InboxMediaType, number> = {
   image: 5,
   audio: 16,
   video: 16,
@@ -51,7 +53,7 @@ const MEDIA_LIMITS_MB: Record<WapiInboxMediaType, number> = {
   sticker: 0.5,
 };
 
-const ACCEPT_BY_TYPE: Record<WapiInboxMediaType, string> = {
+const ACCEPT_BY_TYPE: Record<InboxMediaType, string> = {
   image: 'image/jpeg,image/png,image/webp',
   audio: 'audio/aac,audio/mp4,audio/mpeg,audio/amr,audio/ogg,audio/webm',
   video: 'video/mp4,video/3gpp',
@@ -69,7 +71,8 @@ const DRAFT_KEY = (id: string) => `massivo:wapi:draft:${id}`;
 
 export function MessageComposer({
   conversationId,
-  window24hAt,
+  channelKind,
+  freeformWindowAt,
   isResolved,
   quickReplies,
   onSend,
@@ -84,7 +87,7 @@ export function MessageComposer({
 
   // Attach: menú de tipo + file input oculto + dialog de preview
   const [attachAnchor, setAttachAnchor] = useState<HTMLElement | null>(null);
-  const [pendingType, setPendingType] = useState<WapiInboxMediaType | null>(null);
+  const [pendingType, setPendingType] = useState<InboxMediaType | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingCaption, setPendingCaption] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -92,7 +95,12 @@ export function MessageComposer({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const open = isWindowOpen(window24hAt);
+  // Fase 1e — composer dirigido por capabilities del canal. Canales con ventana
+  // de freeform (WA/IG/Messenger) requieren ventana abierta; los que no la
+  // imponen (webchat) están siempre "abiertos".
+  const caps = capabilitiesFor(channelKind);
+  const enforcesWindow = caps.freeformWindow.enforced;
+  const open = !enforcesWindow || isWindowOpen(freeformWindowAt);
   const blocked = isResolved || !open;
 
   // Cargar borrador al cambiar de conversación
@@ -136,7 +144,7 @@ export function MessageComposer({
     }
   }
 
-  function applyQuickReply(qr: WapiQuickReply) {
+  function applyQuickReply(qr: QuickReply) {
     const el = inputRef.current;
     if (!el) {
       setValue(qr.body);
@@ -170,7 +178,7 @@ export function MessageComposer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingFile]);
 
-  function pickType(type: WapiInboxMediaType) {
+  function pickType(type: InboxMediaType) {
     setAttachAnchor(null);
     setPendingType(type);
     // El input file se monta condicionalmente: lo disparamos en el siguiente tick.
@@ -464,7 +472,7 @@ function MediaPreview({
   url,
 }: {
   file: File;
-  type: WapiInboxMediaType | null;
+  type: InboxMediaType | null;
   url: string | null;
 }) {
   if (!url) return null;

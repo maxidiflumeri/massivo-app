@@ -20,6 +20,7 @@ import { TeamsModule } from './modules/teams/teams.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { EmailModule } from './modules/email/email.module';
 import { WapiModule } from './modules/wapi/wapi.module';
+import { InboxModule } from './modules/inbox/inbox.module';
 import { ChannelsModule } from './modules/channels/channels.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { EventsModule } from './modules/events/events.module';
@@ -48,6 +49,7 @@ import { DevModule } from './modules/dev/dev.module';
     AuditLogsModule,
     EmailModule,
     WapiModule,
+    InboxModule,
     ChannelsModule,
     ContactsModule,
     EventsModule,

@@ -1,17 +1,17 @@
 import { Test } from '@nestjs/testing';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { RequestContext } from '@massivo/shared-types';
-import { WapiInboxService } from './wapi-inbox.service';
-import { PrismaService } from '../../../common/prisma/prisma.service';
-import { EncryptionService } from '../../../common/security/encryption.service';
-import { EventsService } from '../../events/events.service';
-import { WhatsAppAdapter } from '../../channels/adapters/whatsapp.adapter';
-import { WapiMediaService } from '../media/wapi-media.service';
-import { BotEngineService } from '../../bot/bot-engine.service';
-import { TenantContext } from '../../../common/auth/tenant-context';
+import { InboxService } from './inbox.service';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { EncryptionService } from '../../common/security/encryption.service';
+import { EventsService } from '../events/events.service';
+import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
+import { WapiMediaService } from '../wapi/media/wapi-media.service';
+import { BotEngineService } from '../bot/bot-engine.service';
+import { TenantContext } from '../../common/auth/tenant-context';
 
-describe('WapiInboxService', () => {
-  let service: WapiInboxService;
+describe('InboxService', () => {
+  let service: InboxService;
   let prismaMock: Record<string, any>;
   let senderMock: { sendText: jest.Mock; sendMediaById: jest.Mock };
   let eventsMock: { emitToTeam: jest.Mock };
@@ -78,7 +78,7 @@ describe('WapiInboxService', () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        WapiInboxService,
+        InboxService,
         { provide: PrismaService, useValue: { scoped: prismaMock } },
         { provide: WhatsAppAdapter, useValue: adapterMock },
         { provide: EventsService, useValue: eventsMock },
@@ -98,7 +98,7 @@ describe('WapiInboxService', () => {
       ],
     }).compile();
 
-    service = moduleRef.get(WapiInboxService);
+    service = moduleRef.get(InboxService);
   });
 
   it('listConversations filtra por tab=mine: ASSIGNED a mí + WAITING con lastAssignedUserId=mí', async () => {
@@ -173,7 +173,7 @@ describe('WapiInboxService', () => {
       service.sendText('c1', { body: 'hola' }),
     );
 
-    expect(res.metaMessageId).toBe('wamid.x');
+    expect(res.externalId).toBe('wamid.x');
     expect(prismaMock.conversation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'ASSIGNED', assignedUserId: 'u1' }),
@@ -181,7 +181,7 @@ describe('WapiInboxService', () => {
     );
     expect(eventsMock.emitToTeam).toHaveBeenCalledWith(
       'team1',
-      'wapi.message.new',
+      'conversation.message.new',
       expect.any(Object),
     );
   });
@@ -285,7 +285,7 @@ describe('WapiInboxService', () => {
       ),
     );
 
-    expect(out.metaMessageId).toBe('wamid.media.x');
+    expect(out.externalId).toBe('wamid.media.x');
     expect(mediaMock.uploadToMeta).toHaveBeenCalledWith(
       expect.objectContaining({ configId: 'cfg1', type: 'image', mime: 'image/jpeg' }),
     );

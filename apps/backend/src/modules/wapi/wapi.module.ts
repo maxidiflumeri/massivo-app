@@ -16,8 +16,6 @@ import { WapiTemplatesPostingService } from './templates-posting/wapi-templates-
 import { WapiWebhookController } from './webhook/wapi-webhook.controller';
 import { WapiWebhookService } from './webhook/wapi-webhook.service';
 import { WhatsAppWebhookHandler } from './webhook/whatsapp-webhook.handler';
-import { WapiInboxController } from './inbox/wapi-inbox.controller';
-import { WapiInboxService } from './inbox/wapi-inbox.service';
 import { WapiMediaService } from './media/wapi-media.service';
 import { WapiQuickRepliesController } from './quick-replies/wapi-quick-replies.controller';
 import { WapiQuickRepliesService } from './quick-replies/wapi-quick-replies.service';
@@ -50,7 +48,6 @@ import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
     WapiTemplatesController,
     WapiCampaignsController,
     WapiWebhookController,
-    WapiInboxController,
     WapiQuickRepliesController,
     BotController,
     BotsController,
@@ -68,7 +65,6 @@ import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
     WhatsAppWebhookHandler,
     WapiTemplatesSyncService,
     WapiTemplatesPostingService,
-    WapiInboxService,
     WapiMediaService,
     WapiQuickRepliesService,
     WapiOptOutService,
@@ -93,6 +89,8 @@ import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
     WapiWebhookService,
     WhatsAppWebhookHandler,
     BotFeatureService,
+    // Exportado para InboxModule (modules/inbox), que reusa el motor del bot.
+    BotEngineService,
     WhatsAppAdapter,
   ],
 })
