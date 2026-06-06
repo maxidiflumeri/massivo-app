@@ -85,6 +85,18 @@ const NAV_GROUPS: NavGroupSpec[] = [
         },
       ]
     : []),
+  // Inbox: omnicanal (Conversation/Channel unificados) → sección propia, fuera de
+  // WhatsApp. El badge por fila indica el canal de cada conversación.
+  {
+    label: 'Conversaciones',
+    items: [
+      {
+        to: '/dashboard/inbox',
+        label: 'Inbox',
+        icon: <InboxIcon fontSize="small" />,
+      },
+    ],
+  },
   {
     label: 'Email',
     items: [
@@ -132,11 +144,6 @@ const NAV_GROUPS: NavGroupSpec[] = [
         to: '/dashboard/wapi/live',
         label: 'Dashboard live',
         icon: <MonitorHeartIcon fontSize="small" />,
-      },
-      {
-        to: '/dashboard/inbox',
-        label: 'Inbox',
-        icon: <InboxIcon fontSize="small" />,
       },
       {
         to: '/dashboard/wapi/campaigns',
