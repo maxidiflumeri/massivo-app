@@ -6,7 +6,8 @@ import { EventLogger } from '../../common/observability/event-logger.service';
 import { ObservabilityContext } from '../../common/observability/observability-context';
 import { EncryptionService } from '../../common/security/encryption.service';
 import { EventsService } from '../events/events.service';
-import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
+import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
+import type { ChannelKind } from '../channels/adapter.types';
 import { WapiSendException } from '../wapi/sender/wapi-sender.types';
 import { interpolate, interpolateAsync } from './interpolate';
 import { evaluateExpression } from './expression-engine';
@@ -51,7 +52,12 @@ export interface BotEngineInput {
 
 interface CfgForEngine {
   id: string;
-  phoneNumberId: string;
+  /** Fase 2 — tipo de canal; default WHATSAPP para callers legacy. */
+  kind?: ChannelKind;
+  /** WhatsApp. */
+  phoneNumberId?: string | null;
+  /** Messenger/Instagram. */
+  pageId?: string | null;
   accessTokenEnc: string;
   isTestMode: boolean;
   botEnabled: boolean;
@@ -94,7 +100,7 @@ export class BotEngineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventsService,
-    private readonly whatsapp: WhatsAppAdapter,
+    private readonly registry: ChannelAdapterRegistry,
     private readonly encryption: EncryptionService,
     private readonly feature: BotFeatureService,
     private readonly router: BotRouterService,
@@ -105,6 +111,16 @@ export class BotEngineService {
 
   isBotButtonId(buttonId: string | null | undefined): boolean {
     return typeof buttonId === 'string' && buttonId.startsWith(BOT_OPTION_PREFIX);
+  }
+
+  /** Fase 2 — arma la conexión del canal según su kind (con el token ya
+   *  desencriptado). WhatsApp usa phoneNumberId; Messenger/IG usan pageId. */
+  private buildConn(cfg: CfgForEngine, kind: ChannelKind): unknown {
+    const accessToken = this.encryption.decrypt(cfg.accessTokenEnc);
+    if (kind === 'WHATSAPP') {
+      return { phoneNumberId: cfg.phoneNumberId!, accessToken, isTestMode: cfg.isTestMode };
+    }
+    return { pageId: cfg.pageId ?? '', accessToken, isTestMode: cfg.isTestMode };
   }
 
   async handle(
@@ -790,32 +806,31 @@ export class BotEngineService {
       return;
     }
     try {
-      // Fase 1b — el envío sale por el `WhatsAppAdapter` (capa de canal). El
-      // motor arma un `OutboundMessage` normalizado; el adapter lo traduce a la
-      // llamada de Meta. `conn` es la conexión del canal (token desencriptado).
-      const conn = {
-        phoneNumberId: cfg.phoneNumberId,
-        accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
-        isTestMode: cfg.isTestMode,
-      };
+      // Fase 1b/2 — el envío sale por el adapter del canal (resuelto por kind vía
+      // registry). El motor arma un `OutboundMessage` normalizado; el adapter lo
+      // traduce a la llamada del proveedor. `conn` es la conexión del canal.
+      const kind: ChannelKind = cfg.kind ?? 'WHATSAPP';
+      const adapter = this.registry.get(kind);
+      const conn = this.buildConn(cfg, kind);
+      const maxButtons = adapter.capabilities.interactiveButtons.max;
       let result: { externalMessageId: string };
       let wapiType: string;
       if (node.kind === 'MENU') {
         wapiType = 'interactive';
-        result = await this.whatsapp.send(conn, {
+        result = await adapter.send(conn, {
           kind: 'buttons',
           to: phone,
           text: await interpolateAsync(node.text, data),
           header: node.header ? await interpolateAsync(node.header, data) : undefined,
           footer: node.footer ? await interpolateAsync(node.footer, data) : undefined,
-          buttons: node.options.slice(0, 3).map((o) => ({
+          buttons: node.options.slice(0, maxButtons).map((o) => ({
             id: `${BOT_OPTION_PREFIX}${o.id}`,
             title: o.label,
           })),
         });
       } else if (node.kind === 'MEDIA') {
         wapiType = node.mediaType;
-        result = await this.whatsapp.send(conn, {
+        result = await adapter.send(conn, {
           kind: 'media',
           to: phone,
           mediaType: node.mediaType,
@@ -830,7 +845,7 @@ export class BotEngineService {
       ) {
         // Texto plano interpolado (soporta {{var}} + {{= expr }}).
         wapiType = 'text';
-        result = await this.whatsapp.send(conn, {
+        result = await adapter.send(conn, {
           kind: 'text',
           to: phone,
           text: await interpolateAsync(node.text, data),
@@ -873,7 +888,7 @@ export class BotEngineService {
         this.events.emitToTeam(ctx.teamId, 'conversation.message.new', {
           conversationId,
           channelId: cfg.id,
-          channelKind: 'WHATSAPP',
+          channelKind: kind,
           externalUserId: phone,
           message: {
             id: message.id,

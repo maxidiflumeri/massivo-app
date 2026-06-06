@@ -37,9 +37,12 @@ import { BotHttpRateLimiterService } from '../bot/bot-http-rate-limiter.service'
 import { BotMediaFetchService } from '../bot/bot-media-fetch.service';
 import { WapiLiveController } from './live/wapi-live.controller';
 import { WapiLiveService } from './live/wapi-live.service';
-// Fase 1b — el adapter de WhatsApp vive acá (depende sólo de WapiSenderService)
-// para que el motor del bot y el inbox lo inyecten sin ciclo con ChannelsModule.
+// Fase 1b/2 — los adapters de canal y el registry viven acá (sus deps —
+// WapiSenderService— están en este módulo) para que el motor del bot, el inbox y
+// el webhook genérico los inyecten sin ciclo con ChannelsModule.
 import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
+import { MessengerAdapter } from '../channels/adapters/messenger.adapter';
+import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
 
 @Module({
   imports: [EventsModule, ContactsModule],
@@ -81,6 +84,8 @@ import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
     BotMediaFetchService,
     WapiLiveService,
     WhatsAppAdapter,
+    MessengerAdapter,
+    ChannelAdapterRegistry,
   ],
   exports: [
     WapiQueueService,
@@ -92,6 +97,10 @@ import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
     // Exportado para InboxModule (modules/inbox), que reusa el motor del bot.
     BotEngineService,
     WhatsAppAdapter,
+    MessengerAdapter,
+    // Registry de adapters: lo consumen el webhook genérico (ChannelsModule) y
+    // el motor del bot / inbox para resolver el adapter por channelKind.
+    ChannelAdapterRegistry,
   ],
 })
 export class WapiModule {}

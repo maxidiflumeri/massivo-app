@@ -1,22 +1,25 @@
 import { Module } from '@nestjs/common';
 import { WapiModule } from '../wapi/wapi.module';
-import { ChannelAdapterRegistry } from './channel-adapter.registry';
+import { EventsModule } from '../events/events.module';
 import { ChannelsWebhookController } from './channels-webhook.controller';
+import { ConversationIngestService } from './conversation-ingest.service';
+import { MessengerWebhookHandler } from './messenger-webhook.handler';
 
 /**
- * Fase 1 (multi-canal) — Módulo de abstracción de canal. Expone el
- * `ChannelAdapterRegistry` (resuelve adapter por kind) y el webhook genérico
- * `/api/channels/:kind/:slug` (`ChannelsWebhookController`, 1c).
+ * Fase 1-2 (multi-canal) — Módulo del webhook genérico `/api/channels/:kind/:slug`
+ * (`ChannelsWebhookController`) + la ingesta agnóstica de inbound.
  *
- * El `WhatsAppAdapter` y el `WhatsAppWebhookHandler` se proveen en `WapiModule`
- * (dependen sólo de `WapiSenderService`/`WapiWebhookService`) y se importan desde
- * acá; así no hay ciclo de módulos: el registry y el controller los consumen vía
- * el import de `WapiModule`.
+ * Los adapters (`WhatsAppAdapter`, `MessengerAdapter`), el `ChannelAdapterRegistry`
+ * y el motor del bot (`BotEngineService`/`BotFeatureService`) se proveen y exportan
+ * desde `WapiModule`; acá se importan vía `WapiModule` → sin ciclo. `EventsModule`
+ * provee `EventsService` para los eventos del inbox.
+ *
+ * `ConversationIngestService` (agnóstico) + `MessengerWebhookHandler` viven acá: son
+ * el camino inbound de Messenger (WhatsApp sigue por `WapiWebhookService.process`).
  */
 @Module({
-  imports: [WapiModule],
+  imports: [WapiModule, EventsModule],
   controllers: [ChannelsWebhookController],
-  providers: [ChannelAdapterRegistry],
-  exports: [ChannelAdapterRegistry],
+  providers: [ConversationIngestService, MessengerWebhookHandler],
 })
 export class ChannelsModule {}

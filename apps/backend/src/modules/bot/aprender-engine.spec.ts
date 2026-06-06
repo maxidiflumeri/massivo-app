@@ -189,8 +189,10 @@ describe('🤖 Engine del bot — recorrido paso a paso', () => {
     };
 
     // El engine envía a través del WhatsAppAdapter REAL (la capa de canal),
-    // que traduce el OutboundMessage normalizado a la llamada del sender.
+    // que traduce el OutboundMessage normalizado a la llamada del sender. Fase 2:
+    // el engine lo resuelve por kind vía registry → lo envolvemos en uno mínimo.
     const adapter = new WhatsAppAdapter(sender as never);
+    const registry = { get: () => adapter };
 
     const events = { emitToTeam: () => undefined, emitToTeamDebounced: () => undefined };
     const encryption = { decrypt: (v: string) => `dec(${v})` };
@@ -231,7 +233,7 @@ describe('🤖 Engine del bot — recorrido paso a paso', () => {
     svc = new BotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
-      adapter as never,
+      registry as never,
       encryption as never,
       feature as never,
       router as never,

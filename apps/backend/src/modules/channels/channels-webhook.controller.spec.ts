@@ -9,15 +9,20 @@ import { ChannelsWebhookController } from './channels-webhook.controller';
 describe('ChannelsWebhookController', () => {
   let registry: { has: jest.Mock };
   let whatsapp: { verify: jest.Mock; receive: jest.Mock };
+  let messenger: { verify: jest.Mock; receive: jest.Mock };
   let ctl: ChannelsWebhookController;
 
   beforeEach(() => {
-    registry = { has: jest.fn((k: string) => k === 'WHATSAPP') };
+    registry = { has: jest.fn((k: string) => k === 'WHATSAPP' || k === 'MESSENGER') };
     whatsapp = {
       verify: jest.fn().mockResolvedValue('CHAL'),
       receive: jest.fn().mockResolvedValue({ ok: true }),
     };
-    ctl = new ChannelsWebhookController(registry as never, whatsapp as never);
+    messenger = {
+      verify: jest.fn().mockResolvedValue('CHAL-M'),
+      receive: jest.fn().mockResolvedValue({ ok: true }),
+    };
+    ctl = new ChannelsWebhookController(registry as never, whatsapp as never, messenger as never);
   });
 
   it('verify whatsapp → delega en el handler de WhatsApp', async () => {
@@ -38,6 +43,14 @@ describe('ChannelsWebhookController', () => {
     expect(whatsapp.receive).toHaveBeenCalledWith('wbh_x', 'sha256=abc', raw);
   });
 
+  it('receive messenger → delega en el handler de Messenger', async () => {
+    const raw = Buffer.from('{}');
+    const out = await ctl.receive('messenger', 'wbh_x', 'sha256=abc', { rawBody: raw } as never);
+    expect(out).toEqual({ ok: true });
+    expect(messenger.receive).toHaveBeenCalledWith('wbh_x', 'sha256=abc', raw);
+    expect(whatsapp.receive).not.toHaveBeenCalled();
+  });
+
   it('kind no registrado → 404', async () => {
     await expect(
       ctl.verify('telegram', 'wbh_x', 'subscribe', 'tok', 'CHAL'),
@@ -45,10 +58,10 @@ describe('ChannelsWebhookController', () => {
     expect(whatsapp.verify).not.toHaveBeenCalled();
   });
 
-  it('kind registrado pero sin handler de inbound (ej. messenger) → 501', async () => {
-    registry.has.mockImplementation((k: string) => k === 'MESSENGER');
+  it('kind registrado pero sin handler de inbound (ej. instagram) → 501', async () => {
+    registry.has.mockImplementation((k: string) => k === 'INSTAGRAM');
     await expect(
-      ctl.receive('messenger', 'wbh_x', undefined, { rawBody: Buffer.from('{}') } as never),
+      ctl.receive('instagram', 'wbh_x', undefined, { rawBody: Buffer.from('{}') } as never),
     ).rejects.toBeInstanceOf(NotImplementedException);
   });
 });

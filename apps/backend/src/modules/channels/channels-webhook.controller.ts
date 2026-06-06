@@ -15,6 +15,7 @@ import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { SkipTenantScope } from '../../common/auth/skip-tenant-scope.decorator';
 import { WhatsAppWebhookHandler } from '../wapi/webhook/whatsapp-webhook.handler';
+import { MessengerWebhookHandler } from './messenger-webhook.handler';
 import { ChannelAdapterRegistry } from './channel-adapter.registry';
 import type { ChannelKind } from './adapter.types';
 
@@ -35,6 +36,7 @@ export class ChannelsWebhookController {
   constructor(
     private readonly registry: ChannelAdapterRegistry,
     private readonly whatsapp: WhatsAppWebhookHandler,
+    private readonly messenger: MessengerWebhookHandler,
   ) {}
 
   @Get(':kind/:slug')
@@ -50,6 +52,9 @@ export class ChannelsWebhookController {
     if (resolved === 'WHATSAPP') {
       return this.whatsapp.verify(slug, mode, token, challenge);
     }
+    if (resolved === 'MESSENGER') {
+      return this.messenger.verify(slug, mode, token, challenge);
+    }
     throw new NotImplementedException(`Webhook inbound para ${resolved} aún no implementado`);
   }
 
@@ -64,6 +69,9 @@ export class ChannelsWebhookController {
     const resolved = this.resolveKind(kind);
     if (resolved === 'WHATSAPP') {
       return this.whatsapp.receive(slug, signature, req.rawBody);
+    }
+    if (resolved === 'MESSENGER') {
+      return this.messenger.receive(slug, signature, req.rawBody);
     }
     throw new NotImplementedException(`Webhook inbound para ${resolved} aún no implementado`);
   }

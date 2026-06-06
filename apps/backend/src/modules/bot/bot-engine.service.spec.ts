@@ -77,6 +77,17 @@ function makeForwardingAdapter(sender: {
   };
 }
 
+// Fase 2 — el engine resuelve el adapter por kind vía ChannelAdapterRegistry.
+// Este mock-registry devuelve siempre el forwarding-adapter de WhatsApp.
+function makeRegistry(sender: {
+  sendInteractiveButtons: jest.Mock;
+  sendText: jest.Mock;
+  sendMediaById: jest.Mock;
+}) {
+  const adapter = makeForwardingAdapter(sender);
+  return { get: () => adapter };
+}
+
 const flow: BotFlow = {
   startNodeId: 'menu1',
   nodes: {
@@ -173,7 +184,7 @@ describe('BotEngineService', () => {
     svc = new BotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
-      makeForwardingAdapter(sender) as never,
+      makeRegistry(sender) as never,
       encryption as never,
       feature as never,
       router as never,
@@ -989,7 +1000,7 @@ describe('BotEngineService', () => {
     const localSvc = new BotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
-      makeForwardingAdapter(sender) as never,
+      makeRegistry(sender) as never,
       encryption as never,
       feature as never,
       routerMock as never,
@@ -1081,7 +1092,7 @@ describe('BotEngineService', () => {
     const localSvc = new BotEngineService(
       { scoped: prismaScoped } as never,
       events as never,
-      makeForwardingAdapter(sender) as never,
+      makeRegistry(sender) as never,
       encryption as never,
       feature as never,
       routerMock as never,

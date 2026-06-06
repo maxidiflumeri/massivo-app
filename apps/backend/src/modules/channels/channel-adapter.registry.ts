@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { WhatsAppAdapter } from './adapters/whatsapp.adapter';
+import { MessengerAdapter } from './adapters/messenger.adapter';
 import type { ChannelAdapter, ChannelCapabilities, ChannelKind } from './adapter.types';
 
 /**
@@ -11,8 +12,9 @@ import type { ChannelAdapter, ChannelCapabilities, ChannelKind } from './adapter
 export class ChannelAdapterRegistry {
   private readonly adapters = new Map<ChannelKind, ChannelAdapter>();
 
-  constructor(whatsapp: WhatsAppAdapter) {
+  constructor(whatsapp: WhatsAppAdapter, messenger: MessengerAdapter) {
     this.register(whatsapp);
+    this.register(messenger);
   }
 
   register(adapter: ChannelAdapter): void {
