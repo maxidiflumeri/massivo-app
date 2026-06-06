@@ -8,9 +8,11 @@
 
 ## Estado actual
 
-**Fase en curso:** **Fase 0 COMPLETA** (0a+0b+0c) + **Fase 1: 1a–1g COMPLETAS**
-(1f hecha: cleanup de columnas `bot*` deprecadas + rename enum
-`WapiConversationStatus→ConversationStatus`). **Próximo: Fase 2 — Messenger.**
+**Fase en curso:** Fase 0 + Fase 1 COMPLETAS. **Fase 2 (Messenger) — backend
+end-to-end COMPLETO** (adapter + engine agnóstico + ingest + webhook + simulador
+dev; 2-A..2-F). Pendiente de Fase 2: onboarding de producción en UI (depende del
+App Review de Meta) y la página de chat simulado Messenger. **Próximo: Fase 3 —
+Instagram** (reusa `MetaMessagingAdapter`) o terminar el onboarding/UI de Messenger.
 1d (modelo unificado), 1g (bot fuera de `wapi/`) y **1e** (inbox omnicanal: relocación
 completa `modules/inbox` + `features/inbox`, contrato `channelId/externalUserId/
 freeformWindowAt/externalId/channelKind`, eventos `conversation.message.new`/
@@ -18,7 +20,7 @@ freeformWindowAt/externalId/channelKind`, eventos `conversation.message.new`/
 commiteadas y verificadas (tsc back+front limpio, specs verdes salvo 5 email
 pre-existentes). **1f** (cleanup) también hecha y aplicada a la DB local (cero drift).
 **Smoke runtime de 1d ya OK**; **smoke de 1e pendiente** (ruta nueva `/dashboard/inbox`,
-eventos renombrados). Próximo: **Fase 2 — Messenger**.
+eventos renombrados). **Fase 2 (Messenger) backend end-to-end hecha** (ver checklist).
 
 **Última actualización:** sesión 4 (2026-06-05).
 
@@ -168,12 +170,84 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
   desde `Bot`, no son columnas → renombrarla es churn sin valor; diferido).
 - [x] **1g** Bot fuera de `wapi/` + sin prefijo `Wapi`. Clases `WapiBot*Service→Bot*Service`, `WapiBotController→BotController`; archivos `wapi-bot-*.ts→bot-*.ts`; folder `modules/wapi/bot→modules/bot`; frontend `features/wapi/bots→features/bots`, `WapiBotsPage→BotsPage`. Los providers del bot **siguen registrados en WapiModule** (NO se creó `BotModule` propio: el engine depende directo de `WhatsAppAdapter` de WapiModule y webhook/inbox dependen del engine → módulo separado daría dependencia circular; queda para cuando el adapter se resuelva por registry). **No renombrado** (nota): enum Prisma `WapiConversationStatus` (requiere migración `ALTER TYPE`) e interfaz interna `CfgForEngine`. tsc backend+frontend limpio; 782/787 (5 email pre-existentes).
 
+### Fase 2 — Messenger
+- [x] **2-A** Schema: `Channel.phoneNumberId` nullable + `pageId` + `@@unique([teamId,pageId])`
+  (NULLs no colisionan → WhatsApp y Messenger conviven). `businessAccountId` queda
+  NOT NULL (no-WhatsApp usa `''`). Migración `20260605140000_channel_messenger_identity`
+  aplicada (cero drift). Churn de `phoneNumberId` nullable resuelto con `!`/`?? ''`.
+- [x] **2-B** `MetaMessagingAdapter` (base IG+Messenger) + `MessengerAdapter`: send Graph
+  `/me/messages` (text + quick replies clamp 13 + attachment por url), parseInbound
+  (`page`/messaging/PSID; text/quick_reply/postback/attachments; ignora echoes),
+  capabilities (ventana 24h, sin templates), test-mode → `mid.SIM_`. Registrado en el
+  registry. Unit tests (14).
+- [x] **2-C** Engine channel-agnostic: resuelve adapter por `channelKind` vía
+  `ChannelAdapterRegistry` (no más `WhatsAppAdapter` hardcodeado); conexión por kind
+  (phoneNumberId vs pageId); emit con el kind real. WhatsApp idéntico. **Registry +
+  adapters movidos a WapiModule** (sus deps viven ahí) → el engine los inyecta sin ciclo.
+- [x] **2-D** `ConversationIngestService` (agnóstico): consume `InboundMessage[]` →
+  upsert Conversation (channelKind) + Message (idempotente `[channelId,externalId]`) +
+  eventos inbox + motor del bot + escalado en HANDOFF. Paridad con WhatsApp (que sigue
+  en `WapiWebhookService.process`). Spec (6).
+- [x] **2-E** `MessengerWebhookHandler`: verify + HMAC + resolver Channel por `pageId`
+  → parseInbound → ingest dentro del TenantContext. Wireado en `ChannelsWebhookController`
+  (`/api/channels/messenger/:slug`).
+- [x] **2-F (dev)** Simulador Messenger dev-gated: `POST /api/dev/channels/messenger/ensure`
+  (crea Channel MESSENGER test + conecta bot) y `/inbound` (inyecta evento `page` →
+  ingest, bypass HMAC). Permite probar end-to-end local sin Meta.
+- [ ] **2-F (prod)** Onboarding de canal Messenger en UI/API de producción (alta de
+  credenciales pageId + page token; depende del App Review de Meta). Diferido.
+- [ ] **2-G** Frontend: página de Chat simulado Messenger (análoga al de WhatsApp);
+  hoy se prueba vía curl a los endpoints dev + se ve en el inbox (badge Messenger de 1e).
+- Verificación: tsc back+front 0; backend **801/806** (5 email pre-existentes); migrate
+  diff cero drift; **DI graph de AppModule compila** (boot OK).
+
+> **App Review de Meta:** para mensajear usuarios reales en Live cada cliente pasa su
+> app por App Review (`pages_messaging`). En Dev Mode el dueño prueba con su cuenta sin
+> review (DESIGN §10). Trámite de semanas — arrancar temprano.
+
 ### Fases siguientes
-- [ ] Fase 2 — Messenger · Fase 3 — Instagram · Fase 4 — Webchat
+- [ ] Fase 3 — Instagram (otra subclase de `MetaMessagingAdapter`, `object:'instagram'`) · Fase 4 — Webchat
 
 ---
 
 ## Bitácora (qué se hizo y por qué)
+
+### Sesión 6 — 2026-06-06 (Fase 2 — Messenger, end-to-end backend)
+- **Decisión del dueño:** "directo a end-to-end" (no sub-fase aditiva). Se hizo todo el
+  backend de Messenger por pasos internos manteniendo WhatsApp verde en cada uno.
+- **2-A — Schema.** Cuantificado el churn antes de decidir (phoneNumberId se lee en 65
+  lugares; businessAccountId en ~37). → `phoneNumberId` nullable + `pageId` nuevo +
+  segundo unique `[teamId,pageId]` (NULLs no colisionan en PG → WhatsApp/Messenger
+  conviven); `businessAccountId` se deja NOT NULL (sentinel `''` para no-WhatsApp →
+  cero churn en templates). El churn real fueron **11 errores tsc** (no 65), resueltos
+  con `!` en sends WhatsApp y `?? ''` en el DTO de configs.
+- **2-B — Adapters.** `MetaMessagingAdapter` base (compartible con IG en Fase 3) +
+  `MessengerAdapter`. send a Graph `/me/messages`; quick replies como equivalente de
+  los reply buttons (clamp 13); parseInbound del envelope `page`. Reusa
+  `WapiSendException` para uniformar errores. Test-mode short-circuit.
+- **2-C — Engine agnóstico.** El `BotEngineService` resuelve el adapter por kind vía
+  `ChannelAdapterRegistry` (antes inyectaba `WhatsAppAdapter` directo). Para evitar
+  ciclo (engine en WapiModule necesitaba el registry, que vivía en ChannelsModule que
+  importa WapiModule), se **movieron registry + adapters a WapiModule**; ChannelsModule
+  los consume vía import. Specs del engine adaptados (mock-registry).
+- **2-D — Ingest agnóstico.** `ConversationIngestService` replica la persistencia +
+  eventos + bot + HANDOFF del path de WhatsApp pero consumiendo `InboundMessage[]`.
+  WhatsApp NO se rewireó (su `process` tiene welcome/opt-out/button-actions/media-download
+  WhatsApp-específicos); la consolidación queda para un cleanup futuro.
+- **2-E — Webhook.** `MessengerWebhookHandler` (verify/HMAC/pageId → parseInbound →
+  ingest en TenantContext), wireado en el controller genérico de 1c.
+- **2-F — Simulador dev.** Endpoints dev-gated para crear un Channel MESSENGER test
+  (+bot) e inyectar inbound, así se prueba end-to-end local sin Meta (el bot responde
+  en test-mode, la conversación entra al inbox al HANDOFF — igual que WhatsApp).
+- **Verificación:** tsc back+front 0; backend **801/806** (5 email pre-existentes; +33
+  tests de Fase 2); migrate diff cero drift; **DI graph de AppModule compila** (boot OK,
+  validado con un smoke `.compile()` descartable).
+- **Cómo probar local** (con `ENABLE_DEV_SIMULATOR=true`, autenticado):
+  `POST /api/dev/channels/messenger/ensure` `{ "botId": "<bot publicado>" }` → devuelve
+  `{ id }`; luego `POST /api/dev/channels/messenger/inbound`
+  `{ "channelId":"<id>", "psid":"user-1", "text":"hola" }` → el bot responde; ver la
+  conversación en el inbox (badge Messenger). Para verla sin HANDOFF, listar con
+  `includeBotHandled=true`.
 
 ### Sesión 5 — 2026-06-05 (Fase 1f — cleanup legacy)
 - **Drop de las 11 columnas `bot*` deprecadas de `Channel`** (deprecadas desde 0a

@@ -21,5 +21,8 @@ import { MessengerWebhookHandler } from './messenger-webhook.handler';
   imports: [WapiModule, EventsModule],
   controllers: [ChannelsWebhookController],
   providers: [ConversationIngestService, MessengerWebhookHandler],
+  // Exportado para el simulador dev (DevModule), que ingiere inbounds Messenger
+  // sin pasar por HMAC/slug.
+  exports: [ConversationIngestService],
 })
 export class ChannelsModule {}
