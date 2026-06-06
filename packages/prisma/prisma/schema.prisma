@@ -617,7 +617,7 @@ enum WapiReportStatus {
   CANCELED
 }
 
-enum WapiConversationStatus {
+enum ConversationStatus {
   UNASSIGNED
   ASSIGNED
   WAITING
@@ -671,49 +671,18 @@ model Channel {
   // mensaje como si Meta hubiera respondido OK. Usado por la página
   // /dashboard/dev/wapi/chat para simular ida-vuelta completo sin tocar Meta.
   isTestMode            Boolean   @default(false)
-  // Bot guiado por número (4.M). Si botEnabled=true y botFlow no es null, el
-  // webhook intercepta los inbounds y los pasa por el motor de bot antes que
-  // welcome/opt-out/4.K. botFlow es un JSON con shape:
-  //   { startNodeId: string, nodes: { [id]: { kind: 'MENU'|'HANDOFF', text: string,
-  //     options?: [{ id, label, nextNodeId }] } } }
-  // sessionTtlMin define después de cuántos minutos sin interacción la sesión
-  // del bot expira (cliente vuelve a empezar en startNodeId al próximo inbound).
-  botEnabled            Boolean   @default(false)
-  botFlow               Json?
-  botSessionTtlMin      Int       @default(30)
   // 4.O.6 — TTL del estado WAITING de una conversación. El operador "pone en
   // espera" tras responder; si el cliente no contesta en este lapso, un worker
   // periódico cierra la conversación automáticamente (RESOLVED + auto-nota).
+  // Vive en Channel (no en Bot): es comportamiento de la conversación/inbox, no
+  // de la definición del bot.
   botWaitingTtlMin      Int       @default(120)
-  // 4.O.1 — sistema multi-tema. botTopics: Array<{id,label,flow:BotFlow}>.
-  // botRouter: { rules: BotRouterRule[], defaultTopicId?: string } decide a qué
-  // tema entrar según template-payload (regex named groups) o keyword exacto.
-  // Si ambos (botFlow legacy + botTopics) están seteados, el motor prefiere
-  // topics; botFlow se mantiene para backward compat (se materializa como
-  // tema 'default' al vuelo si topics está vacío).
-  botTopics             Json?
-  botRouter             Json?
-  // 4.O.3 — Draft/Publish workflow. botTopicsDraft/botRouterDraft son la versión en edición
-  // (probada en sandbox interno). Recién al publicar se copian a botTopics/botRouter para
-  // que el motor de prod las use. botDraftUpdatedAt/botPublishedAt permiten al UI mostrar
-  // si hay cambios sin publicar y desde cuándo.
-  botTopicsDraft        Json?
-  botRouterDraft        Json?
-  // 4.O.4 — Variables declarativas. Array<{name,type,description?,defaultValue?}>.
-  // El motor las usa para sembrar session.data al iniciar sesión nueva (antes
-  // de aplicar seedData del router). botVariablesDraft mantiene la versión en
-  // edición — al publicar se copia a botVariables.
-  botVariables          Json?
-  botVariablesDraft     Json?
-  botDraftUpdatedAt     DateTime?
-  botPublishedAt        DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  // Phase 0 (multi-canal): el bot pasa a entidad propia `Bot`. Un `Bot` se
-  // diseña una vez y se conecta a N canales (N WapiConfig). Las columnas `bot*`
-  // de arriba quedan DEPRECADAS — la definición vive ahora en `Bot` (resuelto vía
-  // `botId`). Se mantienen hasta el cleanup (Fase 0c) para migración reversible.
+  // Phase 0 (multi-canal): la definición del bot vive en la entidad `Bot`
+  // (resuelta vía `botId`). Las columnas `bot*` deprecadas que copiaba WapiConfig
+  // se dropearon en Fase 1f (la fuente de verdad es `Bot`).
   botId String?
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -882,7 +851,7 @@ model Conversation {
   channelKind        ChannelType
   externalUserId     String
   name               String?
-  status             WapiConversationStatus @default(UNASSIGNED)
+  status             ConversationStatus @default(UNASSIGNED)
   assignedUserId     String?
   lastMessageAt      DateTime?
   // Ventana de freeform del canal (ex window24hAt). 24h en canales Meta.

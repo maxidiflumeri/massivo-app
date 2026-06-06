@@ -8,15 +8,17 @@
 
 ## Estado actual
 
-**Fase en curso:** **Fase 0 COMPLETA** (0a+0b) + **Fase 1: 1a–1e + 1g COMPLETAS**.
+**Fase en curso:** **Fase 0 COMPLETA** (0a+0b+0c) + **Fase 1: 1a–1g COMPLETAS**
+(1f hecha: cleanup de columnas `bot*` deprecadas + rename enum
+`WapiConversationStatus→ConversationStatus`). **Próximo: Fase 2 — Messenger.**
 1d (modelo unificado), 1g (bot fuera de `wapi/`) y **1e** (inbox omnicanal: relocación
 completa `modules/inbox` + `features/inbox`, contrato `channelId/externalUserId/
 freeformWindowAt/externalId/channelKind`, eventos `conversation.message.new`/
 `conversation.updated`, UI con badge/filtro de canal + composer por capabilities)
 commiteadas y verificadas (tsc back+front limpio, specs verdes salvo 5 email
-pre-existentes). Próximo: **1f** (cleanup columnas `bot*` legacy + tablas `Wapi*`) o
-**Fase 2 — Messenger**. **Smoke runtime de 1d ya OK**; **smoke de 1e pendiente** (ruta
-nueva `/dashboard/inbox`, eventos renombrados).
+pre-existentes). **1f** (cleanup) también hecha y aplicada a la DB local (cero drift).
+**Smoke runtime de 1d ya OK**; **smoke de 1e pendiente** (ruta nueva `/dashboard/inbox`,
+eventos renombrados). Próximo: **Fase 2 — Messenger**.
 
 **Última actualización:** sesión 4 (2026-06-05).
 
@@ -126,7 +128,7 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 - `handleButtonAction` path `action:'BOT'`→`startTopic` sigue sin test propio (heredado de 0a).
 
 ### Sub-fase 0c — Cleanup
-- [ ] Migración drop de columnas `bot*` en `WapiConfig`
+- [x] Migración drop de columnas `bot*` en `WapiConfig`/`Channel` (hecho en 1f, abajo).
 
 ### Fase 1 — Abstracción de canal + unificación + inbox omnicanal
 (sub-fases detalladas en CHANNELS_BOT_PLAN.md → FASE 1)
@@ -150,7 +152,20 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
   el kind la impone). `/dashboard/wapi/inbox → /dashboard/inbox` (+redirect compat).
   `WapiConfigListItem.kind` expuesto. tsc back+front 0; backend 782/787 (5 email
   pre-existentes). **Smoke runtime pendiente.**
-- [ ] **1f** Cleanup de tablas/columnas `Wapi*` legacy
+- [x] **1f** Cleanup legacy. **(a)** Drop de las 11 columnas `bot*` deprecadas de
+  `Channel` (`botEnabled`, `botFlow`, `botSessionTtlMin`, `botTopics`, `botRouter`,
+  `botTopicsDraft`, `botRouterDraft`, `botVariables`, `botVariablesDraft`,
+  `botDraftUpdatedAt`, `botPublishedAt`) — muertas desde 0a (la def del bot vive en
+  `Bot`). **Se mantienen** `botWaitingTtlMin` (TTL del hold del inbox) y `botId` (FK).
+  **(b)** Rename enum `WapiConversationStatus → ConversationStatus` (la Conversation
+  dejó de ser Wapi-específica en 1d; cero usos como tipo en TS). Migración
+  `20260605130000_cleanup_legacy_bot_columns` (DROP COLUMN IF EXISTS ×11 + ALTER TYPE
+  RENAME guardado) aplicada + **cero drift**. tsc 0; backend 782/787 (5 email
+  pre-existentes). **No tocado (a propósito):** `WapiContact`/`WapiCampaign`/
+  `WapiTemplate`/`WapiReport`/`WapiOptOut`/`WapiQuickReply`/`WapiResolutionNote` (todas
+  vivas, dominio WhatsApp); enums `WapiCampaignStatus`/`WapiReportStatus`/`WapiOptOutScope`
+  (features activas); interfaz interna `CfgForEngine` (sus campos `bot*` se llenan
+  desde `Bot`, no son columnas → renombrarla es churn sin valor; diferido).
 - [x] **1g** Bot fuera de `wapi/` + sin prefijo `Wapi`. Clases `WapiBot*Service→Bot*Service`, `WapiBotController→BotController`; archivos `wapi-bot-*.ts→bot-*.ts`; folder `modules/wapi/bot→modules/bot`; frontend `features/wapi/bots→features/bots`, `WapiBotsPage→BotsPage`. Los providers del bot **siguen registrados en WapiModule** (NO se creó `BotModule` propio: el engine depende directo de `WhatsAppAdapter` de WapiModule y webhook/inbox dependen del engine → módulo separado daría dependencia circular; queda para cuando el adapter se resuelva por registry). **No renombrado** (nota): enum Prisma `WapiConversationStatus` (requiere migración `ALTER TYPE`) e interfaz interna `CfgForEngine`. tsc backend+frontend limpio; 782/787 (5 email pre-existentes).
 
 ### Fases siguientes
@@ -159,6 +174,32 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 ---
 
 ## Bitácora (qué se hizo y por qué)
+
+### Sesión 5 — 2026-06-05 (Fase 1f — cleanup legacy)
+- **Drop de las 11 columnas `bot*` deprecadas de `Channel`** (deprecadas desde 0a
+  cuando el bot pasó a entidad `Bot`). Verificado que **ningún accesor Prisma** las
+  lee: el webhook/sandbox arman `CfgForEngine` desde la relación `bot` (`bot.enabled`/
+  `bot.flow`/…), `bot.service` opera sobre `scoped.bot` (su único `channel.update` es
+  para linkear `botId`), y `wapi-configs` create/update no las toca. Los nombres `bot*`
+  que sobreviven en código son **campos de interfaz/DTO/snapshot** (`CfgForEngine`,
+  `bot.dto.ts`, `BotRow`) o **otro modelo** (`Organization.botEnabled`, feature flag) —
+  no columnas de Channel. **Se mantienen** `botWaitingTtlMin` (TTL del hold del inbox,
+  decisión de Phase 0) y `botId` (FK al Bot).
+- **Rename enum `WapiConversationStatus → ConversationStatus`** (la Conversation dejó de
+  ser Wapi-específica en 1d). Cero usos como tipo en TS (el código usa string literals)
+  → rename limpio: schema + `ALTER TYPE RENAME` (conserva valores, columnas y default).
+- **Migración** `20260605130000_cleanup_legacy_bot_columns`: hand-written idempotente
+  (DROP COLUMN IF EXISTS ×11 + DO-block guard para el ALTER TYPE). `migrate deploy` OK;
+  `migrate diff --to-schema-datasource --exit-code` = **No difference detected**.
+  (Nota: el flag correcto para diff contra la DB es `--to-schema-datasource <schema>`,
+  no `--to-database`.)
+- **No tocado (a propósito):** tablas `Wapi*` vivas (Contact/Campaign/Template/Report/
+  OptOut/QuickReply/ResolutionNote — dominio WhatsApp activo), enums `WapiCampaignStatus`/
+  `WapiReportStatus`/`WapiOptOutScope` (features activas), e interfaz `CfgForEngine`
+  (sus campos `bot*` se llenan desde `Bot`; renombrarla es churn sin valor funcional).
+- **Verificación:** `prisma generate` + tsc backend **0** (confirma que nada tipado leía
+  las columnas dropeadas); full backend **782/787** (5 email pre-existentes). Frontend no
+  afectado (no usa el enum Prisma ni esas columnas).
 
 ### Sesión 4 — 2026-06-05 (Fase 1e — inbox omnicanal)
 - **Implementada toda la Fase 1e** (alcance "completa" + "relocación completa",
