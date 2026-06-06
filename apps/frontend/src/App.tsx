@@ -27,6 +27,7 @@ import { BotsPage } from './features/bots/BotsPage';
 import { WapiLivePage } from './features/wapi/live/WapiLivePage';
 import { WapiSimulatorPage } from './features/dev/WapiSimulatorPage';
 import { WapiSimulatorChatPage } from './features/dev/WapiSimulatorChatPage';
+import { MessengerSimulatorChatPage } from './features/dev/MessengerSimulatorChatPage';
 import { AuditLogPage } from './features/audit/AuditLogPage';
 import { ContactsListPage } from './features/contacts/ContactsListPage';
 import { ContactDetailPage } from './features/contacts/ContactDetailPage';
@@ -95,6 +96,9 @@ export function App() {
         )}
         {DEV_SIMULATOR_ENABLED && (
           <Route path="dev/wapi/chat" element={<WapiSimulatorChatPage />} />
+        )}
+        {DEV_SIMULATOR_ENABLED && (
+          <Route path="dev/channels/messenger/chat" element={<MessengerSimulatorChatPage />} />
         )}
       </Route>
 

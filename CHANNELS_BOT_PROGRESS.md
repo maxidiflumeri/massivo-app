@@ -196,8 +196,12 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
   ingest, bypass HMAC). Permite probar end-to-end local sin Meta.
 - [ ] **2-F (prod)** Onboarding de canal Messenger en UI/API de producción (alta de
   credenciales pageId + page token; depende del App Review de Meta). Diferido.
-- [ ] **2-G** Frontend: página de Chat simulado Messenger (análoga al de WhatsApp);
-  hoy se prueba vía curl a los endpoints dev + se ve en el inbox (badge Messenger de 1e).
+- [x] **2-G** Frontend: página **Chat simulado Messenger** (`/dashboard/dev/channels/messenger/chat`,
+  dev-gated) — selector de bot + "Conectar canal" (llama `/ensure`) + cliente virtual (PSID)
+  que inyecta inbounds vía `/inbound`; reusa `ConversationThread`/`MessageBubble` (quick replies
+  del bot clickeables) y el socket `conversation.message.new`. Entrada en el sidebar (grupo Dev).
+  Permite probar Messenger end-to-end desde la UI; la conversación también se ve en el inbox real
+  (badge Messenger). tsc front 0 + `vite build` verde.
 - Verificación: tsc back+front 0; backend **801/806** (5 email pre-existentes); migrate
   diff cero drift; **DI graph de AppModule compila** (boot OK).
 
