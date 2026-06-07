@@ -8,11 +8,14 @@
 
 ## Estado actual
 
-**Fase en curso:** Fase 0 + Fase 1 COMPLETAS. **Fase 2 (Messenger) — backend
-end-to-end COMPLETO** (adapter + engine agnóstico + ingest + webhook + simulador
-dev; 2-A..2-F). Pendiente de Fase 2: onboarding de producción en UI (depende del
-App Review de Meta) y la página de chat simulado Messenger. **Próximo: Fase 3 —
-Instagram** (reusa `MetaMessagingAdapter`) o terminar el onboarding/UI de Messenger.
+**Fase en curso:** Fase 0 + Fase 1 COMPLETAS. **Fase 2 (Messenger) — COMPLETA**
+(backend end-to-end + simulador dev back/front). **Sección "Canales" unificada
+COMPLETA** (sesión 7): admin de canales relocado a `modules/channels` + `/api/channels`;
+UI `/dashboard/channels` con alta/edición multi-canal, íconos de marca, webhook por
+canal + revelar verify token, conectar bot, regenerar webhook; página "Números"
+eliminada (sus ajustes WhatsApp migrados al editor). **Próximo: Fase 3 — Instagram**
+(reusa `MetaMessagingAdapter` + el alta ya soporta nuevos kinds → habilitar la tarjeta).
+**Pendiente externo:** App Review de Meta para Messenger/IG en prod (no es código).
 1d (modelo unificado), 1g (bot fuera de `wapi/`) y **1e** (inbox omnicanal: relocación
 completa `modules/inbox` + `features/inbox`, contrato `channelId/externalUserId/
 freeformWindowAt/externalId/channelKind`, eventos `conversation.message.new`/
@@ -226,6 +229,41 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 ---
 
 ## Bitácora (qué se hizo y por qué)
+
+### Sesión 7 — 2026-06-07 (Sección "Canales" unificada + frontend Messenger)
+- **Frontend Chat simulado Messenger** (cierre 2-G): `/dashboard/dev/channels/messenger/chat`
+  (dev-gated) — selector de bot + "Conectar canal" (`/ensure`) + cliente virtual (PSID)
+  que inyecta inbounds (`/inbound`); reusa `ConversationThread`/`MessageBubble`.
+- **Decisión del dueño:** que la gestión de canales NO viva en `wapi/config`. →
+  **Relocación** (estilo 1g): `modules/wapi/wapi-configs.*` → `modules/channels/channels.*`
+  (`ChannelsService`/`ChannelsController`, `Channel(List|Detail)`, `Create/UpdateChannelDto`),
+  ruta `/api/wapi/configs` → **`/api/channels`** + filtro `?kind=`. Admin controller
+  registrado ANTES del webhook (colisión `/channels/:id/...` vs `/channels/:kind/:slug`).
+  8 callers del frontend repuntados (campañas/templates/Números/simulador piden
+  `kind=WHATSAPP`; inbox/bots traen todos). Alta **kind-aware** (WhatsApp pide
+  phoneNumberId+WABA; Messenger pide pageId).
+- **Sección "Canales"** (`/dashboard/channels`): lista de tarjetas con **ícono de marca**
+  por canal (`channelMeta`/`ChannelIcon`), estado (Activo/Test), selector de bot, **editar**
+  (ruedita → `EditChannelDialog` genérico para todos los kinds), borrar. **Alta**
+  (`AddChannelDialog`) con type picker (WhatsApp/Messenger activos; Instagram/Webchat
+  "Próximamente") + form por kind.
+- **Webhook + secret en Canales** (feedback del dueño): la callback URL se ve en cada
+  tarjeta (por kind: `{backend}/api/channels/{kind}/{slug}`) con copiar; el editor tiene
+  sección "Webhook" (URL copiable + **revelar verify token** vía `/reveal-secrets`, para
+  todos los kinds). "Regenerar webhook" (org-level) en el header de Canales.
+- **Eliminada la página "Números"** (`WapiConfigsPage`): sus ajustes WhatsApp
+  (welcome/opt-out/keywords/dailyLimit/throttle) **migrados al editor** (sección "Ajustes
+  de WhatsApp", sólo kind WHATSAPP, carga vía `GET /api/channels/:id`). Ruta
+  `/dashboard/wapi/configs` → redirect a `/dashboard/channels`. (Queda
+  `features/wapi/configs/types.ts`, aún importado por campañas/templates/inbox/sim.)
+- **Sidebar:** "Canales" como sección propia (item "Mis canales"); "Respuestas rápidas"
+  movida de WhatsApp a "Conversaciones"; "Números" fuera.
+- **Verificación:** tsc back+front 0; backend 801/806 (5 email pre-existentes);
+  channels 46/46; vite build verde; DI de AppModule compila.
+- **Cabos sueltos (para después):** toggle activo/inactivo desde la tarjeta; mover
+  `features/wapi/configs/types.ts` → `features/channels/types.ts`; consolidar el path
+  inbound de WhatsApp sobre `ConversationIngestService` (hoy sigue en
+  `WapiWebhookService.process`); rename CASL subject/Audit `WapiConfig`→`Channel`.
 
 ### Sesión 6 — 2026-06-06 (Fase 2 — Messenger, end-to-end backend)
 - **Decisión del dueño:** "directo a end-to-end" (no sub-fase aditiva). Se hizo todo el
