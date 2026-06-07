@@ -1,5 +1,5 @@
 import type { ApiClient } from '../../api/client';
-import type { ChannelListItem, CreateChannelPayload, UpdateChannelPayload } from './types';
+import type { ChannelDetail, ChannelListItem, CreateChannelPayload, UpdateChannelPayload } from './types';
 
 /** URL de callback del webhook para un canal: `{backend}/api/channels/{kind}/{slug}`.
  *  El slug es org-scoped (mismo para toda la org); el kind cambia por canal, así que
@@ -13,8 +13,15 @@ export const channelsApi = {
   list(api: ApiClient, kind?: string) {
     return api.get<ChannelListItem[]>(`/api/channels${kind ? `?kind=${kind}` : ''}`);
   },
+  get(api: ApiClient, id: string) {
+    return api.get<ChannelDetail>(`/api/channels/${id}`);
+  },
   create(api: ApiClient, payload: CreateChannelPayload) {
     return api.post<ChannelListItem>('/api/channels', payload);
+  },
+  /** Regenera el webhook slug de la organización (invalida la URL anterior). */
+  regenerateWebhookSlug(api: ApiClient) {
+    return api.post<{ webhookSlug: string }>('/api/orgs/me/webhook-slug/regenerate', {});
   },
   update(api: ApiClient, id: string, payload: UpdateChannelPayload) {
     return api.patch<ChannelListItem>(`/api/channels/${id}`, payload);

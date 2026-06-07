@@ -18,7 +18,6 @@ import { MetricsPage } from './features/email/metrics/MetricsPage';
 import { TransactionalListPage } from './features/email/transactional/TransactionalListPage';
 import { WapiCampaignsListPage } from './features/wapi/campaigns/WapiCampaignsListPage';
 import { WapiCampaignDetailPage } from './features/wapi/campaigns/WapiCampaignDetailPage';
-import { WapiConfigsPage } from './features/wapi/configs/WapiConfigsPage';
 import { ChannelsPage } from './features/channels/ChannelsPage';
 import { WapiTemplatesListPage } from './features/wapi/templates/WapiTemplatesListPage';
 import { WapiTemplateEditorPage } from './features/wapi/templates/WapiTemplateEditorPage';
@@ -75,9 +74,10 @@ export function App() {
         <Route path="wapi/campaigns" element={<WapiCampaignsListPage />} />
         <Route path="wapi/campaigns/:id" element={<WapiCampaignDetailPage />} />
         <Route path="channels" element={<ChannelsPage />} />
-        {/* "Números" pasa a ser ajustes avanzados de WhatsApp (reachable desde la
-            tarjeta del canal). El alta/listado unificado vive en /dashboard/channels. */}
-        <Route path="wapi/configs" element={<WapiConfigsPage />} />
+        {/* La gestión de canales (alta/listado/edición de todos los kinds) vive en
+            /dashboard/channels. La vieja página "Números" se eliminó; sus ajustes
+            WhatsApp (throttle/opt-out/welcome) están en el editor de cada canal. */}
+        <Route path="wapi/configs" element={<Navigate to="/dashboard/channels" replace />} />
         <Route path="inbox" element={<InboxPage />} />
         {/* El inbox dejó de ser sub-feature de WhatsApp (es omnicanal) →
             /dashboard/inbox. Redirect del path viejo por compat. */}

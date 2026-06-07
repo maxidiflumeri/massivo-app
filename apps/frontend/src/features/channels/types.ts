@@ -32,6 +32,17 @@ export interface CreateChannelPayload {
   isTestMode?: boolean;
 }
 
+/** Detalle de un canal (incluye los settings WhatsApp-específicos editables). */
+export interface ChannelDetail extends ChannelListItem {
+  welcomeMessage: string | null;
+  optOutConfirmMessage: string | null;
+  optOutKeywords: string[];
+  dailyLimit: number;
+  sendDelayMinMs: number;
+  sendDelayMaxMs: number;
+  updatedAt: string;
+}
+
 /** Update parcial: las credenciales sólo se mandan si el usuario las cambió. */
 export interface UpdateChannelPayload {
   name?: string;
@@ -43,4 +54,11 @@ export interface UpdateChannelPayload {
   appSecret?: string;
   isTestMode?: boolean;
   isActive?: boolean;
+  // WhatsApp-específicos (auto-replies + throttle), antes en la página Números.
+  welcomeMessage?: string | null;
+  optOutConfirmMessage?: string | null;
+  optOutKeywords?: string[];
+  dailyLimit?: number;
+  sendDelayMinMs?: number;
+  sendDelayMaxMs?: number;
 }

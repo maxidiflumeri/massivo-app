@@ -19,6 +19,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import LinkIcon from '@mui/icons-material/Link';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
 import { useApi } from '../../api/client';
 import { useNotify } from '../../feedback/NotifyProvider';
 import { useConfirm } from '../../feedback/ConfirmProvider';
@@ -75,6 +76,24 @@ export function ChannelsPage() {
     }
   }
 
+  async function handleRegenerateWebhook() {
+    const ok = await confirm({
+      title: 'Regenerar URL de webhook',
+      message:
+        'Vas a invalidar la URL actual del webhook de TODOS los canales de la organización. Tenés que actualizarla en la consola de Meta (cada app donde la pegaste) o vas a dejar de recibir mensajes. ¿Seguir?',
+      confirmText: 'Regenerar',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      const res = await channelsApi.regenerateWebhookSlug(api);
+      setWebhookSlug(res.webhookSlug);
+      notify.success('URL de webhook regenerada — actualizala en Meta');
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'No se pudo regenerar');
+    }
+  }
+
   async function copyWebhook(channel: ChannelListItem) {
     if (!webhookSlug) {
       notify.error('No hay webhook slug configurado para la organización');
@@ -119,9 +138,19 @@ export function ChannelsPage() {
             Conectá WhatsApp, Messenger y más. Cada canal se atiende en el inbox unificado.
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>
-          Agregar canal
-        </Button>
+        <Stack direction="row" gap={1}>
+          <Button
+            variant="text"
+            color="inherit"
+            startIcon={<AutorenewIcon />}
+            onClick={() => void handleRegenerateWebhook()}
+          >
+            Regenerar webhook
+          </Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>
+            Agregar canal
+          </Button>
+        </Stack>
       </Stack>
 
       {loading ? (

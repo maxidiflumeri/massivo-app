@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -9,15 +8,16 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   FormControlLabel,
+  IconButton,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
-import { IconButton, Tooltip } from '@mui/material';
 import { ApiError, useApi } from '../../api/client';
 import { useNotify } from '../../feedback/NotifyProvider';
 import { ChannelIcon, channelMeta } from './channelMeta';
@@ -31,6 +31,15 @@ interface Props {
   webhookSlug: string | null;
 }
 
+const EMPTY_WA = {
+  welcomeMessage: '',
+  optOutConfirmMessage: '',
+  optOutKeywords: '',
+  dailyLimit: '',
+  sendDelayMinMs: '',
+  sendDelayMaxMs: '',
+};
+
 export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Props) {
   const api = useApi();
   const notify = useNotify();
@@ -42,15 +51,19 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
   const [webhookVerifyToken, setWebhookVerifyToken] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [isTestMode, setIsTestMode] = useState(false);
+  const [wa, setWa] = useState(EMPTY_WA);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
 
-  // Pre-cargar al abrir (las credenciales NO se traen — van vacías y sólo se
-  // mandan si el usuario escribe un valor nuevo).
+  const isWhatsApp = channel?.kind === 'WHATSAPP';
+
+  // Pre-cargar al abrir. Credenciales NO se traen (van vacías, sólo se mandan si
+  // el usuario escribe). Para WhatsApp se trae el detalle (welcome/opt-out/throttle).
   useEffect(() => {
     if (!channel) return;
+    let cancelled = false;
     setName(channel.name ?? '');
     setPhoneNumberId(channel.phoneNumberId ?? '');
     setBusinessAccountId(channel.businessAccountId ?? '');
@@ -59,11 +72,30 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
     setWebhookVerifyToken('');
     setAppSecret('');
     setIsTestMode(channel.isTestMode);
+    setWa(EMPTY_WA);
     setError(null);
     setRevealedToken(null);
-  }, [channel]);
+    if (channel.kind === 'WHATSAPP') {
+      void channelsApi
+        .get(api, channel.id)
+        .then((d) => {
+          if (cancelled) return;
+          setWa({
+            welcomeMessage: d.welcomeMessage ?? '',
+            optOutConfirmMessage: d.optOutConfirmMessage ?? '',
+            optOutKeywords: (d.optOutKeywords ?? []).join(', '),
+            dailyLimit: String(d.dailyLimit ?? ''),
+            sendDelayMinMs: String(d.sendDelayMinMs ?? ''),
+            sendDelayMaxMs: String(d.sendDelayMaxMs ?? ''),
+          });
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [channel, api]);
 
-  const isWhatsApp = channel?.kind === 'WHATSAPP';
   const webhookUrl = useMemo(() => {
     if (!channel || !webhookSlug) return null;
     return channelWebhookUrl(api.baseUrl, channel.kind, webhookSlug);
@@ -103,10 +135,22 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
           ? { phoneNumberId: phoneNumberId.trim(), businessAccountId: businessAccountId.trim() }
           : { pageId: pageId.trim() }),
       };
-      // Credenciales: sólo si el usuario las cambió.
       if (accessToken.trim()) payload.accessToken = accessToken.trim();
       if (webhookVerifyToken.trim()) payload.webhookVerifyToken = webhookVerifyToken.trim();
       if (appSecret.trim()) payload.appSecret = appSecret.trim();
+
+      // Settings WhatsApp-específicos (auto-replies + throttle).
+      if (isWhatsApp) {
+        payload.welcomeMessage = wa.welcomeMessage.trim() || null;
+        payload.optOutConfirmMessage = wa.optOutConfirmMessage.trim() || null;
+        payload.optOutKeywords = wa.optOutKeywords
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean);
+        if (wa.dailyLimit.trim()) payload.dailyLimit = Number(wa.dailyLimit);
+        if (wa.sendDelayMinMs.trim()) payload.sendDelayMinMs = Number(wa.sendDelayMinMs);
+        if (wa.sendDelayMaxMs.trim()) payload.sendDelayMaxMs = Number(wa.sendDelayMaxMs);
+      }
 
       await channelsApi.update(api, channel.id, payload);
       notify.success('Canal actualizado');
@@ -116,6 +160,10 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
     } finally {
       setSaving(false);
     }
+  }
+
+  function updateWa<K extends keyof typeof EMPTY_WA>(key: K, value: string) {
+    setWa((w) => ({ ...w, [key]: value }));
   }
 
   return (
@@ -128,13 +176,7 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
       </DialogTitle>
       <DialogContent dividers>
         <Stack spacing={1.75}>
-          <TextField
-            label="Nombre"
-            size="small"
-            fullWidth
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
+          <TextField label="Nombre" size="small" fullWidth value={name} onChange={(e) => setName(e.target.value)} />
 
           {isWhatsApp ? (
             <>
@@ -209,10 +251,7 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
                     Callback URL
                   </Typography>
                   <Stack direction="row" alignItems="center" gap={0.5}>
-                    <Box
-                      component="code"
-                      sx={{ fontSize: 12, wordBreak: 'break-all', flex: 1 }}
-                    >
+                    <Box component="code" sx={{ fontSize: 12, wordBreak: 'break-all', flex: 1 }}>
                       {webhookUrl}
                     </Box>
                     <Tooltip title="Copiar URL">
@@ -258,17 +297,70 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
             )}
           </Box>
 
+          {/* Ajustes WhatsApp-específicos (antes en la página Números). */}
           {isWhatsApp && (
-            <Box>
-              <Button
+            <>
+              <Divider textAlign="left">
+                <Typography variant="caption" color="text.secondary">
+                  Ajustes de WhatsApp
+                </Typography>
+              </Divider>
+              <TextField
+                label="Mensaje de bienvenida"
                 size="small"
-                startIcon={<OpenInNewIcon fontSize="small" />}
-                component={RouterLink}
-                to="/dashboard/wapi/configs"
-              >
-                Ajustes avanzados de WhatsApp (templates, throttle, opt-out)
-              </Button>
-            </Box>
+                fullWidth
+                multiline
+                minRows={3}
+                maxRows={8}
+                value={wa.welcomeMessage}
+                onChange={(e) => updateWa('welcomeMessage', e.target.value)}
+                helperText="Se envía al primer mensaje de un contacto nuevo (si el bot no lo maneja)."
+              />
+              <TextField
+                label="Mensaje de confirmación de baja (opt-out)"
+                size="small"
+                fullWidth
+                multiline
+                minRows={3}
+                maxRows={8}
+                value={wa.optOutConfirmMessage}
+                onChange={(e) => updateWa('optOutConfirmMessage', e.target.value)}
+              />
+              <TextField
+                label="Keywords de opt-out (separadas por coma)"
+                size="small"
+                fullWidth
+                value={wa.optOutKeywords}
+                onChange={(e) => updateWa('optOutKeywords', e.target.value)}
+                helperText="Ej: BAJA, STOP, CANCELAR. Vacío = defaults internos."
+              />
+              <Stack direction="row" gap={1}>
+                <TextField
+                  label="Límite diario"
+                  size="small"
+                  type="number"
+                  value={wa.dailyLimit}
+                  onChange={(e) => updateWa('dailyLimit', e.target.value)}
+                  sx={{ flex: 1 }}
+                />
+                <TextField
+                  label="Delay mín (ms)"
+                  size="small"
+                  type="number"
+                  value={wa.sendDelayMinMs}
+                  onChange={(e) => updateWa('sendDelayMinMs', e.target.value)}
+                  sx={{ flex: 1 }}
+                />
+                <TextField
+                  label="Delay máx (ms)"
+                  size="small"
+                  type="number"
+                  value={wa.sendDelayMaxMs}
+                  onChange={(e) => updateWa('sendDelayMaxMs', e.target.value)}
+                  sx={{ flex: 1 }}
+                />
+              </Stack>
+            </>
           )}
 
           {error && <Alert severity="error">{error}</Alert>}
