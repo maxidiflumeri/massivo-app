@@ -32,6 +32,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ScienceIcon from '@mui/icons-material/Science';
 import ForumIcon from '@mui/icons-material/Forum';
 import ChatIcon from '@mui/icons-material/Chat';
+import HubIcon from '@mui/icons-material/Hub';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import HistoryIcon from '@mui/icons-material/History';
@@ -95,6 +96,11 @@ const NAV_GROUPS: NavGroupSpec[] = [
         to: '/dashboard/inbox',
         label: 'Inbox',
         icon: <InboxIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/channels',
+        label: 'Canales',
+        icon: <HubIcon fontSize="small" />,
       },
     ],
   },
@@ -160,11 +166,6 @@ const NAV_GROUPS: NavGroupSpec[] = [
         to: '/dashboard/wapi/quick-replies',
         label: 'Respuestas rápidas',
         icon: <BoltIcon fontSize="small" />,
-      },
-      {
-        to: '/dashboard/wapi/configs',
-        label: 'Números',
-        icon: <DnsIcon fontSize="small" />,
       },
     ],
   },

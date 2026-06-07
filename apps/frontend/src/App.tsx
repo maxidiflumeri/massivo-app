@@ -19,6 +19,7 @@ import { TransactionalListPage } from './features/email/transactional/Transactio
 import { WapiCampaignsListPage } from './features/wapi/campaigns/WapiCampaignsListPage';
 import { WapiCampaignDetailPage } from './features/wapi/campaigns/WapiCampaignDetailPage';
 import { WapiConfigsPage } from './features/wapi/configs/WapiConfigsPage';
+import { ChannelsPage } from './features/channels/ChannelsPage';
 import { WapiTemplatesListPage } from './features/wapi/templates/WapiTemplatesListPage';
 import { WapiTemplateEditorPage } from './features/wapi/templates/WapiTemplateEditorPage';
 import { InboxPage } from './features/inbox/InboxPage';
@@ -73,6 +74,9 @@ export function App() {
         <Route path="email/transactional" element={<TransactionalListPage />} />
         <Route path="wapi/campaigns" element={<WapiCampaignsListPage />} />
         <Route path="wapi/campaigns/:id" element={<WapiCampaignDetailPage />} />
+        <Route path="channels" element={<ChannelsPage />} />
+        {/* "Números" pasa a ser ajustes avanzados de WhatsApp (reachable desde la
+            tarjeta del canal). El alta/listado unificado vive en /dashboard/channels. */}
         <Route path="wapi/configs" element={<WapiConfigsPage />} />
         <Route path="inbox" element={<InboxPage />} />
         {/* El inbox dejó de ser sub-feature de WhatsApp (es omnicanal) →

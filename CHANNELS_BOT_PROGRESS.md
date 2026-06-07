@@ -194,8 +194,19 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 - [x] **2-F (dev)** Simulador Messenger dev-gated: `POST /api/dev/channels/messenger/ensure`
   (crea Channel MESSENGER test + conecta bot) y `/inbound` (inyecta evento `page` →
   ingest, bypass HMAC). Permite probar end-to-end local sin Meta.
-- [ ] **2-F (prod)** Onboarding de canal Messenger en UI/API de producción (alta de
-  credenciales pageId + page token; depende del App Review de Meta). Diferido.
+- [x] **2-F (prod)** Onboarding unificado en UI: sección **"Canales"** (`/dashboard/channels`).
+  **Relocación primero** (estilo 1g, pedido del dueño): el admin de canales salió de
+  `modules/wapi/wapi-configs.*` → `modules/channels/channels.{controller,service,dto}.ts`
+  (`ChannelsService`/`ChannelsController`, `Channel(List|Detail)`, `Create/UpdateChannelDto`),
+  ruta `/api/wapi/configs` → **`/api/channels`** + filtro `?kind=` (campañas/templates/Números/
+  simulador piden `kind=WHATSAPP`; inbox/bots traen todos). Admin controller registrado **antes**
+  del webhook (`/channels/:id/reveal-secrets` vs `/channels/:kind/:slug`). Alta **kind-aware**
+  (WhatsApp: phoneNumberId+WABA; Messenger: pageId). **UI Canales:** lista de tarjetas con
+  **ícono de marca** por canal (`channelMeta`/`ChannelIcon`) + estado (Activo/Test) + selector de
+  bot + borrar + "ajustes avanzados" (WhatsApp → editor de Números); **AddChannelDialog** con type
+  picker (WhatsApp/Messenger activos; Instagram/Webchat "Próximamente") + form por kind + callback
+  URL del webhook. Sidebar: "Canales" entra (junto a Inbox), "Números" sale (queda como ajustes
+  avanzados WhatsApp). tsc back+front 0; backend 801/806; vite build verde; DI compila.
 - [x] **2-G** Frontend: página **Chat simulado Messenger** (`/dashboard/dev/channels/messenger/chat`,
   dev-gated) — selector de bot + "Conectar canal" (llama `/ensure`) + cliente virtual (PSID)
   que inyecta inbounds vía `/inbound`; reusa `ConversationThread`/`MessageBubble` (quick replies
