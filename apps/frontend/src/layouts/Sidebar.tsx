@@ -98,8 +98,19 @@ const NAV_GROUPS: NavGroupSpec[] = [
         icon: <InboxIcon fontSize="small" />,
       },
       {
+        to: '/dashboard/wapi/quick-replies',
+        label: 'Respuestas rápidas',
+        icon: <BoltIcon fontSize="small" />,
+      },
+    ],
+  },
+  // Canales: gestión omnicanal (alta/conexión de WhatsApp/Messenger/…) → sección propia.
+  {
+    label: 'Canales',
+    items: [
+      {
         to: '/dashboard/channels',
-        label: 'Canales',
+        label: 'Mis canales',
         icon: <HubIcon fontSize="small" />,
       },
     ],
@@ -161,11 +172,6 @@ const NAV_GROUPS: NavGroupSpec[] = [
         to: '/dashboard/wapi/templates',
         label: 'Templates',
         icon: <DescriptionIcon fontSize="small" />,
-      },
-      {
-        to: '/dashboard/wapi/quick-replies',
-        label: 'Respuestas rápidas',
-        icon: <BoltIcon fontSize="small" />,
       },
     ],
   },
