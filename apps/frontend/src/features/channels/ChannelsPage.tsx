@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -26,6 +25,7 @@ import type { BotListItem } from '../bots/types';
 import { ChannelIcon, channelMeta } from './channelMeta';
 import { channelsApi } from './api';
 import { AddChannelDialog } from './AddChannelDialog';
+import { EditChannelDialog } from './EditChannelDialog';
 import type { ChannelListItem } from './types';
 
 interface MeContextSlice {
@@ -41,6 +41,7 @@ export function ChannelsPage() {
   const [bots, setBots] = useState<BotListItem[]>([]);
   const [webhookSlug, setWebhookSlug] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<ChannelListItem | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -132,6 +133,7 @@ export function ChannelsPage() {
               channel={ch}
               bots={bots}
               onSetBot={(botId) => void handleSetBot(ch, botId)}
+              onEdit={() => setEditing(ch)}
               onDelete={() => void handleDelete(ch)}
             />
           ))}
@@ -147,6 +149,16 @@ export function ChannelsPage() {
         }}
         webhookSlug={webhookSlug}
       />
+
+      <EditChannelDialog
+        channel={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          void load();
+        }}
+        webhookSlug={webhookSlug}
+      />
     </Box>
   );
 }
@@ -155,11 +167,13 @@ function ChannelRow({
   channel,
   bots,
   onSetBot,
+  onEdit,
   onDelete,
 }: {
   channel: ChannelListItem;
   bots: BotListItem[];
   onSetBot: (botId: string) => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const meta = channelMeta(channel.kind);
@@ -220,13 +234,11 @@ function ChannelRow({
           </Select>
         </FormControl>
 
-        {channel.kind === 'WHATSAPP' && (
-          <Tooltip title="Ajustes avanzados (templates, throttle, opt-out, webhook)">
-            <IconButton size="small" component={RouterLink} to="/dashboard/wapi/configs">
-              <SettingsIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        )}
+        <Tooltip title="Editar canal">
+          <IconButton size="small" onClick={onEdit}>
+            <SettingsIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="Borrar canal">
           <IconButton size="small" color="error" onClick={onDelete}>
             <DeleteOutlineIcon fontSize="small" />

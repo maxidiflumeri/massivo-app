@@ -112,6 +112,12 @@ export class UpdateChannelDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
+  pageId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
   businessAccountId?: string;
 
   @IsOptional()

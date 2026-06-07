@@ -193,6 +193,7 @@ export class ChannelsService {
     const updateData: any = {
       name: dto.name,
       phoneNumberId: dto.phoneNumberId,
+      pageId: dto.pageId,
       businessAccountId: dto.businessAccountId,
       welcomeMessage: dto.welcomeMessage,
       optOutConfirmMessage: dto.optOutConfirmMessage,

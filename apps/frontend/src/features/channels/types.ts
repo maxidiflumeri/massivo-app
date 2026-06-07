@@ -31,3 +31,16 @@ export interface CreateChannelPayload {
   appSecret?: string;
   isTestMode?: boolean;
 }
+
+/** Update parcial: las credenciales sólo se mandan si el usuario las cambió. */
+export interface UpdateChannelPayload {
+  name?: string;
+  phoneNumberId?: string;
+  businessAccountId?: string;
+  pageId?: string;
+  accessToken?: string;
+  webhookVerifyToken?: string;
+  appSecret?: string;
+  isTestMode?: boolean;
+  isActive?: boolean;
+}
