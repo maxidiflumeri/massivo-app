@@ -17,13 +17,15 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SettingsIcon from '@mui/icons-material/Settings';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+import LinkIcon from '@mui/icons-material/Link';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useApi } from '../../api/client';
 import { useNotify } from '../../feedback/NotifyProvider';
 import { useConfirm } from '../../feedback/ConfirmProvider';
 import { botsApi } from '../bots/api';
 import type { BotListItem } from '../bots/types';
 import { ChannelIcon, channelMeta } from './channelMeta';
-import { channelsApi } from './api';
+import { channelsApi, channelWebhookUrl } from './api';
 import { AddChannelDialog } from './AddChannelDialog';
 import { EditChannelDialog } from './EditChannelDialog';
 import type { ChannelListItem } from './types';
@@ -70,6 +72,19 @@ export function ChannelsPage() {
       await load();
     } catch (e) {
       notify.error(e instanceof Error ? e.message : 'No se pudo conectar el bot');
+    }
+  }
+
+  async function copyWebhook(channel: ChannelListItem) {
+    if (!webhookSlug) {
+      notify.error('No hay webhook slug configurado para la organización');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(channelWebhookUrl(api.baseUrl, channel.kind, webhookSlug));
+      notify.success('URL del webhook copiada');
+    } catch {
+      notify.error('No se pudo copiar');
     }
   }
 
@@ -132,8 +147,10 @@ export function ChannelsPage() {
               key={ch.id}
               channel={ch}
               bots={bots}
+              webhookUrl={webhookSlug ? channelWebhookUrl(api.baseUrl, ch.kind, webhookSlug) : null}
               onSetBot={(botId) => void handleSetBot(ch, botId)}
               onEdit={() => setEditing(ch)}
+              onCopyWebhook={() => void copyWebhook(ch)}
               onDelete={() => void handleDelete(ch)}
             />
           ))}
@@ -166,14 +183,18 @@ export function ChannelsPage() {
 function ChannelRow({
   channel,
   bots,
+  webhookUrl,
   onSetBot,
   onEdit,
+  onCopyWebhook,
   onDelete,
 }: {
   channel: ChannelListItem;
   bots: BotListItem[];
+  webhookUrl: string | null;
   onSetBot: (botId: string) => void;
   onEdit: () => void;
+  onCopyWebhook: () => void;
   onDelete: () => void;
 }) {
   const meta = channelMeta(channel.kind);
@@ -203,6 +224,23 @@ function ChannelRow({
           <Typography variant="caption" color="text.secondary">
             {identifier || '—'}
           </Typography>
+          {webhookUrl && (
+            <Stack direction="row" alignItems="center" gap={0.25} sx={{ mt: 0.25 }}>
+              <LinkIcon sx={{ fontSize: 13, color: 'text.disabled' }} />
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: 11, fontFamily: 'monospace', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {webhookUrl}
+              </Typography>
+              <Tooltip title="Copiar URL del webhook">
+                <IconButton size="small" onClick={onCopyWebhook} sx={{ p: 0.25 }}>
+                  <ContentCopyIcon sx={{ fontSize: 13 }} />
+                </IconButton>
+              </Tooltip>
+            </Stack>
+          )}
         </Box>
 
         {/* Conectar bot */}

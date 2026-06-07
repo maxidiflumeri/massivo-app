@@ -17,7 +17,7 @@ import {
 import { ApiError, useApi } from '../../api/client';
 import { useNotify } from '../../feedback/NotifyProvider';
 import { CHANNEL_KINDS, ChannelIcon, channelMeta, type ChannelKind } from './channelMeta';
-import { channelsApi } from './api';
+import { channelsApi, channelWebhookUrl } from './api';
 import type { CreateChannelPayload } from './types';
 
 interface Props {
@@ -76,8 +76,8 @@ export function AddChannelDialog({ open, onClose, onCreated, webhookSlug }: Prop
 
   const webhookUrl = useMemo(() => {
     if (!kind || !webhookSlug) return null;
-    return `/api/channels/${kind.toLowerCase()}/${webhookSlug}`;
-  }, [kind, webhookSlug]);
+    return channelWebhookUrl(api.baseUrl, kind, webhookSlug);
+  }, [kind, webhookSlug, api.baseUrl]);
 
   async function handleCreate() {
     if (!kind) return;

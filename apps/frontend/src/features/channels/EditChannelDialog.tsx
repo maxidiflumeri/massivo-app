@@ -15,10 +15,13 @@ import {
   Typography,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import { IconButton, Tooltip } from '@mui/material';
 import { ApiError, useApi } from '../../api/client';
 import { useNotify } from '../../feedback/NotifyProvider';
 import { ChannelIcon, channelMeta } from './channelMeta';
-import { channelsApi } from './api';
+import { channelsApi, channelWebhookUrl } from './api';
 import type { ChannelListItem, UpdateChannelPayload } from './types';
 
 interface Props {
@@ -41,6 +44,8 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
   const [isTestMode, setIsTestMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [revealedToken, setRevealedToken] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
 
   // Pre-cargar al abrir (las credenciales NO se traen — van vacías y sólo se
   // mandan si el usuario escribe un valor nuevo).
@@ -55,13 +60,36 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
     setAppSecret('');
     setIsTestMode(channel.isTestMode);
     setError(null);
+    setRevealedToken(null);
   }, [channel]);
 
   const isWhatsApp = channel?.kind === 'WHATSAPP';
   const webhookUrl = useMemo(() => {
     if (!channel || !webhookSlug) return null;
-    return `/api/channels/${channel.kind.toLowerCase()}/${webhookSlug}`;
-  }, [channel, webhookSlug]);
+    return channelWebhookUrl(api.baseUrl, channel.kind, webhookSlug);
+  }, [channel, webhookSlug, api.baseUrl]);
+
+  async function copy(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      notify.success(`${label} copiado`);
+    } catch {
+      notify.error('No se pudo copiar');
+    }
+  }
+
+  async function handleReveal() {
+    if (!channel) return;
+    setRevealing(true);
+    try {
+      const res = await channelsApi.revealSecrets(api, channel.id);
+      setRevealedToken(res.webhookVerifyToken);
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'No se pudo revelar el token');
+    } finally {
+      setRevealing(false);
+    }
+  }
 
   async function handleSave() {
     if (!channel) return;
@@ -169,11 +197,66 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
             label="Modo test (no envía a Meta — para el chat simulado)"
           />
 
-          {webhookUrl && (
-            <Alert severity="info" sx={{ '& code': { fontSize: 12 } }}>
-              Callback URL del webhook (en tu dominio del backend): <code>{webhookUrl}</code>
-            </Alert>
-          )}
+          {/* Webhook: callback URL (por kind) + verify token. Lo que se pega en Meta. */}
+          <Box sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>
+              Webhook
+            </Typography>
+            {webhookUrl ? (
+              <Stack spacing={1}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Callback URL
+                  </Typography>
+                  <Stack direction="row" alignItems="center" gap={0.5}>
+                    <Box
+                      component="code"
+                      sx={{ fontSize: 12, wordBreak: 'break-all', flex: 1 }}
+                    >
+                      {webhookUrl}
+                    </Box>
+                    <Tooltip title="Copiar URL">
+                      <IconButton size="small" onClick={() => void copy(webhookUrl, 'URL del webhook')}>
+                        <ContentCopyIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Verify token
+                  </Typography>
+                  {revealedToken ? (
+                    <Stack direction="row" alignItems="center" gap={0.5}>
+                      <Box component="code" sx={{ fontSize: 12, wordBreak: 'break-all', flex: 1 }}>
+                        {revealedToken}
+                      </Box>
+                      <Tooltip title="Copiar token">
+                        <IconButton size="small" onClick={() => void copy(revealedToken, 'Verify token')}>
+                          <ContentCopyIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
+                  ) : (
+                    <Box>
+                      <Button
+                        size="small"
+                        startIcon={<VpnKeyIcon fontSize="small" />}
+                        onClick={() => void handleReveal()}
+                        disabled={revealing}
+                      >
+                        {revealing ? 'Revelando…' : 'Revelar verify token'}
+                      </Button>
+                    </Box>
+                  )}
+                </Box>
+              </Stack>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                Configurá el webhook slug de la organización para ver la URL.
+              </Typography>
+            )}
+          </Box>
 
           {isWhatsApp && (
             <Box>
@@ -183,7 +266,7 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
                 component={RouterLink}
                 to="/dashboard/wapi/configs"
               >
-                Ajustes avanzados de WhatsApp (templates, throttle, opt-out, webhook)
+                Ajustes avanzados de WhatsApp (templates, throttle, opt-out)
               </Button>
             </Box>
           )}
