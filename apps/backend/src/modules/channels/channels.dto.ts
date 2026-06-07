@@ -2,6 +2,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -14,21 +15,37 @@ import {
 /** 4.Q — máximo razonable para el delay (1h). Evita typos catastróficos. */
 const MAX_DELAY_MS = 60 * 60 * 1000;
 
-export class CreateWapiConfigDto {
+/** Kinds que hoy se pueden dar de alta vía UI (Instagram/Webchat llegan en Fase 3/4). */
+export const CREATABLE_CHANNEL_KINDS = ['WHATSAPP', 'MESSENGER'] as const;
+
+export class CreateChannelDto {
   @IsOptional()
   @IsString()
   @MaxLength(80)
   name?: string;
 
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  phoneNumberId!: string;
+  // Fase 2 (multi-canal). Default WHATSAPP para compat con el alta legacy.
+  @IsOptional()
+  @IsIn(CREATABLE_CHANNEL_KINDS as unknown as string[])
+  kind?: string;
 
+  // WhatsApp: id del número. Requerido para WHATSAPP (validado en el service).
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(100)
-  businessAccountId!: string;
+  phoneNumberId?: string;
+
+  // WhatsApp: WABA id. Requerido para WHATSAPP.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  businessAccountId?: string;
+
+  // Messenger/Instagram: id de la página. Requerido para esos kinds.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  pageId?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -79,7 +96,7 @@ export class CreateWapiConfigDto {
   isTestMode?: boolean;
 }
 
-export class UpdateWapiConfigDto {
+export class UpdateChannelDto {
   @IsOptional()
   @IsString()
   @MaxLength(80)

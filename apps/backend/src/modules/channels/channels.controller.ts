@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -17,20 +18,20 @@ import { TenantContextInterceptor } from '../../common/auth/tenant-context.inter
 import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { Audit } from '../../common/audit/audit.decorator';
-import { WapiConfigsService } from './wapi-configs.service';
-import { CreateWapiConfigDto, UpdateWapiConfigDto } from './wapi-configs.dto';
+import { ChannelsService } from './channels.service';
+import { CreateChannelDto, UpdateChannelDto } from './channels.dto';
 import type { AppAbility } from '@massivo/permissions';
 
-@Controller('wapi/configs')
+@Controller('channels')
 @UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
-export class WapiConfigsController {
-  constructor(private readonly service: WapiConfigsService) {}
+export class ChannelsController {
+  constructor(private readonly service: ChannelsService) {}
 
   @Get()
   @CheckPolicies((ability: AppAbility) => ability.can('read', 'WapiConfig'))
-  findAll() {
-    return this.service.findAll();
+  findAll(@Query('kind') kind?: string) {
+    return this.service.findAll(kind);
   }
 
   @Get(':id')
@@ -53,14 +54,14 @@ export class WapiConfigsController {
   @Post()
   @CheckPolicies((ability: AppAbility) => ability.can('create', 'WapiConfig'))
   @Audit({ action: 'wapi.config.created', resourceType: 'WapiConfig', resourceIdFrom: 'response:id' })
-  create(@Body() dto: CreateWapiConfigDto) {
+  create(@Body() dto: CreateChannelDto) {
     return this.service.create(dto);
   }
 
   @Patch(':id')
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
   @Audit({ action: 'wapi.config.updated', resourceType: 'WapiConfig', resourceIdFrom: 'param:id' })
-  update(@Param('id') id: string, @Body() dto: UpdateWapiConfigDto) {
+  update(@Param('id') id: string, @Body() dto: UpdateChannelDto) {
     return this.service.update(id, dto);
   }
 

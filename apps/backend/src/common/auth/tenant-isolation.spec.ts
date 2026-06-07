@@ -13,7 +13,7 @@ import { TeamsService } from '../../modules/teams/teams.service';
 import { TeamMembersService } from '../../modules/teams/team-members.service';
 import { SmtpAccountsService } from '../../modules/email/smtp-accounts.service';
 import { EmailTemplatesService } from '../../modules/email/email-templates.service';
-import { WapiConfigsService } from '../../modules/wapi/wapi-configs.service';
+import { ChannelsService } from '../../modules/channels/channels.service';
 import { WapiTemplatesService } from '../../modules/wapi/wapi-templates.service';
 import { ContactsService } from '../../modules/contacts/contacts.service';
 import { TagsService } from '../../modules/contacts/tags.service';
@@ -28,7 +28,7 @@ describe('Aislamiento tenant-a-tenant', () => {
   let membersService: TeamMembersService;
   let smtpService: SmtpAccountsService;
   let templatesService: EmailTemplatesService;
-  let wapiConfigService: WapiConfigsService;
+  let wapiConfigService: ChannelsService;
   let wapiTemplateService: WapiTemplatesService;
   let contactsService: ContactsService;
   let tagsService: TagsService;
@@ -121,7 +121,7 @@ describe('Aislamiento tenant-a-tenant', () => {
         TeamMembersService,
         SmtpAccountsService,
         EmailTemplatesService,
-        WapiConfigsService,
+        ChannelsService,
         WapiTemplatesService,
         ContactsService,
         TagsService,
@@ -145,7 +145,7 @@ describe('Aislamiento tenant-a-tenant', () => {
     membersService = moduleRef.get(TeamMembersService);
     smtpService = moduleRef.get(SmtpAccountsService);
     templatesService = moduleRef.get(EmailTemplatesService);
-    wapiConfigService = moduleRef.get(WapiConfigsService);
+    wapiConfigService = moduleRef.get(ChannelsService);
     wapiTemplateService = moduleRef.get(WapiTemplatesService);
     contactsService = moduleRef.get(ContactsService);
     tagsService = moduleRef.get(TagsService);
@@ -295,7 +295,7 @@ describe('Aislamiento tenant-a-tenant', () => {
     });
   });
 
-  describe('WapiConfigsService — aislamiento cross-tenant', () => {
+  describe('ChannelsService — aislamiento cross-tenant', () => {
     it('Tenant A no puede leer WapiConfig de Tenant B (NotFoundException)', async () => {
       prismaMock['channel']!['findFirst']!.mockResolvedValue(null);
 
@@ -410,7 +410,7 @@ describe('Aislamiento tenant-a-tenant', () => {
       await expect(templatesService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('WapiConfigsService.findAll lanza ForbiddenException sin contexto', async () => {
+    it('ChannelsService.findAll lanza ForbiddenException sin contexto', async () => {
       await expect(wapiConfigService.findAll()).rejects.toBeInstanceOf(ForbiddenException);
     });
 

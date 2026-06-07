@@ -95,7 +95,7 @@ export function InboxPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const list = await api.get<WapiConfigListItem[]>('/api/wapi/configs');
+        const list = await api.get<WapiConfigListItem[]>('/api/channels');
         if (cancelled) return;
         const active: InboxChannelOption[] = list
           .filter((c) => c.isActive)

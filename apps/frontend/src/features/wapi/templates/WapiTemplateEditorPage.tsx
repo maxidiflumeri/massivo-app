@@ -97,7 +97,7 @@ export function WapiTemplateEditorPage() {
 
   useEffect(() => {
     api
-      .get<WapiConfigOption[]>('/api/wapi/configs')
+      .get<WapiConfigOption[]>('/api/channels?kind=WHATSAPP')
       .then((cfgs) => {
         setConfigs(cfgs);
         if (cfgs.length > 0) setForm((f) => ({ ...f, configId: cfgs[0]!.id }));

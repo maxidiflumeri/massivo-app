@@ -9,12 +9,14 @@ import type { Prisma } from '@massivo/prisma';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
 import { EncryptionService } from '../../common/security/encryption.service';
-import type { CreateWapiConfigDto, UpdateWapiConfigDto } from './wapi-configs.dto';
+import type { CreateChannelDto, UpdateChannelDto } from './channels.dto';
 
-export interface WapiConfigListItem {
+export interface ChannelListItem {
   id: string;
   name: string | null;
   phoneNumberId: string;
+  /** Messenger/Instagram: id de la página (null para WhatsApp). */
+  pageId: string | null;
   businessAccountId: string;
   isActive: boolean;
   isTestMode: boolean;
@@ -25,7 +27,7 @@ export interface WapiConfigListItem {
   kind: string;
 }
 
-export interface WapiConfigDetail extends WapiConfigListItem {
+export interface ChannelDetail extends ChannelListItem {
   welcomeMessage: string | null;
   optOutConfirmMessage: string | null;
   optOutKeywords: string[];
@@ -59,11 +61,12 @@ function normalizeKeywords(input: string[] | undefined): string[] {
   return out;
 }
 
-function toListItem(row: any): WapiConfigListItem {
+function toListItem(row: any): ChannelListItem {
   return {
     id: row.id,
     name: row.name,
     phoneNumberId: row.phoneNumberId ?? '',
+    pageId: row.pageId ?? null,
     businessAccountId: row.businessAccountId,
     isActive: row.isActive,
     isTestMode: row.isTestMode ?? false,
@@ -74,8 +77,8 @@ function toListItem(row: any): WapiConfigListItem {
 }
 
 @Injectable()
-export class WapiConfigsService {
-  private readonly logger = new Logger(WapiConfigsService.name);
+export class ChannelsService {
+  private readonly logger = new Logger(ChannelsService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -90,15 +93,18 @@ export class WapiConfigsService {
     return ctx;
   }
 
-  async findAll(): Promise<WapiConfigListItem[]> {
+  async findAll(kind?: string): Promise<ChannelListItem[]> {
     this.requireContext();
     const rows = await this.prisma.scoped.channel.findMany({
+      // Filtro opcional por tipo de canal: features WhatsApp-específicas
+      // (campañas, templates) piden `kind=WHATSAPP` para no listar otros canales.
+      ...(kind ? { where: { kind } as never } : {}),
       orderBy: { createdAt: 'desc' },
     });
     return rows.map(toListItem);
   }
 
-  async findOne(id: string): Promise<WapiConfigDetail> {
+  async findOne(id: string): Promise<ChannelDetail> {
     this.requireContext();
     const row = await this.prisma.scoped.channel.findFirst({
       where: { id },
@@ -110,6 +116,7 @@ export class WapiConfigsService {
       id: row.id,
       name: row.name,
       phoneNumberId: row.phoneNumberId ?? '',
+      pageId: row.pageId ?? null,
       businessAccountId: row.businessAccountId,
       isActive: row.isActive,
       isTestMode: row.isTestMode ?? false,
@@ -126,14 +133,33 @@ export class WapiConfigsService {
     };
   }
 
-  async create(dto: CreateWapiConfigDto): Promise<WapiConfigListItem> {
+  async create(dto: CreateChannelDto): Promise<ChannelListItem> {
     const ctx = this.requireContext();
     assertDelayRange(dto.sendDelayMinMs, dto.sendDelayMaxMs);
+
+    // Fase 2 — alta kind-aware. WhatsApp se identifica por phoneNumberId+WABA;
+    // Messenger/Instagram por pageId. businessAccountId es WhatsApp-only (no-WA → '').
+    const kind = (dto.kind ?? 'WHATSAPP') as 'WHATSAPP' | 'MESSENGER';
+    let identity: { phoneNumberId: string | null; pageId: string | null; businessAccountId: string };
+    if (kind === 'WHATSAPP') {
+      if (!dto.phoneNumberId || !dto.businessAccountId) {
+        throw new BadRequestException('WhatsApp requiere phoneNumberId y businessAccountId');
+      }
+      identity = { phoneNumberId: dto.phoneNumberId, pageId: null, businessAccountId: dto.businessAccountId };
+    } else {
+      if (!dto.pageId) {
+        throw new BadRequestException('Messenger requiere pageId');
+      }
+      identity = { phoneNumberId: null, pageId: dto.pageId, businessAccountId: '' };
+    }
+
     const row = await this.prisma.scoped.channel.create({
       data: {
         name: dto.name,
-        phoneNumberId: dto.phoneNumberId,
-        businessAccountId: dto.businessAccountId,
+        kind,
+        phoneNumberId: identity.phoneNumberId,
+        pageId: identity.pageId,
+        businessAccountId: identity.businessAccountId,
         accessTokenEnc: this.encryption.encrypt(dto.accessToken),
         webhookVerifyTokenEnc: this.encryption.encrypt(dto.webhookVerifyToken),
         appSecretEnc: dto.appSecret ? this.encryption.encrypt(dto.appSecret) : dto.appSecret,
@@ -146,11 +172,11 @@ export class WapiConfigsService {
         isTestMode: dto.isTestMode ?? false,
       } as Prisma.ChannelUncheckedCreateInput,
     });
-    this.logger.log(`WapiConfig created: ${row.id} in org ${ctx.organizationId} team ${ctx.teamId}`);
+    this.logger.log(`Channel created: ${row.id} kind=${kind} in org ${ctx.organizationId} team ${ctx.teamId}`);
     return toListItem(row);
   }
 
-  async update(id: string, dto: UpdateWapiConfigDto): Promise<WapiConfigListItem> {
+  async update(id: string, dto: UpdateChannelDto): Promise<ChannelListItem> {
     this.requireContext();
     const current = await this.prisma.scoped.channel.findFirst({
       where: { id },

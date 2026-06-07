@@ -137,7 +137,7 @@ export function WapiConfigsPage() {
 
   async function load() {
     try {
-      const data = await api.get<WapiConfigListItem[]>('/api/wapi/configs');
+      const data = await api.get<WapiConfigListItem[]>('/api/channels?kind=WHATSAPP');
       setItems(data);
     } catch (e) {
       notify.error(e instanceof Error ? e.message : 'Error cargando configs');
@@ -229,7 +229,7 @@ export function WapiConfigsPage() {
     }
     try {
       const res = await api.get<{ webhookVerifyToken: string }>(
-        `/api/wapi/configs/${c.id}/reveal-secrets`,
+        `/api/channels/${c.id}/reveal-secrets`,
       );
       setRevealedTokens((prev) => ({ ...prev, [c.id]: res.webhookVerifyToken }));
     } catch (e) {
@@ -247,7 +247,7 @@ export function WapiConfigsPage() {
 
   async function handleOpenEdit(c: WapiConfigListItem) {
     try {
-      const detail = await api.get<WapiConfigDetail>(`/api/wapi/configs/${c.id}`);
+      const detail = await api.get<WapiConfigDetail>(`/api/channels/${c.id}`);
       setEditing(detail);
       setForm({
         name: detail.name ?? '',
@@ -315,7 +315,7 @@ export function WapiConfigsPage() {
         if (form.webhookVerifyToken.trim())
           payload.webhookVerifyToken = form.webhookVerifyToken.trim();
         if (form.appSecret.trim()) payload.appSecret = form.appSecret.trim();
-        await api.patch(`/api/wapi/configs/${editing.id}`, payload);
+        await api.patch(`/api/channels/${editing.id}`, payload);
         notify.success('Config actualizada');
       } else {
         const payload: CreateWapiConfigPayload = {
@@ -333,7 +333,7 @@ export function WapiConfigsPage() {
           sendDelayMaxMs,
           isTestMode: form.isTestMode,
         };
-        await api.post('/api/wapi/configs', payload);
+        await api.post('/api/channels', payload);
         notify.success('Config creada');
       }
       setOpenDialog(false);
@@ -347,7 +347,7 @@ export function WapiConfigsPage() {
 
   async function handleToggleActive(c: WapiConfigListItem, isActive: boolean) {
     try {
-      await api.patch(`/api/wapi/configs/${c.id}`, { isActive });
+      await api.patch(`/api/channels/${c.id}`, { isActive });
       notify.success(isActive ? 'Config activada' : 'Config desactivada');
       await load();
     } catch (e) {
@@ -364,7 +364,7 @@ export function WapiConfigsPage() {
     });
     if (!ok) return;
     try {
-      await api.delete(`/api/wapi/configs/${c.id}`);
+      await api.delete(`/api/channels/${c.id}`);
       notify.success('Config eliminada');
       await load();
     } catch (e) {

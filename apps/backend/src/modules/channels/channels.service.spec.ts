@@ -1,13 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { WapiConfigsService } from './wapi-configs.service';
+import { ChannelsService } from './channels.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
 import { EncryptionService } from '../../common/security/encryption.service';
 import type { RequestContext } from '@massivo/shared-types';
 
-describe('WapiConfigsService', () => {
-  let service: WapiConfigsService;
+describe('ChannelsService', () => {
+  let service: ChannelsService;
   let prismaMock: Record<string, any>;
 
   const mockCtx: RequestContext = {
@@ -31,7 +31,7 @@ describe('WapiConfigsService', () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        WapiConfigsService,
+        ChannelsService,
         {
           provide: PrismaService,
           useValue: { scoped: prismaMock },
@@ -47,7 +47,7 @@ describe('WapiConfigsService', () => {
       ],
     }).compile();
 
-    service = moduleRef.get(WapiConfigsService);
+    service = moduleRef.get(ChannelsService);
   });
 
   it('lanza ForbiddenException si se llama sin contexto', async () => {

@@ -106,7 +106,7 @@ export function WapiSimulatorChatPage() {
   useEffect(() => {
     let cancelled = false;
     api
-      .get<WapiConfigListItem[]>('/api/wapi/configs')
+      .get<WapiConfigListItem[]>('/api/channels?kind=WHATSAPP')
       .then((list) => {
         if (cancelled) return;
         setConfigs(list);

@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ContactsModule } from '../contacts/contacts.module';
 import { EventsModule } from '../events/events.module';
-import { WapiConfigsController } from './wapi-configs.controller';
-import { WapiConfigsService } from './wapi-configs.service';
 import { WapiTemplatesController } from './wapi-templates.controller';
 import { WapiTemplatesService } from './wapi-templates.service';
 import { WapiCampaignsController } from './campaigns/wapi-campaigns.controller';
@@ -47,7 +45,6 @@ import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
 @Module({
   imports: [EventsModule, ContactsModule],
   controllers: [
-    WapiConfigsController,
     WapiTemplatesController,
     WapiCampaignsController,
     WapiWebhookController,
@@ -57,7 +54,6 @@ import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
     WapiLiveController,
   ],
   providers: [
-    WapiConfigsService,
     WapiTemplatesService,
     WapiCampaignsService,
     WapiCampaignSchedulerService,

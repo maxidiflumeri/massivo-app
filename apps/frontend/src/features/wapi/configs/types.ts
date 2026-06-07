@@ -2,6 +2,8 @@ export interface WapiConfigListItem {
   id: string;
   name: string | null;
   phoneNumberId: string;
+  /** Messenger/Instagram: id de la página (null para WhatsApp). */
+  pageId: string | null;
   businessAccountId: string;
   isActive: boolean;
   isTestMode: boolean;

@@ -236,7 +236,7 @@ export function WapiCampaignDetailPage() {
       const [c, tpls, cfgs] = await Promise.all([
         api.get<WapiCampaignDetail>(`/api/wapi/campaigns/${id}`),
         api.get<WapiTemplateListItem[]>('/api/wapi/templates'),
-        api.get<WapiConfigListItem[]>('/api/wapi/configs'),
+        api.get<WapiConfigListItem[]>('/api/channels?kind=WHATSAPP'),
       ]);
       setCampaign(c);
       setTemplates(tpls);

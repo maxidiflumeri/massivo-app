@@ -96,7 +96,7 @@ export function WapiTemplatesListPage() {
     try {
       const [tpls, cfgs] = await Promise.all([
         api.get<WapiTemplateListItem[]>('/api/wapi/templates'),
-        api.get<WapiConfigOption[]>('/api/wapi/configs'),
+        api.get<WapiConfigOption[]>('/api/channels?kind=WHATSAPP'),
       ]);
       setItems(tpls);
       setConfigs(cfgs);
