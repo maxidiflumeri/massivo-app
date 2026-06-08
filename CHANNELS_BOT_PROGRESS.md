@@ -235,6 +235,22 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 
 ## Bitácora (qué se hizo y por qué)
 
+### Sesión 8 (cont.) — Messenger real + UX inbox + consolidación B
+- **Messenger probado REAL** end-to-end (DM real vía ngrok, modo desarrollo sin App Review).
+  Setup documentado en la memoria `meta-apps-onboarding`. Instagram **diferido** (no hay cuenta
+  IG business; el código está validado por Messenger, mismo path). Webchat embebible probado con
+  el HTML demo.
+- **Fixes de los chats de prueba:** el simulador Messenger/IG ocultaba mensajes del bot (filtro
+  `isBotInteractionMessage` se comía `bot-menu`/`bot-message`) → se quitó; full-bleed + botón
+  Reiniciar; y el Chat simulado WhatsApp rompía por mandar `configId` al inbox (era `channelId`).
+- **Inbox UX:** el filtro de canal (2 filas de toggles que se amontonaban) → **un solo Select
+  agrupado por tipo** (`ConversationList`). Los tabs de estado quedan igual. Commit `4e37497`.
+- **Consolidación B (núcleo compartido):** el upsert de Conversation (race P2002,
+  WAITING→UNASSIGNED, ventana 24h) estaba duplicado en el webhook WhatsApp y el ingest agnóstico
+  → extraído a `ConversationCoreService.upsertConversation` (en WapiModule, sin ciclo). Ambos paths
+  lo usan; WhatsApp conserva `isFirst` para el welcome. Persistencia/eventos/bot siguen por canal
+  (no se tocó el comportamiento de WhatsApp). jest 802/807 (5 fallos email pre-existentes). Commit `401637c`.
+
 ### Sesión 8 — 2026-06-07 (Fase 4 — Webchat, end-to-end en código)
 - **Diferencia clave vs Meta:** no hay API externa ni ventana de 24h. El visitante se
   conecta directo por WebSocket; el outbound es un push a su socket, no un HTTP.

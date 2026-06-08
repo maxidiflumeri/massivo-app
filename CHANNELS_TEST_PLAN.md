@@ -170,5 +170,7 @@ Para Webchat (y opcional Messenger/IG en test):
   durante la sesión (no se rehidrata al recargar).
 - **Hardening Webchat:** restringir orígenes permitidos por canal (hoy el gateway usa
   CORS `*`) para que la widget key no se pueda reusar en otros dominios.
-- **Consolidar inbound de WhatsApp** sobre `ConversationIngestService` (hoy sigue por
-  `WapiWebhookService.process`).
+- **Inbound de WhatsApp:** el **upsert de conversación ya está consolidado** en
+  `ConversationCoreService` (compartido con el ingest agnóstico). El merge TOTAL (welcome/
+  opt-out/button-actions/media/status como hooks del ingest genérico) queda diferido — alto
+  riesgo, valor invisible; el path de WhatsApp conserva esos pasos propios.
