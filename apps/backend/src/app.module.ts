@@ -22,6 +22,7 @@ import { EmailModule } from './modules/email/email.module';
 import { WapiModule } from './modules/wapi/wapi.module';
 import { InboxModule } from './modules/inbox/inbox.module';
 import { ChannelsModule } from './modules/channels/channels.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { EventsModule } from './modules/events/events.module';
 import { DevModule } from './modules/dev/dev.module';
@@ -51,6 +52,7 @@ import { DevModule } from './modules/dev/dev.module';
     WapiModule,
     InboxModule,
     ChannelsModule,
+    NotificationsModule,
     ContactsModule,
     EventsModule,
     DevModule,

@@ -13,7 +13,9 @@ import {
   IconButton,
   Tooltip,
   Stack,
+  Badge,
 } from '@mui/material';
+import { useNotifications } from '../features/notifications/NotificationsProvider';
 import CampaignIcon from '@mui/icons-material/Campaign';
 import DescriptionIcon from '@mui/icons-material/Description';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
@@ -273,6 +275,11 @@ export function Sidebar({
   const toggleGroup = (label: string) =>
     setOpenGroups((prev) => ({ ...prev, [label]: !(prev[label] ?? true) }));
 
+  // Contador de no leídos para el badge del ítem Inbox.
+  const { totalUnread } = useNotifications();
+  const badgeFor = (item: NavItemSpec) =>
+    item.to === '/dashboard/inbox' ? totalUnread : 0;
+
   return (
     <Box
       sx={{
@@ -380,6 +387,7 @@ export function Sidebar({
                         item={item}
                         collapsed={collapsed}
                         onNavigate={onNavigate}
+                        badgeCount={badgeFor(item)}
                       />
                     ))}
                   </Stack>
@@ -392,6 +400,7 @@ export function Sidebar({
                           item={item}
                           collapsed={collapsed}
                           onNavigate={onNavigate}
+                          badgeCount={badgeFor(item)}
                         />
                       ))}
                     </Stack>
@@ -434,11 +443,43 @@ function NavRow({
   item,
   collapsed,
   onNavigate,
+  badgeCount = 0,
 }: {
   item: NavItemSpec;
   collapsed: boolean;
   onNavigate?: () => void;
+  badgeCount?: number;
 }) {
+  const showBadge = badgeCount > 0;
+  const iconNode =
+    collapsed && showBadge ? (
+      <Badge badgeContent={badgeCount} color="error" max={99} overlap="circular">
+        {item.icon}
+      </Badge>
+    ) : (
+      item.icon
+    );
+  const trailingBadge = !collapsed && showBadge && (
+    <Box
+      sx={{
+        ml: 1,
+        minWidth: 20,
+        height: 20,
+        px: 0.75,
+        borderRadius: 9,
+        bgcolor: 'error.main',
+        color: 'common.white',
+        fontSize: 11,
+        fontWeight: 700,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}
+    >
+      {badgeCount > 99 ? '99+' : badgeCount}
+    </Box>
+  );
   const baseSx = {
     borderRadius: 1.5,
     py: 0.85,
@@ -501,13 +542,14 @@ function NavRow({
         onClick={() => onNavigate?.()}
         sx={baseSx}
       >
-        <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
+        <ListItemIcon sx={iconSx}>{iconNode}</ListItemIcon>
         {!collapsed && (
           <ListItemText
             primary={item.label}
             primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
           />
         )}
+        {trailingBadge}
       </ListItemButton>
     );
 

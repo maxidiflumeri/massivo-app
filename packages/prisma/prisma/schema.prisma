@@ -146,6 +146,7 @@ model Organization {
   wapiResolutionNotes WapiResolutionNote[]
   botSessions         BotSession[]
   bots                Bot[]
+  notifications       Notification[]
 
   contacts                Contact[]
   tags                    Tag[]
@@ -190,6 +191,7 @@ model Team {
   wapiResolutionNotes WapiResolutionNote[]
   botSessions         BotSession[]
   bots                Bot[]
+  notifications       Notification[]
 
   contacts       Contact[]
   tags           Tag[]
@@ -900,6 +902,7 @@ model Conversation {
   channel         Channel              @relation(fields: [channelId], references: [id], onDelete: Cascade)
   messages        Message[]
   resolutionNotes WapiResolutionNote[]
+  notifications   Notification[]
 
   @@unique([teamId, channelId, externalUserId])
   @@index([organizationId])
@@ -954,6 +957,51 @@ model Message {
   @@index([teamId])
   @@index([conversationId, timestamp])
   @@index([teamId, mediaSha256])
+}
+
+// Notificaciones del inbox (campanita del navbar). Dos baldes:
+//  - "Para mí"   (`userId` con valor): mensaje nuevo en una conversación que
+//    atiende el operador, o una conversación recién asignada a él. `readAt` es
+//    personal (se marca cuando abre la conversación / la campanita).
+//  - "Sin asignar" (`userId` NULL): cola del equipo — sólo eventos "nuevos /
+//    prioritarios" (HANDOFF del bot, botón INBOX). `readAt` es compartido: se
+//    resuelve para todos cuando alguien toma la conversación.
+// Una notificación "activa no leída" por (conversación, balde) — el trigger
+// coalesce (bump) en vez de spamear una fila por mensaje; el historial de
+// mensajes ya vive en la conversación.
+enum NotificationType {
+  NEW_MESSAGE
+  ASSIGNED
+  UNASSIGNED_NEW
+  HANDOFF
+}
+
+model Notification {
+  id             String           @id @default(cuid())
+  organizationId String
+  teamId         String
+  // NULL = balde "Sin asignar" (cola de equipo); con valor = "Para mí".
+  userId         String?
+  conversationId String
+  channelId      String
+  channelKind    ChannelType
+  type           NotificationType
+  // Título (nombre del contacto / id externo) y preview del último mensaje.
+  title          String?
+  body           String?
+  readAt         DateTime?
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([teamId])
+  // Listado del bell por balde (por usuario / sin asignar), recientes arriba.
+  @@index([teamId, userId, readAt, createdAt])
+  // Coalesce / resolver por conversación.
+  @@index([conversationId])
 }
 
 model WapiOptOut {

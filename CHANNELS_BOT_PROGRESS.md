@@ -21,6 +21,20 @@ credenciales (widget key auto en `pageId`), y página dev del widget del visitan
 **Las 4 fases del milestone están completas en código.** **Próximo: plan de pruebas
 end-to-end + onboarding real de apps Meta (Messenger/IG).** **Pendiente externo:** App
 Review de Meta para Messenger/IG en prod (no es código).
+
+**Notificaciones del inbox (campanita) — COMPLETA** (sesión 9): modelo `Notification`
+(tabla dedicada) + `NotificationsModule` (`/api/notifications`: list/`:id/read`/`read-all`,
+scoping por tenant). Triggers cableados en ingest agnóstico, webhook WhatsApp, HANDOFF del
+bot, botón INBOX y acciones del inbox (assign/resolve/leer); socket `notification.new|read|
+readAll` a `user:{id}` (balde **Para mí**) y `team:{id}` (balde **Sin asignar**, solo
+nuevas/prioritarias). **Coalesce** por (conversación, balde) — una notif activa, no una por
+mensaje. Front: `NotificationsProvider` global (en `AppLayout`, usa `useTeamSocket`) +
+campanita en el navbar (2 secciones, deep-link `/dashboard/inbox?c=<id>`) + **4 avisos**:
+sonido (WebAudio), notificación del navegador, contador en el título de la pestaña, badge en
+el ítem Inbox del sidebar (toggles sonido/escritorio en el panel, localStorage). Verificado:
+tsc back+front, jest 810/815 (5 email pre-existentes), migración aplicada sin drift. Cabos
+opcionales: notificar al expirar WAITING; página "historial / ver todas".
+
 1d (modelo unificado), 1g (bot fuera de `wapi/`) y **1e** (inbox omnicanal: relocación
 completa `modules/inbox` + `features/inbox`, contrato `channelId/externalUserId/
 freeformWindowAt/externalId/channelKind`, eventos `conversation.message.new`/

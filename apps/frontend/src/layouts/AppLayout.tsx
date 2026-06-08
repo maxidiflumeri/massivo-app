@@ -18,6 +18,8 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { UserButton } from '@clerk/clerk-react';
 import { Sidebar, SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from './Sidebar';
 import { useColorMode } from '../theme/ThemeProvider';
+import { NotificationsProvider } from '../features/notifications/NotificationsProvider';
+import { NotificationBell } from '../features/notifications/NotificationBell';
 
 const COLLAPSED_KEY = 'massivo:sidebarCollapsed';
 const TOPBAR_HEIGHT = 56;
@@ -47,6 +49,7 @@ export function AppLayout() {
   const sidebarWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
 
   return (
+    <NotificationsProvider>
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: 'background.default' }}>
       {/* Topbar */}
       <AppBar
@@ -103,6 +106,7 @@ export function AppLayout() {
               {mode === 'dark' ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
             </IconButton>
           </Tooltip>
+          <NotificationBell />
           <Box sx={{ ml: 1 }}>
             <UserButton afterSignOutUrl="/sign-in" />
           </Box>
@@ -184,5 +188,6 @@ export function AppLayout() {
         </Box>
       </Box>
     </Box>
+    </NotificationsProvider>
   );
 }

@@ -6,6 +6,7 @@ import { EventsService } from '../events/events.service';
 import { BotEngineService } from '../bot/bot-engine.service';
 import { BotFeatureService } from '../bot/bot-feature.service';
 import { ConversationCoreService } from './conversation-core.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { ChannelKind, InboundMessage } from './adapter.types';
 
 /** Canal resuelto (+ relación bot) que el ingest necesita para persistir y, si
@@ -55,6 +56,7 @@ export class ConversationIngestService {
     private readonly botFeature: BotFeatureService,
     private readonly botEngine: BotEngineService,
     private readonly core: ConversationCoreService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async ingest(channel: IngestChannel, inbounds: InboundMessage[]): Promise<void> {
@@ -142,6 +144,18 @@ export class ConversationIngestService {
       unreadCount: conversation.unreadCount,
     });
 
+    // 3b. Notificación al dueño (si la conversación está escalada y asignada/
+    //     en cola con dueño). El balde "sin asignar" lo dispara el HANDOFF abajo.
+    await this.notifications.notifyInbound({
+      organizationId: channel.organizationId,
+      teamId: channel.teamId,
+      conversationId: conversation.id,
+      channelId: channel.id,
+      channelKind: channel.kind,
+      externalUserId,
+      bodyPreview: inboundPreview(inbound),
+    });
+
     // 4. Bot guiado. Sólo texto / quick-reply (button). El motor chequea
     //    internamente botSuspended y feature flag, pero acortamos antes.
     await this.maybeRunBot(channel, conversation.id, externalUserId, inbound);
@@ -210,10 +224,41 @@ export class ConversationIngestService {
           unreadCount: u.unreadCount,
           priority: u.priority,
         });
+        // Notificación al equipo (balde "sin asignar"): el bot derivó a un humano.
+        await this.notifications.notifyEscalation({
+          organizationId: channel.organizationId,
+          teamId: channel.teamId,
+          conversationId,
+          channelId: channel.id,
+          channelKind: channel.kind,
+          externalUserId,
+          name: inbound.senderProfile?.name,
+        });
       } catch (err) {
         this.logger.warn(`Bot HANDOFF escalate falló: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+  }
+}
+
+/** Preview corto del inbound para el cuerpo de la notificación. */
+function inboundPreview(inbound: InboundMessage): string {
+  if ((inbound.type === 'text' || inbound.type === 'interactive_reply') && inbound.text) {
+    return inbound.text.length > 120 ? `${inbound.text.slice(0, 117)}…` : inbound.text;
+  }
+  switch (inbound.type) {
+    case 'image':
+      return '📷 Imagen';
+    case 'audio':
+      return '🎤 Audio';
+    case 'video':
+      return '🎬 Video';
+    case 'document':
+      return '📎 Documento';
+    case 'location':
+      return '📍 Ubicación';
+    default:
+      return 'Nuevo mensaje';
   }
 }
 

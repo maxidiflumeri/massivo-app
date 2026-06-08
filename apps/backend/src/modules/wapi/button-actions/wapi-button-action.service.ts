@@ -3,6 +3,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { EventsService } from '../../events/events.service';
 import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 
 export const BUTTON_ACTIONS = ['INBOX', 'BAJA', 'IGNORAR', 'BOT'] as const;
 export type ButtonAction = (typeof BUTTON_ACTIONS)[number];
@@ -62,6 +63,7 @@ export class WapiButtonActionService {
     private readonly prisma: PrismaService,
     private readonly events: EventsService,
     private readonly optOut: WapiOptOutService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async resolve(input: {
@@ -154,6 +156,15 @@ export class WapiButtonActionService {
         lastMessageAt: updated.lastMessageAt?.toISOString() ?? null,
         unreadCount: updated.unreadCount,
         priority: updated.priority,
+      });
+      // Notificación al equipo (balde "sin asignar"): el cliente pidió un agente.
+      await this.notifications.notifyEscalation({
+        organizationId: ctx.organizationId,
+        teamId: ctx.teamId,
+        conversationId: updated.id,
+        channelId: configId,
+        channelKind: 'WHATSAPP',
+        externalUserId: phone,
       });
     }
     this.logger.log(

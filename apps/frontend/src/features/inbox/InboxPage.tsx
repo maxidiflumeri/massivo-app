@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Box, Stack, Typography } from '@mui/material';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import { useApi } from '../../api/client';
@@ -128,6 +129,19 @@ export function InboxPage() {
 
   const selectedChannelRef = useRef<string | null>(null);
   selectedChannelRef.current = selectedChannelId;
+
+  // Deep-link desde la campanita / notificación de escritorio: /dashboard/inbox?c=<id>
+  // abre esa conversación directo (aunque esté en otro tab/filtro). Consumimos el
+  // query param y lo limpiamos para no re-fijar al navegar dentro del inbox.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const c = searchParams.get('c');
+    if (!c) return;
+    setSelectedId(c);
+    const next = new URLSearchParams(searchParams);
+    next.delete('c');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Cargar usuario actual
   useEffect(() => {

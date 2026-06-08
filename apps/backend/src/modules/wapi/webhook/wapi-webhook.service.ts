@@ -15,6 +15,7 @@ import { BotFeatureService } from '../../bot/bot-feature.service';
 import { BotRouterService } from '../../bot/bot-router.service';
 import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
 import { ConversationCoreService } from '../../channels/conversation-core.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
 import { WapiSendException } from '../sender/wapi-sender.types';
 import type {
@@ -103,6 +104,7 @@ export class WapiWebhookService {
     private readonly botRouter: BotRouterService,
     private readonly eventLogger: EventLogger,
     private readonly core: ConversationCoreService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async process(
@@ -386,6 +388,18 @@ export class WapiWebhookService {
       unreadCount: conversation.unreadCount,
     });
 
+    // Notificación al dueño (si la conversación está escalada y asignada/en cola
+    // con dueño). El balde "sin asignar" se dispara en el HANDOFF / botón INBOX.
+    await this.notifications.notifyInbound({
+      organizationId: tenant.organizationId,
+      teamId: tenant.teamId,
+      conversationId: conversation.id,
+      channelId: tenant.configId,
+      channelKind: 'WHATSAPP',
+      externalUserId: phone,
+      bodyPreview: whatsappPreview(msg),
+    });
+
     // Auto-respuestas (4.H opt-out + 4.I welcome + 4.K button actions + 4.M bot).
     // Cargamos el config completo sólo si alguno de los disparadores aplica,
     // para no pegar a DB en cada inbound. Orden de aplicación:
@@ -434,6 +448,7 @@ export class WapiWebhookService {
       // (phoneNumberId/accessToken/isTestMode); el bot, la definición del flow.
       select: {
         id: true,
+        organizationId: true,
         phoneNumberId: true,
         accessTokenEnc: true,
         isActive: true,
@@ -543,6 +558,15 @@ export class WapiWebhookService {
               lastMessageAt: u.lastMessageAt?.toISOString() ?? null,
               unreadCount: u.unreadCount,
               priority: u.priority,
+            });
+            // Notificación al equipo (balde "sin asignar"): el bot derivó a un humano.
+            await this.notifications.notifyEscalation({
+              organizationId: cfg.organizationId,
+              teamId: input.teamId,
+              conversationId: input.conversationId,
+              channelId: cfg.id,
+              channelKind: 'WHATSAPP',
+              externalUserId: input.phone,
             });
           } catch (err) {
             this.logger.warn(`Bot HANDOFF escalate falló: ${err instanceof Error ? err.message : String(err)}`);
@@ -859,6 +883,29 @@ function inboundBodyPreview(msg: WapiWebhookMessage): string | undefined {
   }
   if (m.document?.filename) return `[${msg.type}] ${m.document.filename}`;
   return undefined;
+}
+
+/** Preview corto del inbound para el cuerpo de la notificación (reusa
+ *  `inboundBodyPreview` y agrega un fallback por tipo de media). */
+function whatsappPreview(msg: WapiWebhookMessage): string {
+  const text = inboundBodyPreview(msg);
+  if (text) return text.length > 120 ? `${text.slice(0, 117)}…` : text;
+  switch (msg.type) {
+    case 'image':
+      return '📷 Imagen';
+    case 'audio':
+      return '🎤 Audio';
+    case 'video':
+      return '🎬 Video';
+    case 'document':
+      return '📎 Documento';
+    case 'sticker':
+      return '🌟 Sticker';
+    case 'location':
+      return '📍 Ubicación';
+    default:
+      return 'Nuevo mensaje';
+  }
 }
 
 function extractContent(msg: WapiWebhookMessage): Record<string, unknown> {

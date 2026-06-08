@@ -8,6 +8,7 @@ import { EventsService } from '../events/events.service';
 import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
 import { WapiMediaService } from '../wapi/media/wapi-media.service';
 import { BotEngineService } from '../bot/bot-engine.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { TenantContext } from '../../common/auth/tenant-context';
 
 describe('InboxService', () => {
@@ -96,6 +97,17 @@ describe('InboxService', () => {
             handle: jest.fn().mockResolvedValue({ handled: false }),
             isBotButtonId: jest.fn().mockReturnValue(false),
             endSessionsForConversation: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: NotificationsService,
+          useValue: {
+            notifyInbound: jest.fn().mockResolvedValue(undefined),
+            notifyEscalation: jest.fn().mockResolvedValue(undefined),
+            notifyAssigned: jest.fn().mockResolvedValue(undefined),
+            clearUnassignedForConversation: jest.fn().mockResolvedValue(undefined),
+            clearForConversationUser: jest.fn().mockResolvedValue(undefined),
+            clearAllForConversation: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

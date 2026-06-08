@@ -44,9 +44,10 @@ import { InstagramAdapter } from '../channels/adapters/instagram.adapter';
 import { WebchatAdapter } from '../channels/adapters/webchat.adapter';
 import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
 import { ConversationCoreService } from '../channels/conversation-core.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [EventsModule, ContactsModule],
+  imports: [EventsModule, ContactsModule, NotificationsModule],
   controllers: [
     WapiTemplatesController,
     WapiCampaignsController,

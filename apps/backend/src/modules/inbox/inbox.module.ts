@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { EventsModule } from '../events/events.module';
 import { WapiModule } from '../wapi/wapi.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { InboxController } from './inbox.controller';
 import { InboxService } from './inbox.service';
 
@@ -14,7 +15,7 @@ import { InboxService } from './inbox.service';
  * WapiModule): nada en WapiModule consume el inbox, así que no hay ciclo.
  */
 @Module({
-  imports: [WapiModule, EventsModule],
+  imports: [WapiModule, EventsModule, NotificationsModule],
   controllers: [InboxController],
   providers: [InboxService],
 })

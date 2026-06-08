@@ -13,6 +13,7 @@ import { EncryptionService } from '../../common/security/encryption.service';
 import { EventsService } from '../events/events.service';
 import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
 import type { ChannelKind } from '../channels/adapter.types';
+import { NotificationsService } from '../notifications/notifications.service';
 import { WapiSendException } from '../wapi/sender/wapi-sender.types';
 import { WapiMediaService } from '../wapi/media/wapi-media.service';
 import { BotEngineService } from '../bot/bot-engine.service';
@@ -83,6 +84,7 @@ export class InboxService {
     private readonly encryption: EncryptionService,
     private readonly media: WapiMediaService,
     private readonly botEngine: BotEngineService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -672,6 +674,10 @@ export class InboxService {
       id: conv.id,
       unreadCount: updated.unreadCount,
     });
+    // Abrir/leer la conversación resuelve mi notificación personal de ese chat.
+    if (read) {
+      await this.notifications.clearForConversationUser(ctx.teamId, ctx.userId, conversationId);
+    }
     return { unreadCount: updated.unreadCount };
   }
 
@@ -684,7 +690,7 @@ export class InboxService {
     const ctx = this.requireContext();
     const conv = await this.prisma.scoped.conversation.findFirst({
       where: { id: conversationId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, channelId: true, channelKind: true, externalUserId: true, name: true },
     });
     if (!conv) throw new NotFoundException(`Conversación ${conversationId} no encontrada`);
     if (conv.status === 'RESOLVED') {
@@ -710,6 +716,20 @@ export class InboxService {
       status: updated.status,
       assignedUserId: updated.assignedUserId,
     });
+    // La conversación fue tomada → sale de la cola "sin asignar" para todos.
+    await this.notifications.clearUnassignedForConversation(ctx.teamId, conversationId);
+    // Si la asignó otro operador, notificación personal al asignado.
+    if (userId !== ctx.userId) {
+      await this.notifications.notifyAssigned({
+        organizationId: ctx.organizationId,
+        teamId: ctx.teamId,
+        conversationId,
+        channelId: conv.channelId,
+        channelKind: conv.channelKind,
+        assigneeUserId: userId,
+        title: conv.name ?? conv.externalUserId,
+      });
+    }
     return { id: updated.id, assignedUserId: updated.assignedUserId! };
   }
 
@@ -788,6 +808,8 @@ export class InboxService {
       assignedUserId: updated.assignedUserId,
       resolvedAt: updated.resolvedAt?.toISOString() ?? null,
     });
+    // Conversación resuelta → limpia cualquier notificación pendiente (ambos baldes).
+    await this.notifications.clearAllForConversation(ctx.teamId, conversationId);
     return { id: updated.id, resolvedAt: updated.resolvedAt! };
   }
 

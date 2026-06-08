@@ -47,6 +47,7 @@ describe('WapiButtonActionService', () => {
       { scoped: prismaScoped } as never,
       events as never,
       optOut as never,
+      { notifyEscalation: jest.fn() } as never,
     );
   });
 
