@@ -13,9 +13,10 @@
 COMPLETA** (sesión 7). **Fase 3 (Instagram) — COMPLETA en código** (sesión 8):
 `InstagramAdapter` (object 'instagram'), webhook genérico de Meta generalizado
 (`MetaMessagingWebhookHandler` base + subclases Messenger/IG), `/api/channels/instagram/:slug`,
-alta de canal INSTAGRAM (identidad por `pageId`=IG account id, sin migración) y tarjeta
-IG habilitada en la UI. **Próximo: simulador dev de Instagram** ("verlo andar", como
-Messenger) y/o **Fase 4 — Webchat**. **Pendiente externo:** App Review de Meta para
+alta de canal INSTAGRAM (identidad por `pageId`=IG account id, sin migración), tarjeta
+IG habilitada en la UI **y simulador dev de Instagram** (chat sandbox para "verlo andar"
+sin Meta, mirror del de Messenger). **Próximo: Fase 4 — Webchat** (`WebchatAdapter` +
+WS gateway al visitante + widget). **Pendiente externo:** App Review de Meta para
 Messenger/IG en prod (no es código).
 1d (modelo unificado), 1g (bot fuera de `wapi/`) y **1e** (inbox omnicanal: relocación
 completa `modules/inbox` + `features/inbox`, contrato `channelId/externalUserId/
@@ -254,8 +255,13 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 - **Verificación:** backend tsc 0; channels jest 47/47 (incl. test nuevo IG dispatch +
   501 movido a webchat); frontend tsc 0; vite build verde; DI smoke (AppModule resuelve
   adapter + handler IG) OK. Commit `bbc3896`.
-- **Pendiente / cabos:** simulador dev IG (mirror del de Messenger, para "verlo andar"
-  sin Meta); confirmar la semántica exacta del webhook IG real (qué id llega en
+- **Simulador dev de Instagram** (commit `427362e`): se generalizó el simulador a
+  `MetaMessagingSimulatorService` base + subclases Messenger/IG; controller
+  `/api/dev/channels/instagram/{ensure,inbound}`; en el front, `MetaSimulatorChatPage`
+  genérico (parametrizado por `ChannelKind`, reusa `channelMeta`) + wrappers
+  Messenger/IG; ruta `/dashboard/dev/channels/instagram/chat` + item "Chat Instagram"
+  en el sidebar. Permite probar IG end-to-end (cliente virtual IGSID → bot en modo test).
+- **Cabo abierto:** confirmar la semántica exacta del webhook IG real (qué id llega en
   `entry[].id`, y si la nueva "Instagram API with Instagram Login" difiere) cuando se
   pruebe contra Meta — el modelo `pageId` es reversible si hiciera falta un campo propio.
 
