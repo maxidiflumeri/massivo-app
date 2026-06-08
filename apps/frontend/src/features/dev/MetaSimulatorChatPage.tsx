@@ -26,7 +26,6 @@ import { useTeamSocket } from '../../realtime/useTeamSocket';
 import { channelMeta, type ChannelKind } from '../channels/channelMeta';
 import { inboxApi } from '../inbox/api';
 import { ConversationThread } from '../inbox/ConversationThread';
-import { isBotInteractionMessage } from '../inbox/MessageBubble';
 import type { ConversationDetail, ConversationMessageNewEvent, InboxMessage } from '../inbox/types';
 import type { BotListItem } from '../bots/types';
 
@@ -153,17 +152,16 @@ export function MetaSimulatorChatPage({ kind }: { kind: ChannelKind }) {
     void resolveConversation();
   }, [resolveConversation]);
 
-  // Socket: append cuando llega un mensaje (la respuesta del bot) a este canal+psid.
+  // Socket: append en vivo cada mensaje (del bot/operador) de este canal+psid.
+  // Appendeamos SIEMPRE (dedupe por id) sin depender de que la conversación ya esté
+  // resuelta — así no se pierden mensajes del primer turno. Resolvemos el detalle
+  // (header/historial) una vez si todavía no lo tenemos.
   useEffect(() => {
     if (!socket) return;
     const onNew = (ev: ConversationMessageNewEvent) => {
       if (ev.channelId !== channelId || ev.externalUserId !== psid.trim()) return;
-      const conv = conversationRef.current;
-      if (conv && ev.conversationId === conv.id) {
-        setMessages((prev) => (prev.some((m) => m.id === ev.message.id) ? prev : [ev.message, ...prev]));
-      } else {
-        void resolveConversation();
-      }
+      setMessages((prev) => (prev.some((m) => m.id === ev.message.id) ? prev : [ev.message, ...prev]));
+      if (!conversationRef.current) void resolveConversation();
     };
     socket.on('conversation.message.new', onNew);
     return () => {
@@ -325,8 +323,12 @@ function ClientThread({
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
 
+  // Vista desde el cliente: invertimos fromMe (lo del bot/operador es "entrante").
+  // NO filtramos los mensajes del bot (MENU/MESSAGE = system bot-menu/bot-message):
+  // son justo lo que el cliente ve (bienvenida + botoneras), igual que en el webchat.
+  // ConversationThread renderiza los botones del MENU como quick replies clickeables.
   const flipped = useMemo<InboxMessage[]>(
-    () => messages.filter((m) => !isBotInteractionMessage(m)).map((m) => ({ ...m, fromMe: !m.fromMe })),
+    () => messages.map((m) => ({ ...m, fromMe: !m.fromMe })),
     [messages],
   );
 
