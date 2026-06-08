@@ -1,37 +1,19 @@
-import WhatsAppIcon from '@mui/icons-material/WhatsApp';
-import InstagramIcon from '@mui/icons-material/Instagram';
-import ChatIcon from '@mui/icons-material/Chat';
-import LanguageIcon from '@mui/icons-material/Language';
-import type { SvgIconComponent } from '@mui/icons-material';
+import { channelMeta } from '../channels/channelMeta';
 import type { ChannelKind } from './types';
 import { channelLabel } from './capabilities';
 
 /**
- * Fase 1e — ícono/badge de canal por conversación. Mapea `ChannelKind` a un ícono
- * y color de marca. Es el signo visible del inbox omnicanal; hoy todas las filas
- * muestran WhatsApp.
+ * Fase 1e — ícono/badge de canal por conversación. Reusa `channelMeta` (única fuente
+ * de verdad de ícono + color de marca por canal, incluido el logo real de Messenger)
+ * para no duplicar mapas y quedar siempre en sync con las tarjetas de Canales.
  */
-const ICON_BY_KIND: Record<ChannelKind, SvgIconComponent> = {
-  WHATSAPP: WhatsAppIcon,
-  INSTAGRAM: InstagramIcon,
-  MESSENGER: ChatIcon,
-  WEBCHAT: LanguageIcon,
-};
-
-const COLOR_BY_KIND: Record<ChannelKind, string> = {
-  WHATSAPP: '#25D366',
-  INSTAGRAM: '#E1306C',
-  MESSENGER: '#0084FF',
-  WEBCHAT: '#6E7781',
-};
-
 export function ChannelBadge({ kind, size = 16 }: { kind: ChannelKind; size?: number }) {
-  const Icon = ICON_BY_KIND[kind] ?? ChatIcon;
-  const color = COLOR_BY_KIND[kind] ?? 'text.secondary';
+  const meta = channelMeta(kind);
+  const Icon = meta.Icon;
   return (
     <Icon
       titleAccess={channelLabel(kind)}
-      sx={{ fontSize: size, color, flexShrink: 0 }}
+      sx={{ fontSize: size, color: meta.color, flexShrink: 0 }}
     />
   );
 }
