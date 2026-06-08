@@ -14,6 +14,7 @@
  *  - multi-config: payload con dos phone_number_ids → cada entry usa su tenant
  */
 import { WapiWebhookService, type ResolvedWebhookConfig } from './wapi-webhook.service';
+import { ConversationCoreService } from '../../channels/conversation-core.service';
 import type { WapiWebhookPayload } from './wapi-webhook.types';
 
 const noopEventLogger = new Proxy({}, { get: () => () => undefined }) as never;
@@ -97,6 +98,8 @@ describe('WapiWebhookService', () => {
       botFeature as never,
       botRouter as never,
       noopEventLogger,
+      // Núcleo real con el mismo mock de prisma → preserva la lógica de upsert.
+      new ConversationCoreService({ scoped: prismaScoped } as never),
     );
   });
 

@@ -1,4 +1,5 @@
 import { ConversationIngestService, type IngestChannel } from './conversation-ingest.service';
+import { ConversationCoreService } from './conversation-core.service';
 import type { InboundMessage } from './adapter.types';
 
 function channel(overrides: Partial<IngestChannel> = {}): IngestChannel {
@@ -54,6 +55,8 @@ describe('ConversationIngestService', () => {
       events as never,
       botFeature as never,
       botEngine as never,
+      // Núcleo real con el mismo mock de prisma → la lógica de upsert sigue cubierta.
+      new ConversationCoreService({ scoped: prismaScoped } as never),
     );
   });
 

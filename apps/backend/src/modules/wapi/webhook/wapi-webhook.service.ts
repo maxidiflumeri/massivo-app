@@ -14,6 +14,7 @@ import { BotEngineService } from '../../bot/bot-engine.service';
 import { BotFeatureService } from '../../bot/bot-feature.service';
 import { BotRouterService } from '../../bot/bot-router.service';
 import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
+import { ConversationCoreService } from '../../channels/conversation-core.service';
 import { WapiSenderService } from '../sender/wapi-sender.service';
 import { WapiSendException } from '../sender/wapi-sender.types';
 import type {
@@ -101,6 +102,7 @@ export class WapiWebhookService {
     private readonly botFeature: BotFeatureService,
     private readonly botRouter: BotRouterService,
     private readonly eventLogger: EventLogger,
+    private readonly core: ConversationCoreService,
   ) {}
 
   async process(
@@ -229,66 +231,21 @@ export class WapiWebhookService {
       metaMessageId: msg.id,
     });
 
-    // findFirst + create/update en vez de upsert para detectar primera
-    // conversación (necesario para 4.I welcome message). El race entre dos
-    // webhooks del mismo phone+config en simultáneo es muy raro y, si ocurre,
-    // el unique (teamId, configId, phone) tira P2002 — capturamos abajo.
-    const existing = await this.prisma.scoped.conversation.findFirst({
-      where: { channelId: tenant.configId, externalUserId: phone },
-      select: { id: true, status: true, assignedUserId: true, unreadCount: true },
+    // Upsert de la conversación — núcleo compartido con el ingest agnóstico
+    // (`ConversationCoreService`): idempotencia P2002, transición WAITING→UNASSIGNED y
+    // ventana freeform de 24h. `isNewConversation` (= isFirst) alimenta el welcome (4.I).
+    // 4.O.6 — NO auto-reopen de RESOLVED: el bot atiende y sólo escala vía HANDOFF /
+    // template button INBOX (lo maneja el núcleo manteniendo el status salvo WAITING).
+    const { conversation, isFirst: isNewConversation } = await this.core.upsertConversation({
+      organizationId: tenant.organizationId,
+      teamId: tenant.teamId,
+      channelId: tenant.configId,
+      // Webhook WhatsApp-específico → kind fijo (channelKind es NOT NULL).
+      channelKind: 'WHATSAPP',
+      externalUserId: phone,
+      timestamp: ts,
+      profileName,
     });
-    const isNewConversation = !existing;
-    let conversation: { id: string; status: string; assignedUserId: string | null; unreadCount: number };
-    if (existing) {
-      // 4.O.6 — NO auto-reopen de RESOLVED. El bot debe atender al cliente y
-      // sólo si llega a HANDOFF (o el template button INBOX) la conversación
-      // vuelve al inbox. Mantener status hace que la conversación quede oculta
-      // del inbox (por escalated=false) hasta que el bot decida escalar.
-      // En cambio, WAITING → UNASSIGNED (el cliente respondió, sale de espera).
-      const waitingTransition =
-        existing.status === 'WAITING'
-          ? { status: 'UNASSIGNED', waitingUntil: null }
-          : {};
-      conversation = await this.prisma.scoped.conversation.update({
-        where: { id: existing.id },
-        data: {
-          lastMessageAt: ts,
-          freeformWindowAt: new Date(ts.getTime() + 24 * 60 * 60_000),
-          unreadCount: { increment: 1 },
-          ...(profileName ? { name: profileName } : {}),
-          ...waitingTransition,
-        } as never,
-        select: { id: true, status: true, assignedUserId: true, unreadCount: true },
-      });
-    } else {
-      try {
-        conversation = await this.prisma.scoped.conversation.create({
-          data: {
-            organizationId: tenant.organizationId,
-            teamId: tenant.teamId,
-            channelId: tenant.configId,
-            // Webhook WhatsApp-específico → kind fijo. channelKind es NOT NULL.
-            channelKind: 'WHATSAPP',
-            externalUserId: phone,
-            name: profileName,
-            lastMessageAt: ts,
-            freeformWindowAt: new Date(ts.getTime() + 24 * 60 * 60_000),
-            unreadCount: 1,
-          } as never,
-          select: { id: true, status: true, assignedUserId: true, unreadCount: true },
-        });
-      } catch (err) {
-        // Race contra otro webhook simultáneo — refetch y treat as existing.
-        const code = (err as { code?: string }).code;
-        if (code !== 'P2002') throw err;
-        const refetched = await this.prisma.scoped.conversation.findFirst({
-          where: { channelId: tenant.configId, externalUserId: phone },
-          select: { id: true, status: true, assignedUserId: true, unreadCount: true },
-        });
-        if (!refetched) throw err;
-        conversation = refetched;
-      }
-    }
 
     // 4.R — ya tenemos la conv; agregar al scope para los logs downstream
     ObservabilityContext.augment({ conversationId: conversation.id });

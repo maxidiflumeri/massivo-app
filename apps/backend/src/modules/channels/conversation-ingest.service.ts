@@ -5,6 +5,7 @@ import { TenantContext } from '../../common/auth/tenant-context';
 import { EventsService } from '../events/events.service';
 import { BotEngineService } from '../bot/bot-engine.service';
 import { BotFeatureService } from '../bot/bot-feature.service';
+import { ConversationCoreService } from './conversation-core.service';
 import type { ChannelKind, InboundMessage } from './adapter.types';
 
 /** Canal resuelto (+ relación bot) que el ingest necesita para persistir y, si
@@ -27,8 +28,6 @@ export interface IngestChannel {
     variables: unknown;
   } | null;
 }
-
-const WINDOW_24H_MS = 24 * 60 * 60_000;
 
 /**
  * Fase 2 — Ingesta de inbound **agnóstica de canal**. Consume `InboundMessage[]`
@@ -55,6 +54,7 @@ export class ConversationIngestService {
     private readonly events: EventsService,
     private readonly botFeature: BotFeatureService,
     private readonly botEngine: BotEngineService,
+    private readonly core: ConversationCoreService,
   ) {}
 
   async ingest(channel: IngestChannel, inbounds: InboundMessage[]): Promise<void> {
@@ -74,54 +74,17 @@ export class ConversationIngestService {
     const externalUserId = inbound.externalUserId;
     const profileName = inbound.senderProfile?.name;
 
-    // 1. Upsert Conversation. findFirst+create/update (vs upsert) para detectar
-    //    primera conversación. El unique (teamId, channelId, externalUserId) cubre
-    //    el race entre dos webhooks simultáneos → P2002 → refetch.
-    const existing = await this.prisma.scoped.conversation.findFirst({
-      where: { channelId: channel.id, externalUserId },
-      select: { id: true, status: true, assignedUserId: true, unreadCount: true },
+    // 1. Upsert Conversation — núcleo compartido con el webhook de WhatsApp
+    //    (idempotencia P2002, transición WAITING→UNASSIGNED, ventana freeform 24h).
+    const { conversation } = await this.core.upsertConversation({
+      organizationId: channel.organizationId,
+      teamId: channel.teamId,
+      channelId: channel.id,
+      channelKind: channel.kind,
+      externalUserId,
+      timestamp: ts,
+      profileName,
     });
-    let conversation: { id: string; status: string; assignedUserId: string | null; unreadCount: number };
-    if (existing) {
-      const waitingTransition =
-        existing.status === 'WAITING' ? { status: 'UNASSIGNED', waitingUntil: null } : {};
-      conversation = await this.prisma.scoped.conversation.update({
-        where: { id: existing.id },
-        data: {
-          lastMessageAt: ts,
-          freeformWindowAt: new Date(ts.getTime() + WINDOW_24H_MS),
-          unreadCount: { increment: 1 },
-          ...(profileName ? { name: profileName } : {}),
-          ...waitingTransition,
-        } as never,
-        select: { id: true, status: true, assignedUserId: true, unreadCount: true },
-      });
-    } else {
-      try {
-        conversation = await this.prisma.scoped.conversation.create({
-          data: {
-            organizationId: channel.organizationId,
-            teamId: channel.teamId,
-            channelId: channel.id,
-            channelKind: channel.kind,
-            externalUserId,
-            name: profileName,
-            lastMessageAt: ts,
-            freeformWindowAt: new Date(ts.getTime() + WINDOW_24H_MS),
-            unreadCount: 1,
-          } as never,
-          select: { id: true, status: true, assignedUserId: true, unreadCount: true },
-        });
-      } catch (err) {
-        if ((err as { code?: string }).code !== 'P2002') throw err;
-        const refetched = await this.prisma.scoped.conversation.findFirst({
-          where: { channelId: channel.id, externalUserId },
-          select: { id: true, status: true, assignedUserId: true, unreadCount: true },
-        });
-        if (!refetched) throw err;
-        conversation = refetched;
-      }
-    }
 
     // 2. Persistir el Message (idempotente por [channelId, externalId]).
     const type = persistType(inbound.type);
