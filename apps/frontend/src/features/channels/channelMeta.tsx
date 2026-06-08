@@ -64,7 +64,7 @@ export const CHANNEL_KINDS: ChannelKindMeta[] = [
     Icon: LanguageIcon,
     color: '#6E7781',
     bg: '#6E778122',
-    available: false,
+    available: true,
   },
 ];
 

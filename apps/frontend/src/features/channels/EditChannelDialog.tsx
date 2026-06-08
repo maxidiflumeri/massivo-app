@@ -58,6 +58,7 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
   const [revealing, setRevealing] = useState(false);
 
   const isWhatsApp = channel?.kind === 'WHATSAPP';
+  const isWebchat = channel?.kind === 'WEBCHAT';
 
   // Pre-cargar al abrir. Credenciales NO se traen (van vacías, sólo se mandan si
   // el usuario escribe). Para WhatsApp se trae el detalle (welcome/opt-out/throttle).
@@ -128,13 +129,16 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
     setError(null);
     setSaving(true);
     try {
-      const payload: UpdateChannelPayload = {
-        name: name.trim() || undefined,
-        isTestMode,
-        ...(isWhatsApp
-          ? { phoneNumberId: phoneNumberId.trim(), businessAccountId: businessAccountId.trim() }
-          : { pageId: pageId.trim() }),
-      };
+      // Webchat no tiene identidad ni credenciales editables (la widget key es fija).
+      const payload: UpdateChannelPayload = isWebchat
+        ? { name: name.trim() || undefined }
+        : {
+            name: name.trim() || undefined,
+            isTestMode,
+            ...(isWhatsApp
+              ? { phoneNumberId: phoneNumberId.trim(), businessAccountId: businessAccountId.trim() }
+              : { pageId: pageId.trim() }),
+          };
       if (accessToken.trim()) payload.accessToken = accessToken.trim();
       if (webhookVerifyToken.trim()) payload.webhookVerifyToken = webhookVerifyToken.trim();
       if (appSecret.trim()) payload.appSecret = appSecret.trim();
@@ -178,6 +182,32 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
         <Stack spacing={1.75}>
           <TextField label="Nombre" size="small" fullWidth value={name} onChange={(e) => setName(e.target.value)} />
 
+          {isWebchat && (
+            <Box sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>
+                Widget
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Clave pública del widget (embebela en tu sitio o usala en el chat de prueba):
+              </Typography>
+              <Stack direction="row" alignItems="center" gap={0.5} sx={{ mt: 0.5 }}>
+                <Box component="code" sx={{ fontSize: 12, wordBreak: 'break-all', flex: 1 }}>
+                  {channel?.pageId}
+                </Box>
+                <Tooltip title="Copiar widget key">
+                  <IconButton
+                    size="small"
+                    onClick={() => channel?.pageId && void copy(channel.pageId, 'Widget key')}
+                  >
+                    <ContentCopyIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            </Box>
+          )}
+
+          {!isWebchat && (
+          <>
           {isWhatsApp ? (
             <>
               <TextField
@@ -296,6 +326,8 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
               </Typography>
             )}
           </Box>
+          </>
+          )}
 
           {/* Ajustes WhatsApp-específicos (antes en la página Números). */}
           {isWhatsApp && (

@@ -25,9 +25,9 @@ export interface CreateChannelPayload {
   businessAccountId?: string;
   // Messenger/Instagram
   pageId?: string;
-  // Compartidos (Meta)
-  accessToken: string;
-  webhookVerifyToken: string;
+  // Compartidos (Meta) — opcionales: Webchat no usa credenciales externas.
+  accessToken?: string;
+  webhookVerifyToken?: string;
   appSecret?: string;
   isTestMode?: boolean;
 }

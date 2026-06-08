@@ -228,6 +228,11 @@ const NAV_GROUPS: NavGroupSpec[] = [
               icon: <InstagramIcon fontSize="small" />,
             },
             {
+              to: '/dashboard/dev/channels/webchat/widget',
+              label: 'Widget Webchat',
+              icon: <LanguageIcon fontSize="small" />,
+            },
+            {
               to: '/dashboard/dev/wapi/simulator',
               label: 'Simulador WhatsApp',
               icon: <ScienceIcon fontSize="small" />,

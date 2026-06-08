@@ -87,27 +87,31 @@ export function AddChannelDialog({ open, onClose, onCreated, webhookSlug }: Prop
       setError('WhatsApp requiere Phone Number ID y WhatsApp Business Account ID');
       return;
     }
-    if (kind === 'MESSENGER' && !form.pageId.trim()) {
-      setError('Messenger requiere el Page ID');
+    if ((kind === 'MESSENGER' || kind === 'INSTAGRAM') && !form.pageId.trim()) {
+      setError(`${channelMeta(kind).label} requiere el ${kind === 'INSTAGRAM' ? 'Instagram account ID' : 'Page ID'}`);
       return;
     }
-    if (!form.accessToken.trim() || !form.webhookVerifyToken.trim()) {
+    // Webchat no necesita credenciales (entrega por socket; el backend genera la widget key).
+    if (kind !== 'WEBCHAT' && (!form.accessToken.trim() || !form.webhookVerifyToken.trim())) {
       setError('Access token y verify token son obligatorios');
       return;
     }
     setSaving(true);
     try {
-      const payload: CreateChannelPayload = {
-        kind,
-        name: form.name.trim() || undefined,
-        accessToken: form.accessToken.trim(),
-        webhookVerifyToken: form.webhookVerifyToken.trim(),
-        appSecret: form.appSecret.trim() || undefined,
-        isTestMode: form.isTestMode,
-        ...(kind === 'WHATSAPP'
-          ? { phoneNumberId: form.phoneNumberId.trim(), businessAccountId: form.businessAccountId.trim() }
-          : { pageId: form.pageId.trim() }),
-      };
+      const payload: CreateChannelPayload =
+        kind === 'WEBCHAT'
+          ? { kind, name: form.name.trim() || undefined }
+          : {
+              kind,
+              name: form.name.trim() || undefined,
+              accessToken: form.accessToken.trim(),
+              webhookVerifyToken: form.webhookVerifyToken.trim(),
+              appSecret: form.appSecret.trim() || undefined,
+              isTestMode: form.isTestMode,
+              ...(kind === 'WHATSAPP'
+                ? { phoneNumberId: form.phoneNumberId.trim(), businessAccountId: form.businessAccountId.trim() }
+                : { pageId: form.pageId.trim() }),
+            };
       await channelsApi.create(api, payload);
       notify.success(`Canal ${channelMeta(kind).label} creado`);
       reset();
@@ -185,86 +189,96 @@ export function AddChannelDialog({ open, onClose, onCreated, webhookSlug }: Prop
               placeholder={`Mi ${channelMeta(kind).label}`}
             />
 
-            {kind === 'WHATSAPP' ? (
-              <>
-                <TextField
-                  label="Phone Number ID"
-                  size="small"
-                  fullWidth
-                  required
-                  value={form.phoneNumberId}
-                  onChange={(e) => update('phoneNumberId', e.target.value)}
-                />
-                <TextField
-                  label="WhatsApp Business Account ID"
-                  size="small"
-                  fullWidth
-                  required
-                  value={form.businessAccountId}
-                  onChange={(e) => update('businessAccountId', e.target.value)}
-                />
-              </>
-            ) : (
-              <TextField
-                label={kind === 'INSTAGRAM' ? 'Instagram account ID' : 'Page ID (Facebook)'}
-                size="small"
-                fullWidth
-                required
-                value={form.pageId}
-                onChange={(e) => update('pageId', e.target.value)}
-                helperText={
-                  kind === 'INSTAGRAM'
-                    ? 'Id de la cuenta de Instagram business (aparece en el webhook como entry.id). El access token es el de la página de Facebook vinculada.'
-                    : 'El id numérico de la página de Facebook conectada a Messenger.'
-                }
-              />
-            )}
-
-            <TextField
-              label={kind === 'WHATSAPP' ? 'Access Token (Cloud API)' : 'Page Access Token'}
-              size="small"
-              fullWidth
-              required
-              type="password"
-              value={form.accessToken}
-              onChange={(e) => update('accessToken', e.target.value)}
-            />
-            <TextField
-              label="Verify Token (webhook)"
-              size="small"
-              fullWidth
-              required
-              value={form.webhookVerifyToken}
-              onChange={(e) => update('webhookVerifyToken', e.target.value)}
-              helperText="El mismo que vas a pegar en la consola de Meta al configurar el webhook."
-            />
-            <TextField
-              label="App Secret (opcional, recomendado)"
-              size="small"
-              fullWidth
-              type="password"
-              value={form.appSecret}
-              onChange={(e) => update('appSecret', e.target.value)}
-              helperText="Valida la firma HMAC del webhook. Sin él, el webhook acepta sin verificar firma (no usar en prod)."
-            />
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={form.isTestMode}
-                  onChange={(e) => update('isTestMode', e.target.checked)}
-                />
-              }
-              label="Modo test (no envía a Meta — para el chat simulado)"
-            />
-
-            {webhookUrl && (
-              <Alert severity="info" sx={{ '& code': { fontSize: 12 } }}>
-                Configurá en Meta esta callback URL (en tu dominio del backend):
-                <br />
-                <code>{webhookUrl}</code>
-                <br />
-                con el verify token de arriba.
+            {kind === 'WEBCHAT' ? (
+              <Alert severity="info">
+                Webchat no necesita credenciales. Al crearlo te damos una <b>widget key</b> pública
+                para embeber el chat en tu sitio (la ves en la ruedita del canal). Conectale un bot
+                para que responda automáticamente.
               </Alert>
+            ) : (
+              <>
+                {kind === 'WHATSAPP' ? (
+                  <>
+                    <TextField
+                      label="Phone Number ID"
+                      size="small"
+                      fullWidth
+                      required
+                      value={form.phoneNumberId}
+                      onChange={(e) => update('phoneNumberId', e.target.value)}
+                    />
+                    <TextField
+                      label="WhatsApp Business Account ID"
+                      size="small"
+                      fullWidth
+                      required
+                      value={form.businessAccountId}
+                      onChange={(e) => update('businessAccountId', e.target.value)}
+                    />
+                  </>
+                ) : (
+                  <TextField
+                    label={kind === 'INSTAGRAM' ? 'Instagram account ID' : 'Page ID (Facebook)'}
+                    size="small"
+                    fullWidth
+                    required
+                    value={form.pageId}
+                    onChange={(e) => update('pageId', e.target.value)}
+                    helperText={
+                      kind === 'INSTAGRAM'
+                        ? 'Id de la cuenta de Instagram business (aparece en el webhook como entry.id). El access token es el de la página de Facebook vinculada.'
+                        : 'El id numérico de la página de Facebook conectada a Messenger.'
+                    }
+                  />
+                )}
+
+                <TextField
+                  label={kind === 'WHATSAPP' ? 'Access Token (Cloud API)' : 'Page Access Token'}
+                  size="small"
+                  fullWidth
+                  required
+                  type="password"
+                  value={form.accessToken}
+                  onChange={(e) => update('accessToken', e.target.value)}
+                />
+                <TextField
+                  label="Verify Token (webhook)"
+                  size="small"
+                  fullWidth
+                  required
+                  value={form.webhookVerifyToken}
+                  onChange={(e) => update('webhookVerifyToken', e.target.value)}
+                  helperText="El mismo que vas a pegar en la consola de Meta al configurar el webhook."
+                />
+                <TextField
+                  label="App Secret (opcional, recomendado)"
+                  size="small"
+                  fullWidth
+                  type="password"
+                  value={form.appSecret}
+                  onChange={(e) => update('appSecret', e.target.value)}
+                  helperText="Valida la firma HMAC del webhook. Sin él, el webhook acepta sin verificar firma (no usar en prod)."
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={form.isTestMode}
+                      onChange={(e) => update('isTestMode', e.target.checked)}
+                    />
+                  }
+                  label="Modo test (no envía a Meta — para el chat simulado)"
+                />
+
+                {webhookUrl && (
+                  <Alert severity="info" sx={{ '& code': { fontSize: 12 } }}>
+                    Configurá en Meta esta callback URL (en tu dominio del backend):
+                    <br />
+                    <code>{webhookUrl}</code>
+                    <br />
+                    con el verify token de arriba.
+                  </Alert>
+                )}
+              </>
             )}
             {error && <Alert severity="error">{error}</Alert>}
           </Stack>
