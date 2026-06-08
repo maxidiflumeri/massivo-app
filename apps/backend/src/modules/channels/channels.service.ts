@@ -137,9 +137,10 @@ export class ChannelsService {
     const ctx = this.requireContext();
     assertDelayRange(dto.sendDelayMinMs, dto.sendDelayMaxMs);
 
-    // Fase 2 — alta kind-aware. WhatsApp se identifica por phoneNumberId+WABA;
-    // Messenger/Instagram por pageId. businessAccountId es WhatsApp-only (no-WA → '').
-    const kind = (dto.kind ?? 'WHATSAPP') as 'WHATSAPP' | 'MESSENGER';
+    // Fase 2-3 — alta kind-aware. WhatsApp se identifica por phoneNumberId+WABA;
+    // Messenger/Instagram por pageId (page id / IG account id). businessAccountId es
+    // WhatsApp-only (no-WA → '').
+    const kind = (dto.kind ?? 'WHATSAPP') as 'WHATSAPP' | 'MESSENGER' | 'INSTAGRAM';
     let identity: { phoneNumberId: string | null; pageId: string | null; businessAccountId: string };
     if (kind === 'WHATSAPP') {
       if (!dto.phoneNumberId || !dto.businessAccountId) {
@@ -148,7 +149,7 @@ export class ChannelsService {
       identity = { phoneNumberId: dto.phoneNumberId, pageId: null, businessAccountId: dto.businessAccountId };
     } else {
       if (!dto.pageId) {
-        throw new BadRequestException('Messenger requiere pageId');
+        throw new BadRequestException(`${kind === 'INSTAGRAM' ? 'Instagram' : 'Messenger'} requiere pageId`);
       }
       identity = { phoneNumberId: null, pageId: dto.pageId, businessAccountId: '' };
     }

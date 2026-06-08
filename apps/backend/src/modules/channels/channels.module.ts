@@ -6,6 +6,7 @@ import { ChannelsService } from './channels.service';
 import { ChannelsWebhookController } from './channels-webhook.controller';
 import { ConversationIngestService } from './conversation-ingest.service';
 import { MessengerWebhookHandler } from './messenger-webhook.handler';
+import { InstagramWebhookHandler } from './instagram-webhook.handler';
 
 /**
  * Fase 1-2 (multi-canal) — Módulo del webhook genérico `/api/channels/:kind/:slug`
@@ -16,8 +17,9 @@ import { MessengerWebhookHandler } from './messenger-webhook.handler';
  * desde `WapiModule`; acá se importan vía `WapiModule` → sin ciclo. `EventsModule`
  * provee `EventsService` para los eventos del inbox.
  *
- * `ConversationIngestService` (agnóstico) + `MessengerWebhookHandler` viven acá: son
- * el camino inbound de Messenger (WhatsApp sigue por `WapiWebhookService.process`).
+ * `ConversationIngestService` (agnóstico) + los handlers de Meta Messaging
+ * (`MessengerWebhookHandler`, `InstagramWebhookHandler`) viven acá: son el camino
+ * inbound de Messenger/Instagram (WhatsApp sigue por `WapiWebhookService.process`).
  */
 @Module({
   imports: [WapiModule, EventsModule],
@@ -27,7 +29,7 @@ import { MessengerWebhookHandler } from './messenger-webhook.handler';
   // param del webhook. El webhook igual 404ea si el kind no existe, así que el
   // peor caso de un mis-match sería un 404 limpio, no un leak.
   controllers: [ChannelsController, ChannelsWebhookController],
-  providers: [ChannelsService, ConversationIngestService, MessengerWebhookHandler],
+  providers: [ChannelsService, ConversationIngestService, MessengerWebhookHandler, InstagramWebhookHandler],
   // Exportado para el simulador dev (DevModule), que ingiere inbounds Messenger
   // sin pasar por HMAC/slug.
   exports: [ConversationIngestService],

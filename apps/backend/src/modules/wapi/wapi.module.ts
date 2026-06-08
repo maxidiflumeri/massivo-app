@@ -40,6 +40,7 @@ import { WapiLiveService } from './live/wapi-live.service';
 // el webhook genérico los inyecten sin ciclo con ChannelsModule.
 import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
 import { MessengerAdapter } from '../channels/adapters/messenger.adapter';
+import { InstagramAdapter } from '../channels/adapters/instagram.adapter';
 import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
 
 @Module({
@@ -81,6 +82,7 @@ import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
     WapiLiveService,
     WhatsAppAdapter,
     MessengerAdapter,
+    InstagramAdapter,
     ChannelAdapterRegistry,
   ],
   exports: [
@@ -94,6 +96,7 @@ import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
     BotEngineService,
     WhatsAppAdapter,
     MessengerAdapter,
+    InstagramAdapter,
     // Registry de adapters: lo consumen el webhook genérico (ChannelsModule) y
     // el motor del bot / inbox para resolver el adapter por channelKind.
     ChannelAdapterRegistry,

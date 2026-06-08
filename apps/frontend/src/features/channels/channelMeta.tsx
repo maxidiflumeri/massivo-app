@@ -47,7 +47,7 @@ export const CHANNEL_KINDS: ChannelKindMeta[] = [
     Icon: InstagramIcon,
     color: '#E1306C',
     bg: 'linear-gradient(135deg, #F58529 0%, #DD2A7B 50%, #515BD4 100%)',
-    available: false,
+    available: true,
   },
   {
     kind: 'WEBCHAT',

@@ -197,7 +197,7 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
             </>
           ) : (
             <TextField
-              label="Page ID (Facebook)"
+              label={channel?.kind === 'INSTAGRAM' ? 'Instagram account ID' : 'Page ID (Facebook)'}
               size="small"
               fullWidth
               value={pageId}

@@ -182,7 +182,7 @@ export function AddChannelDialog({ open, onClose, onCreated, webhookSlug }: Prop
               fullWidth
               value={form.name}
               onChange={(e) => update('name', e.target.value)}
-              placeholder={kind === 'WHATSAPP' ? 'Mi línea de WhatsApp' : 'Mi página de Messenger'}
+              placeholder={`Mi ${channelMeta(kind).label}`}
             />
 
             {kind === 'WHATSAPP' ? (
@@ -206,13 +206,17 @@ export function AddChannelDialog({ open, onClose, onCreated, webhookSlug }: Prop
               </>
             ) : (
               <TextField
-                label="Page ID (Facebook)"
+                label={kind === 'INSTAGRAM' ? 'Instagram account ID' : 'Page ID (Facebook)'}
                 size="small"
                 fullWidth
                 required
                 value={form.pageId}
                 onChange={(e) => update('pageId', e.target.value)}
-                helperText="El id numérico de la página de Facebook conectada a Messenger."
+                helperText={
+                  kind === 'INSTAGRAM'
+                    ? 'Id de la cuenta de Instagram business (aparece en el webhook como entry.id). El access token es el de la página de Facebook vinculada.'
+                    : 'El id numérico de la página de Facebook conectada a Messenger.'
+                }
               />
             )}
 

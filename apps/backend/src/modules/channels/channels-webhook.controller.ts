@@ -16,6 +16,7 @@ import type { Request } from 'express';
 import { SkipTenantScope } from '../../common/auth/skip-tenant-scope.decorator';
 import { WhatsAppWebhookHandler } from '../wapi/webhook/whatsapp-webhook.handler';
 import { MessengerWebhookHandler } from './messenger-webhook.handler';
+import { InstagramWebhookHandler } from './instagram-webhook.handler';
 import { ChannelAdapterRegistry } from './channel-adapter.registry';
 import type { ChannelKind } from './adapter.types';
 
@@ -23,8 +24,8 @@ import type { ChannelKind } from './adapter.types';
  * 1c — Webhook **genérico multi-canal**: `/api/channels/:kind/:slug`.
  *
  * Resuelve el `kind` (whatsapp | instagram | messenger | webchat) y despacha al
- * handler del proveedor correspondiente. Hoy sólo WhatsApp tiene handler de
- * inbound; el resto llega con sus adapters en Fases 2-4. La ruta legacy
+ * handler del proveedor correspondiente. Hoy tienen handler de inbound WhatsApp,
+ * Messenger e Instagram; Webchat (Fase 4) llegará con su adapter. La ruta legacy
  * `/api/webhooks/wapi/:slug` (`WapiWebhookController`) sigue andando como alias
  * de la rama WhatsApp.
  *
@@ -37,6 +38,7 @@ export class ChannelsWebhookController {
     private readonly registry: ChannelAdapterRegistry,
     private readonly whatsapp: WhatsAppWebhookHandler,
     private readonly messenger: MessengerWebhookHandler,
+    private readonly instagram: InstagramWebhookHandler,
   ) {}
 
   @Get(':kind/:slug')
@@ -55,6 +57,9 @@ export class ChannelsWebhookController {
     if (resolved === 'MESSENGER') {
       return this.messenger.verify(slug, mode, token, challenge);
     }
+    if (resolved === 'INSTAGRAM') {
+      return this.instagram.verify(slug, mode, token, challenge);
+    }
     throw new NotImplementedException(`Webhook inbound para ${resolved} aún no implementado`);
   }
 
@@ -72,6 +77,9 @@ export class ChannelsWebhookController {
     }
     if (resolved === 'MESSENGER') {
       return this.messenger.receive(slug, signature, req.rawBody);
+    }
+    if (resolved === 'INSTAGRAM') {
+      return this.instagram.receive(slug, signature, req.rawBody);
     }
     throw new NotImplementedException(`Webhook inbound para ${resolved} aún no implementado`);
   }

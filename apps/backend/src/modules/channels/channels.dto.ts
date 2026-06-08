@@ -15,8 +15,8 @@ import {
 /** 4.Q — máximo razonable para el delay (1h). Evita typos catastróficos. */
 const MAX_DELAY_MS = 60 * 60 * 1000;
 
-/** Kinds que hoy se pueden dar de alta vía UI (Instagram/Webchat llegan en Fase 3/4). */
-export const CREATABLE_CHANNEL_KINDS = ['WHATSAPP', 'MESSENGER'] as const;
+/** Kinds que hoy se pueden dar de alta vía UI (Webchat llega en Fase 4). */
+export const CREATABLE_CHANNEL_KINDS = ['WHATSAPP', 'MESSENGER', 'INSTAGRAM'] as const;
 
 export class CreateChannelDto {
   @IsOptional()
