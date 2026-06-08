@@ -157,7 +157,7 @@ export function WapiSimulatorChatPage() {
     try {
       const res = await inboxApi.listConversations(api, {
         tab: 'all',
-        configId,
+        channelId: configId,
         search: phone.trim(),
         limit: 5,
         // Dev: incluir conversaciones manejadas por el bot (no escaladas), si no
@@ -381,9 +381,9 @@ export function WapiSimulatorChatPage() {
         </Stack>
         {noTestConfigs && (
           <Alert severity="warning" sx={{ mt: 1.5 }}>
-            Para usar este chat necesitás una WapiConfig con <b>Modo test</b> activo. Andá a
-            "Números" y activá el toggle en una config — si no, los envíos del operador pegarán a
-            Meta de verdad.
+            Para usar este chat necesitás un canal de WhatsApp con <b>Modo test</b> activo. Andá a
+            <b> Canales</b>, editá la línea (ruedita) y activá <b>Modo test</b> — si no, los envíos
+            del operador pegarían a Meta de verdad.
           </Alert>
         )}
       </Paper>
