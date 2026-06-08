@@ -89,6 +89,19 @@ export class OpenRouterModelProvider extends OpenAiCompatibleProvider {
   protected readonly baseURL = 'https://openrouter.ai/api/v1';
 }
 
+/**
+ * Google Gemini vía su **endpoint compatible con OpenAI**
+ * (`/v1beta/openai/`). Tier gratis en Google AI Studio (key gratis, sin tarjeta,
+ * con límites de rate) → ideal para probar sin pagar. Modelos: `gemini-2.0-flash`,
+ * `gemini-2.5-flash`, etc. (string del agente: `gemini/gemini-2.0-flash`).
+ */
+@Injectable()
+export class GeminiModelProvider extends OpenAiCompatibleProvider {
+  readonly id = 'gemini';
+  protected readonly apiKeyEnv = 'GEMINI_API_KEY';
+  protected readonly baseURL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+}
+
 function safeParse(s: string): Record<string, unknown> {
   try {
     return s ? (JSON.parse(s) as Record<string, unknown>) : {};

@@ -7,7 +7,7 @@ import { AgentsService } from './agents.service';
 import { AgentRuntimeService } from './agent-runtime.service';
 import { ModelGatewayService } from './model/model-gateway.service';
 import { AnthropicModelProvider } from './model/anthropic.provider';
-import { OpenAiModelProvider, OpenRouterModelProvider } from './model/openai.provider';
+import { GeminiModelProvider, OpenAiModelProvider, OpenRouterModelProvider } from './model/openai.provider';
 import { AgentToolRegistry } from './tools/agent-tool.registry';
 import { EscalateToOperatorTool } from './tools/escalate-to-operator.tool';
 
@@ -31,6 +31,7 @@ import { EscalateToOperatorTool } from './tools/escalate-to-operator.tool';
     AnthropicModelProvider,
     OpenAiModelProvider,
     OpenRouterModelProvider,
+    GeminiModelProvider,
     AgentToolRegistry,
     EscalateToOperatorTool,
   ],

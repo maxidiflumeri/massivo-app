@@ -30,8 +30,10 @@ export interface UpdateAgentPayload {
 
 /** Modelos sugeridos en el selector (se puede escribir otro a mano). */
 export const AGENT_MODEL_PRESETS: Array<{ value: string; label: string }> = [
-  { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 — rápido y económico' },
-  { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6 — equilibrado' },
-  { value: 'openai/gpt-4o-mini', label: 'GPT-4o mini — OpenAI' },
-  { value: 'openai/gpt-4o', label: 'GPT-4o — OpenAI' },
+  { value: 'gemini/gemini-2.0-flash', label: 'Gemini 2.0 Flash — Google (tier gratis) ⭐' },
+  { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash — Google (tier gratis)' },
+  { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 — rápido y económico (API paga)' },
+  { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6 — equilibrado (API paga)' },
+  { value: 'openai/gpt-4o-mini', label: 'GPT-4o mini — OpenAI (API paga)' },
+  { value: 'openai/gpt-4o', label: 'GPT-4o — OpenAI (API paga)' },
 ];

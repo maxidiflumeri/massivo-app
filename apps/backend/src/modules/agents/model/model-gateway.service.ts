@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AnthropicModelProvider } from './anthropic.provider';
-import { OpenAiModelProvider, OpenRouterModelProvider } from './openai.provider';
+import { GeminiModelProvider, OpenAiModelProvider, OpenRouterModelProvider } from './openai.provider';
 import {
   type ModelGenerateInput,
   type ModelGenerateResult,
@@ -23,11 +23,13 @@ export class ModelGatewayService {
     anthropic: AnthropicModelProvider,
     openai: OpenAiModelProvider,
     openrouter: OpenRouterModelProvider,
+    gemini: GeminiModelProvider,
   ) {
     this.providers = new Map<string, ModelProvider>([
       [anthropic.id, anthropic],
       [openai.id, openai],
       [openrouter.id, openrouter],
+      [gemini.id, gemini],
     ]);
   }
 
