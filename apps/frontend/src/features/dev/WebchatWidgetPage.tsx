@@ -10,11 +10,13 @@ import {
   Paper,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import LinkIcon from '@mui/icons-material/Link';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import PersonIcon from '@mui/icons-material/Person';
 import LanguageIcon from '@mui/icons-material/Language';
 import { io, type Socket } from 'socket.io-client';
@@ -113,6 +115,14 @@ export function WebchatWidgetPage() {
 
   useEffect(() => () => disconnect(), [disconnect]);
 
+  // Reinicia como visitante nuevo: desconecta, limpia el historial y genera un visitorId
+  // fresco (la conversación vieja queda en el inbox). Después se vuelve a Conectar.
+  function reset() {
+    disconnect();
+    setMessages([]);
+    setVisitorId(genVisitorId());
+  }
+
   function sendText() {
     const text = body.trim();
     if (!text || !socketRef.current || !connected) return;
@@ -169,6 +179,11 @@ export function WebchatWidgetPage() {
               Conectar
             </Button>
           )}
+          <Tooltip title="Reiniciar (visitante nuevo, historial limpio)">
+            <Button size="small" variant="text" color="inherit" startIcon={<RestartAltIcon fontSize="small" />} onClick={reset}>
+              Reiniciar
+            </Button>
+          </Tooltip>
         </Stack>
         {!connected && (
           <Alert severity="info" sx={{ mt: 1.5 }}>

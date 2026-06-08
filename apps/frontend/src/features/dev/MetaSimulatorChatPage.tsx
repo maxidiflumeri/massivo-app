@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import PersonIcon from '@mui/icons-material/Person';
 import LinkIcon from '@mui/icons-material/Link';
 import { ApiError, useApi } from '../../api/client';
@@ -186,6 +187,14 @@ export function MetaSimulatorChatPage({ kind }: { kind: ChannelKind }) {
     }
   }
 
+  // Reinicia la conversación de prueba como un cliente nuevo (psid fresco): el bot
+  // saluda de cero y la vista queda limpia (la conversación vieja queda en el inbox).
+  function resetConversation() {
+    setConversation(null);
+    setMessages([]);
+    setPsid(`user-${Math.random().toString(36).slice(2, 6)}`);
+  }
+
   const ready = !!channelId && !!psid.trim();
   const selectedBot = bots.find((b) => b.botId === botId);
 
@@ -240,6 +249,13 @@ export function MetaSimulatorChatPage({ kind }: { kind: ChannelKind }) {
             <span>
               <IconButton size="small" onClick={() => void resolveConversation()} disabled={!ready}>
                 <RefreshIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Reiniciar (cliente nuevo, historial limpio)">
+            <span>
+              <IconButton size="small" onClick={resetConversation} disabled={!channelId}>
+                <RestartAltIcon fontSize="small" />
               </IconButton>
             </span>
           </Tooltip>

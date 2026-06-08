@@ -31,7 +31,9 @@ export function AppLayout() {
   const isFullBleed =
     location.pathname.startsWith('/dashboard/inbox') ||
     location.pathname.startsWith('/dashboard/bots') ||
-    location.pathname.startsWith('/dashboard/dev/wapi/chat');
+    location.pathname.startsWith('/dashboard/dev/wapi/chat') ||
+    // Chats de prueba de canales (Messenger/IG/Webchat): alto fijo, scroll interno.
+    location.pathname.startsWith('/dashboard/dev/channels/');
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     return localStorage.getItem(COLLAPSED_KEY) === '1';
