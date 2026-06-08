@@ -252,12 +252,18 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 - **Widget del visitante (dev):** `WebchatWidgetPage` (`/dashboard/dev/channels/webchat/widget`)
   simula el widget embebido: conecta al `/webchat` con la widget key, manda mensajes y recibe
   las respuestas del bot/operador en vivo. Item "Widget Webchat" en el sidebar (Dev).
-- **Verificación:** backend tsc 0; channels jest 47/47; DI smoke (registry WEBCHAT + adapter +
-  gateway) OK; frontend tsc 0; vite build verde. Commits `b697aa5` (back) + `330d89c` (front).
-- **Cabos abiertos:** (a) widget embebible real (script `<embed>` standalone) — hoy sólo está la
-  página dev del visitante; (b) historial al reconectar el visitante (hoy el estado vive en el
-  cliente durante la sesión); (c) el operador respondiendo desde el inbox sale por el mismo adapter
-  (verificar en el plan de pruebas).
+- **Widget embebible** (commit `1761611`): patrón estándar loader + iframe. Entrada Vite aparte
+  `webchat.html` → `src/webchat/*` (React plano, sin MUI ni Clerk → bundle liviano, separado del
+  dashboard de 2.2MB; el iframe carga solo react-dom + socket.io). Loader público
+  `public/webchat/v1.js` (burbuja flotante + iframe `webchat.html?key=...`, origin derivado de su
+  propio src). El cliente pega un `<script src=".../webchat/v1.js" data-massivo-key="wc_...">`; el
+  snippet se muestra en la ruedita del canal. **Deploy:** el host estático debe servir
+  `webchat.html` y `/webchat/v1.js` como archivos reales (antes del fallback SPA a `index.html`).
+- **Verificación:** backend tsc 0; channels jest 47/47; DI smoke OK; frontend tsc 0; vite build
+  emite las 2 entradas + el loader. Commits `b697aa5` (back) + `330d89c` (front) + `1761611` (widget).
+- **Cabos abiertos:** (a) historial al reconectar el visitante (hoy el estado vive en el cliente
+  durante la sesión); (b) hardening: lista de orígenes permitidos por canal (hoy CORS `*`);
+  (c) verificar en el plan de pruebas que el operador desde el inbox llega al visitante.
 
 ### Sesión 8 — 2026-06-07 (Fase 3 — Instagram, end-to-end en código)
 - **`InstagramAdapter`** (`adapters/instagram.adapter.ts`): subclase de

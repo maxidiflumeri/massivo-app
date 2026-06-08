@@ -47,6 +47,15 @@ WhatsApp: `Dev → Simulador WhatsApp` / `Chat simulado` (camino legacy, ya anda
 5. Escribí como visitante → **esperado:** el bot responde en vivo; los botones funcionan.
 6. **Inbox:** la conversación aparece con badge **Webchat**.
 
+### A.2b — Widget embebible (loader + iframe, como lo verá el cliente)
+1. En la ruedita del canal Webchat copiá el **snippet `<script>`** (sección Widget).
+2. Pegalo en un HTML cualquiera (un `.html` local servido por http, o una página de prueba)
+   y abrilo en el navegador.
+3. **Esperado:** aparece la **burbuja flotante** abajo a la derecha; al abrirla, el iframe
+   muestra el chat; escribís y el bot responde; el ✕ cierra el panel.
+4. (Dev) El loader se sirve desde `{frontendOrigin}/webchat/v1.js` y el iframe desde
+   `{frontendOrigin}/webchat.html?key=...` — verificá que ambos resuelvan.
+
 ### A.3 — Handoff a operador (humano) por canal
 Para Webchat (y opcional Messenger/IG en test):
 1. Dispará en el bot un nodo **HANDOFF** (o el flujo que escale) → la conversación pasa a
@@ -71,6 +80,7 @@ Para Webchat (y opcional Messenger/IG en test):
 - [ ] Messenger sim: bot responde + inbox badge
 - [ ] Instagram sim: bot responde + inbox badge
 - [ ] Webchat: bot responde en vivo + inbox badge
+- [ ] Widget embebible: snippet → burbuja flotante → chat en un HTML de prueba
 - [ ] Handoff: operador → visitante (webchat) OK + bot suspendido
 - [ ] Multi-canal: un bot, 3 canales, filtro del inbox OK
 - [ ] WhatsApp: sin regresión
@@ -153,9 +163,12 @@ Para Webchat (y opcional Messenger/IG en test):
 ---
 
 ## C. Notas / cabos abiertos
-- **Widget Webchat embebible standalone** (script `<embed>` para sitios de clientes): hoy
-  sólo está la página dev del visitante; el backend (gateway `/webchat`) ya soporta el flujo.
+- **Widget Webchat embebible:** ✅ hecho (loader `public/webchat/v1.js` + iframe
+  `webchat.html`). Deploy: el host estático debe servir `webchat.html` y `/webchat/v1.js`
+  como archivos reales (antes del fallback SPA a `index.html`).
 - **Historial al reconectar** el visitante de Webchat: hoy el estado vive en el cliente
   durante la sesión (no se rehidrata al recargar).
+- **Hardening Webchat:** restringir orígenes permitidos por canal (hoy el gateway usa
+  CORS `*`) para que la widget key no se pueda reusar en otros dominios.
 - **Consolidar inbound de WhatsApp** sobre `ConversationIngestService` (hoy sigue por
   `WapiWebhookService.process`).
