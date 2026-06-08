@@ -32,6 +32,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ScienceIcon from '@mui/icons-material/Science';
 import ForumIcon from '@mui/icons-material/Forum';
 import ChatIcon from '@mui/icons-material/Chat';
+import InstagramIcon from '@mui/icons-material/Instagram';
 import HubIcon from '@mui/icons-material/Hub';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
@@ -220,6 +221,11 @@ const NAV_GROUPS: NavGroupSpec[] = [
               to: '/dashboard/dev/channels/messenger/chat',
               label: 'Chat Messenger',
               icon: <ChatIcon fontSize="small" />,
+            },
+            {
+              to: '/dashboard/dev/channels/instagram/chat',
+              label: 'Chat Instagram',
+              icon: <InstagramIcon fontSize="small" />,
             },
             {
               to: '/dashboard/dev/wapi/simulator',

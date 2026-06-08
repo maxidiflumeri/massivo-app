@@ -8,17 +8,24 @@ import {
 import { DevSimulatorService } from './dev-simulator.service';
 import { MessengerSimulatorController } from './messenger-simulator.controller';
 import { MessengerSimulatorService } from './messenger-simulator.service';
+import { InstagramSimulatorController } from './instagram-simulator.controller';
+import { InstagramSimulatorService } from './instagram-simulator.service';
 
 /**
  * Módulo de utilidades de desarrollo (4.L). Sólo expone endpoints si
  * `ENABLE_DEV_SIMULATOR=true` (ver `DevSimulatorEnabledGuard`). El módulo se
  * registra siempre, así no hay branching en `app.module.ts`; el gate vive en
- * el guard. Importa `ChannelsModule` para reusar `ConversationIngestService` en el
- * simulador de Messenger.
+ * el guard. Importa `ChannelsModule` para reusar `ConversationIngestService` en los
+ * simuladores de Messenger/Instagram.
  */
 @Module({
   imports: [WapiModule, ChannelsModule],
-  controllers: [DevSimulatorController, MessengerSimulatorController],
-  providers: [DevSimulatorService, DevSimulatorEnabledGuard, MessengerSimulatorService],
+  controllers: [DevSimulatorController, MessengerSimulatorController, InstagramSimulatorController],
+  providers: [
+    DevSimulatorService,
+    DevSimulatorEnabledGuard,
+    MessengerSimulatorService,
+    InstagramSimulatorService,
+  ],
 })
 export class DevModule {}
