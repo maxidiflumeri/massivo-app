@@ -6,7 +6,8 @@ describe('ModelGatewayService', () => {
   const openai = { id: 'openai', generate: jest.fn() } as never;
   const openrouter = { id: 'openrouter', generate: jest.fn() } as never;
   const gemini = { id: 'gemini', generate: jest.fn() } as never;
-  const gw = new ModelGatewayService(anthropic, openai, openrouter, gemini);
+  const groq = { id: 'groq', generate: jest.fn() } as never;
+  const gw = new ModelGatewayService(anthropic, openai, openrouter, gemini, groq);
 
   it('resuelve provider/model', () => {
     const r = gw.resolve('anthropic/claude-haiku-4-5-20251001');
@@ -24,6 +25,12 @@ describe('ModelGatewayService', () => {
     const r = gw.resolve('gemini/gemini-2.0-flash');
     expect(r.provider.id).toBe('gemini');
     expect(r.modelId).toBe('gemini-2.0-flash');
+  });
+
+  it('resuelve Groq (free tier amplio)', () => {
+    const r = gw.resolve('groq/llama-3.3-70b-versatile');
+    expect(r.provider.id).toBe('groq');
+    expect(r.modelId).toBe('llama-3.3-70b-versatile');
   });
 
   it('sin prefijo → asume anthropic', () => {

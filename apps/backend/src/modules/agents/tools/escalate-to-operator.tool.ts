@@ -18,8 +18,10 @@ export class EscalateToOperatorTool implements AgentTool {
   readonly def = {
     name: 'escalate_to_operator',
     description:
-      'Derivá la conversación a un operador humano cuando el usuario lo pide, está frustrado, ' +
-      'o el pedido excede lo que podés resolver. Preferí esto antes que inventar una respuesta.',
+      'Derivá la conversación a un operador humano. Usala SOLO cuando el usuario pide ' +
+      'explícitamente hablar con una persona, está claramente frustrado/enojado, o cuando ya ' +
+      'intentaste ayudar y el pedido excede lo que podés resolver. NO la uses ante saludos, ' +
+      'presentaciones, preguntas generales ni en el primer mensaje: primero conversá y tratá de ayudar.',
     parameters: {
       type: 'object',
       properties: {
@@ -76,6 +78,9 @@ export class EscalateToOperatorTool implements AgentTool {
       });
       return {
         content: `Conversación escalada a un operador humano (motivo: ${reason}). Avisale al usuario, en tono cordial, que un agente lo va a atender en breve.`,
+        // Terminal: tras escalar cortamos el loop. El runtime usa el texto que el
+        // modelo haya redactado en este turno, o un cierre por defecto.
+        stop: true,
       };
     } catch (err) {
       this.logger.warn(`escalate falló conv=${ctx.conversationId}: ${err instanceof Error ? err.message : String(err)}`);

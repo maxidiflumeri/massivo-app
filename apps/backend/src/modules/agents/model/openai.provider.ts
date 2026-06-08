@@ -80,6 +80,12 @@ export class OpenAiModelProvider extends OpenAiCompatibleProvider {
   readonly id = 'openai';
   protected readonly apiKeyEnv = 'OPENAI_API_KEY';
   protected readonly baseURL = undefined;
+
+  // Constructor explícito OBLIGATORIO: sin él, TS no emite `design:paramtypes` en
+  // la subclase y Nest la instancia sin args → `this.config` queda undefined.
+  constructor(config: ConfigService) {
+    super(config);
+  }
 }
 
 @Injectable()
@@ -87,6 +93,10 @@ export class OpenRouterModelProvider extends OpenAiCompatibleProvider {
   readonly id = 'openrouter';
   protected readonly apiKeyEnv = 'OPENROUTER_API_KEY';
   protected readonly baseURL = 'https://openrouter.ai/api/v1';
+
+  constructor(config: ConfigService) {
+    super(config);
+  }
 }
 
 /**
@@ -100,6 +110,28 @@ export class GeminiModelProvider extends OpenAiCompatibleProvider {
   readonly id = 'gemini';
   protected readonly apiKeyEnv = 'GEMINI_API_KEY';
   protected readonly baseURL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+
+  constructor(config: ConfigService) {
+    super(config);
+  }
+}
+
+/**
+ * Groq vía su **endpoint compatible con OpenAI** (`/openai/v1`). Free tier muy
+ * generoso (key gratis, sin tarjeta): ~30 RPM / ~1000 RPD según el modelo —
+ * mucho mejor que Gemini free para probar. Inferencia rapidísima y con
+ * tool-calling. Modelos: `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, etc.
+ * (string del agente: `groq/llama-3.3-70b-versatile`).
+ */
+@Injectable()
+export class GroqModelProvider extends OpenAiCompatibleProvider {
+  readonly id = 'groq';
+  protected readonly apiKeyEnv = 'GROQ_API_KEY';
+  protected readonly baseURL = 'https://api.groq.com/openai/v1';
+
+  constructor(config: ConfigService) {
+    super(config);
+  }
 }
 
 function safeParse(s: string): Record<string, unknown> {
