@@ -16,6 +16,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.102.0",
     "@aws-sdk/client-sesv2": "^3.1039.0",
     "@clerk/backend": "^3.4.1",
     "@massivo/permissions": "workspace:*",
@@ -42,6 +43,7 @@
     "jsonwebtoken": "^9.0.3",
     "nest-winston": "^1.10.2",
     "nodemailer": "^8.0.7",
+    "openai": "^6.42.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sns-validator": "^0.3.5",

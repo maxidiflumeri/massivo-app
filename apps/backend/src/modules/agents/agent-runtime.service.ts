@@ -1,0 +1,250 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { EncryptionService } from '../../common/security/encryption.service';
+import { EventsService } from '../events/events.service';
+import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
+import type { ChannelKind } from '../channels/adapter.types';
+import { ModelGatewayService } from './model/model-gateway.service';
+import type { AgentMessage } from './model/model-types';
+import { AgentToolRegistry } from './tools/agent-tool.registry';
+import type { AgentToolContext } from './tools/agent-tool.types';
+
+/** Canal resuelto que el runtime necesita para enviar la respuesta. */
+export interface AgentRunChannel {
+  id: string;
+  organizationId: string;
+  teamId: string;
+  kind: ChannelKind;
+  accessTokenEnc: string;
+  isTestMode: boolean;
+  phoneNumberId: string | null;
+  pageId: string | null;
+}
+
+export interface AgentRunConfig {
+  model: string;
+  systemPrompt: string | null;
+  temperature: number;
+  maxSteps: number;
+}
+
+export interface AgentRunInput {
+  channel: AgentRunChannel;
+  agent: AgentRunConfig;
+  conversationId: string;
+  externalUserId: string;
+}
+
+const HISTORY_LIMIT = 24;
+
+const RUNTIME_GUIDANCE = `
+Estás atendiendo una conversación de mensajería en tiempo real (chat). Sé claro y conciso
+(mensajes cortos, sin markdown pesado). Respondé en el idioma del usuario. No inventes datos:
+si no podés resolver algo o el usuario quiere hablar con una persona, usá la tool
+"escalate_to_operator".`.trim();
+
+/**
+ * Runtime del agente IA: loop de tool-calling. Toma el historial de la
+ * `Conversation` (que ya persistió el ingest), llama al modelo vía el gateway
+ * multi-proveedor, ejecuta las tools que pida, y envía la respuesta final por el
+ * `ChannelAdapter` del canal — exactamente igual que el bot. Reusa Conversation/
+ * Message, eventos del inbox y el handoff.
+ *
+ * Corre en contexto de sistema (webhook/ingest, sin TenantContext) → usa el
+ * cliente raw `prisma` con org/team explícitos.
+ */
+@Injectable()
+export class AgentRuntimeService {
+  private readonly logger = new Logger(AgentRuntimeService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: ModelGatewayService,
+    private readonly tools: AgentToolRegistry,
+    private readonly registry: ChannelAdapterRegistry,
+    private readonly encryption: EncryptionService,
+    private readonly events: EventsService,
+  ) {}
+
+  async handleInbound(input: AgentRunInput): Promise<void> {
+    const { channel, agent, conversationId, externalUserId } = input;
+    try {
+      // Guard de paridad con el bot: si un humano tomó la conversación
+      // (botSuspended), el agente no responde.
+      const conv = await this.prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { botSuspended: true },
+      });
+      if (conv?.botSuspended) return;
+
+      const messages = await this.loadHistory(conversationId);
+      if (messages.length === 0) return;
+
+      const system = agent.systemPrompt?.trim()
+        ? `${agent.systemPrompt.trim()}\n\n${RUNTIME_GUIDANCE}`
+        : RUNTIME_GUIDANCE;
+      const toolDefs = this.tools.defs();
+      const toolCtx: AgentToolContext = {
+        organizationId: channel.organizationId,
+        teamId: channel.teamId,
+        conversationId,
+        channelId: channel.id,
+        channelKind: channel.kind,
+        externalUserId,
+      };
+
+      const maxSteps = Math.max(1, agent.maxSteps || 6);
+      let finalText: string | null = null;
+
+      for (let step = 0; step < maxSteps; step++) {
+        const result = await this.gateway.generate(agent.model, {
+          system,
+          messages,
+          tools: toolDefs,
+          temperature: agent.temperature,
+        });
+
+        if (result.toolCalls.length === 0) {
+          finalText = result.text;
+          break;
+        }
+
+        // El modelo pidió tools → registramos su turno y ejecutamos cada una.
+        messages.push({ role: 'assistant', content: result.text, toolCalls: result.toolCalls });
+        for (const call of result.toolCalls) {
+          const tool = this.tools.get(call.name);
+          let content: string;
+          if (!tool) {
+            content = `Tool desconocida: ${call.name}`;
+          } else {
+            try {
+              const res = await tool.execute(call.arguments, toolCtx);
+              content = res.content;
+            } catch (err) {
+              content = `La tool ${call.name} falló: ${err instanceof Error ? err.message : String(err)}`;
+            }
+          }
+          messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content });
+        }
+      }
+
+      if (finalText && finalText.trim()) {
+        await this.sendReply(channel, conversationId, externalUserId, finalText.trim());
+      } else {
+        this.logger.warn(
+          `agente sin respuesta final conv=${conversationId} (maxSteps=${maxSteps}) — no se envió nada`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `runtime falló conv=${conversationId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /** Historial de la conversación (texto) → mensajes normalizados user/assistant. */
+  private async loadHistory(conversationId: string): Promise<AgentMessage[]> {
+    const rows = await this.prisma.message.findMany({
+      where: { conversationId },
+      orderBy: { timestamp: 'desc' },
+      take: HISTORY_LIMIT,
+      select: { fromMe: true, type: true, content: true },
+    });
+    return rows
+      .reverse()
+      .map((r): AgentMessage => {
+        const text = extractText(r.content, r.type);
+        return r.fromMe ? { role: 'assistant', content: text } : { role: 'user', content: text };
+      })
+      .filter((m) => (m.content ?? '').length > 0);
+  }
+
+  private async sendReply(
+    channel: AgentRunChannel,
+    conversationId: string,
+    externalUserId: string,
+    text: string,
+  ): Promise<void> {
+    const adapter = this.registry.get(channel.kind);
+    const conn = this.buildConn(channel);
+    const sent = await adapter.send(conn, { kind: 'text', to: externalUserId, text });
+
+    const now = new Date();
+    const content = { text: { body: text } };
+    const created = await this.prisma.message.create({
+      data: {
+        organizationId: channel.organizationId,
+        teamId: channel.teamId,
+        conversationId,
+        channelId: channel.id,
+        externalId: sent.externalMessageId,
+        fromMe: true,
+        type: 'text',
+        content,
+        status: 'sent',
+        timestamp: now,
+      },
+      select: { id: true },
+    });
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: now },
+    });
+
+    this.events.emitToTeam(channel.teamId, 'conversation.message.new', {
+      conversationId,
+      channelId: channel.id,
+      channelKind: channel.kind,
+      externalUserId,
+      message: {
+        id: created.id,
+        fromMe: true,
+        type: 'text',
+        content,
+        status: 'sent',
+        timestamp: now.toISOString(),
+        externalId: sent.externalMessageId,
+      },
+    });
+    this.events.emitToTeam(channel.teamId, 'conversation.updated', {
+      id: conversationId,
+      channelId: channel.id,
+      channelKind: channel.kind,
+      externalUserId,
+      lastMessageAt: now.toISOString(),
+    });
+  }
+
+  /** Mismo criterio que el inbox: shape de conexión por kind. */
+  private buildConn(channel: AgentRunChannel): unknown {
+    if (channel.kind === 'WEBCHAT') return { channelId: channel.id };
+    const accessToken = this.encryption.decrypt(channel.accessTokenEnc);
+    if (channel.kind === 'WHATSAPP') {
+      return { phoneNumberId: channel.phoneNumberId ?? '', accessToken, isTestMode: channel.isTestMode };
+    }
+    return { pageId: channel.pageId ?? '', accessToken, isTestMode: channel.isTestMode };
+  }
+}
+
+/** Extrae el texto plano de un `Message.content` JSON (o un placeholder por tipo). */
+function extractText(content: unknown, type: string): string {
+  if (content && typeof content === 'object') {
+    const c = content as Record<string, unknown>;
+    const t = c.text as { body?: unknown } | undefined;
+    if (t && typeof t.body === 'string') return t.body;
+  }
+  switch (type) {
+    case 'image':
+      return '[imagen adjunta]';
+    case 'audio':
+      return '[audio adjunto]';
+    case 'video':
+      return '[video adjunto]';
+    case 'document':
+      return '[documento adjunto]';
+    case 'location':
+      return '[ubicación compartida]';
+    default:
+      return '';
+  }
+}

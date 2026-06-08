@@ -9,6 +9,7 @@ import { MessengerWebhookHandler } from './messenger-webhook.handler';
 import { InstagramWebhookHandler } from './instagram-webhook.handler';
 import { WebchatGateway } from './webchat.gateway';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AgentsModule } from '../agents/agents.module';
 
 /**
  * Fase 1-2 (multi-canal) — Módulo del webhook genérico `/api/channels/:kind/:slug`
@@ -24,7 +25,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
  * inbound de Messenger/Instagram (WhatsApp sigue por `WapiWebhookService.process`).
  */
 @Module({
-  imports: [WapiModule, EventsModule, NotificationsModule],
+  imports: [WapiModule, EventsModule, NotificationsModule, AgentsModule],
   // OJO orden: el admin (`ChannelsController`, rutas /channels, /channels/:id,
   // /channels/:id/reveal-secrets) va ANTES del webhook (`/channels/:kind/:slug`)
   // para que `/channels/:id/reveal-secrets` (2 segmentos) no lo capture la ruta

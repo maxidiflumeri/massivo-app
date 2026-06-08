@@ -146,6 +146,7 @@ model Organization {
   wapiResolutionNotes WapiResolutionNote[]
   botSessions         BotSession[]
   bots                Bot[]
+  agents              Agent[]
   notifications       Notification[]
 
   contacts                Contact[]
@@ -191,6 +192,7 @@ model Team {
   wapiResolutionNotes WapiResolutionNote[]
   botSessions         BotSession[]
   bots                Bot[]
+  agents              Agent[]
   notifications       Notification[]
 
   contacts       Contact[]
@@ -697,10 +699,15 @@ model Channel {
   // (resuelta vía `botId`). Las columnas `bot*` deprecadas que copiaba WapiConfig
   // se dropearon en Fase 1f (la fuente de verdad es `Bot`).
   botId String?
+  // Plataforma agéntica (v0): un canal puede enrutar a un Agente IA en vez de
+  // (o además de) un Bot. Precedencia en runtime: si hay agente habilitado, atiende
+  // el agente. NULL = sin agente.
+  agentId String?
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team          Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
   bot           Bot?           @relation(fields: [botId], references: [id], onDelete: SetNull)
+  agent         Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
   campaigns     WapiCampaign[]
   conversations Conversation[]
   botSessions   BotSession[]
@@ -710,6 +717,7 @@ model Channel {
   @@index([organizationId])
   @@index([teamId])
   @@index([botId])
+  @@index([agentId])
 }
 
 // Phase 0 (multi-canal) — Definición del bot como entidad de primera clase.
@@ -742,6 +750,36 @@ model Bot {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  channels     Channel[]
+
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+// Plataforma agéntica (v0) — Agente IA de primera clase. A diferencia del `Bot`
+// (flujo determinista visual), el Agente es un runtime LLM con tools y, a futuro,
+// conocimiento vectorizado (RAG). Se diseña una vez y se conecta a N canales
+// (`Channel.agentId`) igual que un bot, o se invoca desde un nodo AGENT del bot
+// (híbrido). Multi-proveedor: `model` = string "provider/model"
+// (ej. anthropic/claude-..., openai/gpt-..., openrouter/...).
+model Agent {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  name           String
+  enabled        Boolean  @default(false)
+  // "provider/model" — lo resuelve el ModelGateway.
+  model          String   @default("anthropic/claude-haiku-4-5-20251001")
+  systemPrompt   String?
+  temperature    Float    @default(0.7)
+  // Tope de iteraciones del loop de tool-calling (evita loops infinitos / costo).
+  maxSteps       Int      @default(6)
+  settings       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)

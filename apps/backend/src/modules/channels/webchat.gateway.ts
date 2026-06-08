@@ -28,6 +28,9 @@ const CHANNEL_SELECT = {
   bot: {
     select: { enabled: true, flow: true, sessionTtlMin: true, topics: true, router: true, variables: true },
   },
+  agent: {
+    select: { enabled: true, model: true, systemPrompt: true, temperature: true, maxSteps: true },
+  },
 } as const;
 
 interface VisitorInboundDto {

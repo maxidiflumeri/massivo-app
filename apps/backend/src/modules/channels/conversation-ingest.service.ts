@@ -7,6 +7,7 @@ import { BotEngineService } from '../bot/bot-engine.service';
 import { BotFeatureService } from '../bot/bot-feature.service';
 import { ConversationCoreService } from './conversation-core.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AgentRuntimeService } from '../agents/agent-runtime.service';
 import type { ChannelKind, InboundMessage } from './adapter.types';
 
 /** Canal resuelto (+ relación bot) que el ingest necesita para persistir y, si
@@ -27,6 +28,16 @@ export interface IngestChannel {
     topics: unknown;
     router: unknown;
     variables: unknown;
+  } | null;
+  // Plataforma agéntica (v0): si el canal tiene un Agente IA habilitado, atiende
+  // el agente (precedencia sobre el bot). Opcional: si el caller no lo carga,
+  // queda undefined y se usa el bot.
+  agent?: {
+    enabled: boolean;
+    model: string;
+    systemPrompt: string | null;
+    temperature: number;
+    maxSteps: number;
   } | null;
 }
 
@@ -57,6 +68,7 @@ export class ConversationIngestService {
     private readonly botEngine: BotEngineService,
     private readonly core: ConversationCoreService,
     private readonly notifications: NotificationsService,
+    private readonly agentRuntime: AgentRuntimeService,
   ) {}
 
   async ingest(channel: IngestChannel, inbounds: InboundMessage[]): Promise<void> {
@@ -156,8 +168,34 @@ export class ConversationIngestService {
       bodyPreview: inboundPreview(inbound),
     });
 
-    // 4. Bot guiado. Sólo texto / quick-reply (button). El motor chequea
-    //    internamente botSuspended y feature flag, pero acortamos antes.
+    // 4. Atención automática. Si el canal tiene un Agente IA habilitado, atiende
+    //    el agente (precedencia sobre el bot determinista). Si no, el bot guiado.
+    if (channel.agent?.enabled) {
+      await this.agentRuntime.handleInbound({
+        channel: {
+          id: channel.id,
+          organizationId: channel.organizationId,
+          teamId: channel.teamId,
+          kind: channel.kind,
+          accessTokenEnc: channel.accessTokenEnc,
+          isTestMode: channel.isTestMode,
+          phoneNumberId: channel.phoneNumberId,
+          pageId: channel.pageId,
+        },
+        agent: {
+          model: channel.agent.model,
+          systemPrompt: channel.agent.systemPrompt,
+          temperature: channel.agent.temperature,
+          maxSteps: channel.agent.maxSteps,
+        },
+        conversationId: conversation.id,
+        externalUserId,
+      });
+      return;
+    }
+
+    // Bot guiado. Sólo texto / quick-reply (button). El motor chequea
+    // internamente botSuspended y feature flag, pero acortamos antes.
     await this.maybeRunBot(channel, conversation.id, externalUserId, inbound);
   }
 

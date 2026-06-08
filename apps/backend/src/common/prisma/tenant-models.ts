@@ -24,6 +24,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'BotSession',
   // Bot como entidad propia (Phase 0a — multi-canal)
   'Bot',
+  // Plataforma agéntica (v0) — Agente IA de primera clase.
+  'Agent',
   // Notificaciones del inbox (campanita del navbar) — scoping por org+team.
   'Notification',
   // Cross-cutting (Fase 2.C)
