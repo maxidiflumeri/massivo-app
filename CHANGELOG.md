@@ -21,6 +21,65 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Unreleased]
 
+### Milestone multi-canal + bot único + inbox unificado + notificaciones + escalado horizontal ✅
+
+Evolución de WhatsApp-only a **plataforma omnicanal** (WhatsApp · Messenger · Instagram · Webchat) con **un bot que se diseña una vez y se conecta a N canales**, **inbox unificado**, **notificaciones en tiempo real** y backend **listo para escalar horizontal**. Modelo de datos channel-agnostic (`Channel`/`Conversation`/`Message`/`BotSession`), capa de adapters por canal y webhook genérico. Rama `feat/multichannel-bot`. Bitácora detallada por sesión en `CHANNELS_BOT_PROGRESS.md`; diseño en `CHANNELS_BOT_DESIGN.md`; plan de pruebas en `CHANNELS_TEST_PLAN.md`.
+
+#### Added
+
+##### Modelo unificado + capa de canal (Fases 0–1)
+- **Entidad `Bot`** de primera clase (extraída de las columnas `bot*` de `WapiConfig`): un bot se diseña una vez y se conecta a N canales vía `botId`. CRUD bot-céntrico `/api/bots` + connect/disconnect + draft/publish (columnas `*Draft` separadas de las publicadas). Sección **Bots** propia en el sidebar.
+- **Rename big-bang** del modelo: `WapiConfig→Channel`, `WapiConversation→Conversation`, `WapiMessage→Message`, `WapiBotSession→BotSession`, + enum `ChannelType {WHATSAPP, INSTAGRAM, MESSENGER, WEBCHAT}`. Contrato HTTP/socket de-wapi-ficado (`channelId`/`externalUserId`/`freeformWindowAt`/`channelKind`/`externalId`).
+- **Capa de adapters**: `ChannelAdapter` + `ChannelAdapterRegistry` — el engine del bot, el inbox y el webhook resuelven el adapter por `channelKind`. `parseInbound`/`OutboundMessage`/`ChannelCapabilities` (botones interactivos, tipos de media, ventana freeform).
+- **Webhook genérico** `/api/channels/:kind/:slug` (verify token + firma HMAC por canal).
+
+##### Inbox omnicanal (Fase 1e)
+- `modules/inbox` + `features/inbox` channel-agnostic sobre `Conversation`/`Message`/`Channel`. Eventos `conversation.message.new` / `conversation.updated`. Badge de canal por conversación, composer según `capabilities`. Ruta `/dashboard/inbox` (Inbox a sección propia "Conversaciones").
+- **Selector único de canal** (un `Select` agrupado por tipo, reemplaza dos `ToggleButtonGroup`).
+- Responder desde el inbox por el **adapter del canal correcto** (Messenger/IG/Webchat, no sólo WhatsApp).
+
+##### Canales Meta + Webchat (Fases 2–4)
+- **Messenger** (Fase 2) e **Instagram** (Fase 3): `MetaMessagingAdapter` base + `MessengerAdapter`/`InstagramAdapter` (Graph `/me/messages`, `object:'page'`/`'instagram'`), webhook generalizado (`MetaMessagingWebhookHandler` + subclases). Identidad por `pageId`.
+- **Webchat** (Fase 4): `WebchatAdapter` (outbound empujando al socket del visitante vía `EventsService`) + `WebchatGateway` (namespace `/webchat`, visitante anónimo resuelto por widget key) + ingest agnóstico. **Widget embebible** (loader `public/webchat/v1.js` + iframe `webchat.html`, bundle aparte): el cliente sólo pega un `<script data-massivo-key>`.
+- **Sección "Canales" unificada** (`/dashboard/channels`, `/api/channels`, kind-aware): alta/edición de todos los kinds desde la tarjeta, webhook + verify token visibles, **logo real de Messenger** (SVG de marca) unificado vía `channelMeta`.
+- **Simuladores dev** (gated por `ENABLE_DEV_SIMULATOR`) para Messenger/IG/Webchat: probar canal → bot → inbox end-to-end sin tocar Meta.
+
+##### Notificaciones del inbox (campanita)
+- Modelo `Notification` dedicado + `NotificationsModule` (`/api/notifications`: list/read/read-all, scoping por tenant). Dos baldes: **Para mí** (`userId`) y **Sin asignar** (cola del equipo, sólo nuevas/prioritarias). Coalesce por (conversación, balde).
+- Campanita en el navbar (2 secciones, deep-link `/dashboard/inbox?c=<id>`) + **4 avisos**: sonido (WebAudio), notificación del navegador, contador en el título de la pestaña, badge en el ítem Inbox del sidebar (toggles persistidos).
+- Triggers en ingest agnóstico / webhook WhatsApp / HANDOFF del bot / botón INBOX / assign / resolve / leer. Socket `notification.new|read|readAll` a `user:{id}` y `team:{id}`.
+
+#### Changed
+
+- **Consolidación del inbound** (Fase B): `ConversationCoreService.upsertConversation` compartido por el webhook de WhatsApp y el ingest agnóstico (race P2002, transición WAITING→UNASSIGNED, ventana freeform 24h centralizadas).
+- Ajustes WhatsApp (throttle/opt-out/welcome) migrados de la página "Números" al **editor de cada canal**.
+- Bot movido fuera de `modules/wapi/` → `modules/bot` (clases sin prefijo `Wapi`).
+
+#### Removed
+
+- Página **"Números"** (sus ajustes viven en el editor de canal).
+- Columnas `bot*` deprecadas de `Channel` (cleanup Fase 1f).
+
+#### Infra — Escalado horizontal (Redis)
+
+- **Adapter Redis de socket.io** (`RedisIoAdapter`): propaga los emits (inbox en vivo, notificaciones, webchat) entre todas las instancias — cubre los namespaces default + `/webchat`. Sin sticky sessions (los clientes socket usan `transports: ['websocket']`).
+- `RedisService` + `RedisModule` global (reusa `REDIS_HOST/PORT/PASSWORD` de las colas BullMQ).
+- **Sandbox del bot** (probar borrador) → estado en Redis con TTL (antes `Map` en memoria de proceso): cualquier instancia retoma el flujo del draft. El bot **publicado** ya guardaba contexto en `BotSession` (Postgres). Mantiene la aislación por organización.
+- **Rate limiter HTTP del bot** → token bucket en Redis (script Lua atómico, reloj del server, fail-open): límite global a todas las instancias en vez de N× por proceso.
+- Schedulers (campañas + expirer de espera): ya eran multi-instancia safe por optimistic concurrency (sin cambios).
+
+#### Fixed
+
+- Inbox: responder por el adapter del canal (Messenger/IG fallaba con "Object with ID 'null'").
+- Dev: chats de prueba a pantalla completa + botón Reiniciar; el chat simulado Messenger/IG ocultaba mensajes del bot; Chat simulado WhatsApp rompía con "property configId should not exist".
+- Specs de email pre-existentes desfasados del código actualizados (`ses-webhook` lee `req.rawBody`; `prepare-html` inyecta footer) → suite **815/815** en verde.
+
+#### Migraciones (hand-written idempotentes)
+
+- `rename_channel_entities`, `cleanup_legacy_bot_columns`, `channel_messenger_identity`, `notifications`.
+
+---
+
 ### Fase 11 + 12 — Despliegue POC productivo en AWS ✅
 
 Sesión maratónica que llevó el monorepo de "todo en local" a un POC completamente productivo en AWS, con CI/CD automatizado, landing page propia, infra reproducible vía Terraform, y SES platform-wide listo para volumen. La estrategia fue **simplificar 11.A** (EC2 single-instance + docker-compose en lugar de ECS Fargate Multi-AZ — apropiado para POC con costo controlado por créditos AWS) sin perder el camino a 11.A "real" cuando el producto valide. CI/CD en GH Actions con OIDC (sin Access Keys hardcoded), build ARM nativo, deploy via SSM Send Command. Incluye implementación parcial de Fase 12 (landing pública en `massivo.app`).
