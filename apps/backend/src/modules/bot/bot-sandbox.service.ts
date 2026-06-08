@@ -25,6 +25,7 @@ import {
 import { BotHttpExecutor } from './bot-http-executor.service';
 import { BotMediaFetchService } from './bot-media-fetch.service';
 import { BotRouterService } from './bot-router.service';
+import { RedisService } from '../../common/redis/redis.service';
 
 /**
  * 4.O.3 — Sandbox del bot. Corre el flow `botTopicsDraft ?? botTopics ?? botFlow`
@@ -44,17 +45,11 @@ import { BotRouterService } from './bot-router.service';
  */
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
-const MAX_SESSIONS_PER_PROCESS = 10_000;
 
 interface SandboxSessionState {
   currentTopicId: string;
   currentNodeId: string;
   data: BotData;
-  lastUsedAt: number;
-}
-
-interface SandboxStore {
-  sessions: Map<string, SandboxSessionState>;
 }
 
 export interface SandboxStepInput {
@@ -165,13 +160,13 @@ interface CfgSnapshot {
 @Injectable()
 export class BotSandboxService {
   private readonly logger = new Logger(BotSandboxService.name);
-  private readonly stores = new Map<string, SandboxStore>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly router: BotRouterService,
     private readonly httpExecutor: BotHttpExecutor,
     private readonly mediaFetch: BotMediaFetchService,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -209,12 +204,10 @@ export class BotSandboxService {
       };
     }
 
-    const store = this.getStore(ctx.organizationId);
-    this.cleanupIfNeeded(store);
     const key = sessionKey(ctx.organizationId, configId, ctx.userId, input.phone);
 
     if (input.reset) {
-      store.sessions.delete(key);
+      await this.delSession(key);
       if (input.resetOnly) {
         return { messages: [], session: null, sourceUsed };
       }
@@ -222,7 +215,7 @@ export class BotSandboxService {
 
     if (!input.inbound) {
       // Ping: devolver estado actual sin procesar nada.
-      const cur = store.sessions.get(key) ?? null;
+      const cur = await this.getSession(key);
       return {
         messages: [],
         session: cur ? { topicId: cur.currentTopicId, nodeId: cur.currentNodeId, data: cur.data } : null,
@@ -230,11 +223,9 @@ export class BotSandboxService {
       };
     }
 
-    let session = store.sessions.get(key) ?? null;
-    if (session && session.lastUsedAt + SESSION_TTL_MS < Date.now()) {
-      store.sessions.delete(key);
-      session = null;
-    }
+    // Sesión del sandbox en Redis (TTL la expira sola) → cualquier instancia
+    // retoma el estado, igual que el bot de prod con su BotSession en DB.
+    let session = await this.getSession(key);
 
     const outgoing: SandboxOutMessage[] = [];
     let outSeq = 0;
@@ -329,7 +320,7 @@ export class BotSandboxService {
       }
       const node = currentTopic.flow.nodes[session.currentNodeId];
       if (!node || node.kind !== 'MENU') {
-        store.sessions.delete(key);
+        await this.delSession(key);
         return { messages: outgoing, session: null, sourceUsed };
       }
       const optionId = input.inbound.buttonId.slice(BOT_OPTION_PREFIX.length);
@@ -354,7 +345,6 @@ export class BotSandboxService {
           if (result.ok) {
             data = result.data;
             session.data = data;
-            session.lastUsedAt = Date.now();
             const target = followGoto(node.gotoTopic, node.nextNodeId, currentTopicId, r.resolved);
             if (!target) {
               return { messages: outgoing, session: this.snapshotSession(session), sourceUsed };
@@ -372,7 +362,7 @@ export class BotSandboxService {
           return { messages: outgoing, session: this.snapshotSession(session), sourceUsed };
         } else {
           // Sesión inválida — descartar y caer al ruteo de "sin sesión".
-          store.sessions.delete(key);
+          await this.delSession(key);
           session = null;
           data = {};
         }
@@ -658,7 +648,7 @@ export class BotSandboxService {
 
     if (finalNode.kind === 'HANDOFF') {
       // Fin de la simulación. Borrar sesión.
-      store.sessions.delete(key);
+      await this.delSession(key);
       return {
         messages: outgoing,
         session: null,
@@ -672,9 +662,8 @@ export class BotSandboxService {
       currentTopicId: finalTopicId,
       currentNodeId: finalId,
       data,
-      lastUsedAt: Date.now(),
     };
-    store.sessions.set(key, nextSession);
+    await this.setSession(key, nextSession);
     return {
       messages: outgoing,
       session: this.snapshotSession(nextSession),
@@ -683,34 +672,35 @@ export class BotSandboxService {
     };
   }
 
-  /** Borra la sesión sandbox para (configId, userId, phone). */
-  resetSession(configId: string, phone: string): void {
-    const ctx = TenantContext.current();
-    if (!ctx) return;
-    const store = this.stores.get(ctx.organizationId);
-    if (!store) return;
-    store.sessions.delete(sessionKey(ctx.organizationId, configId, ctx.userId, phone));
-  }
-
   private snapshotSession(s: SandboxSessionState | null): SandboxStepResult['session'] {
     if (!s) return null;
     return { topicId: s.currentTopicId, nodeId: s.currentNodeId, data: { ...s.data } };
   }
 
-  private getStore(organizationId: string): SandboxStore {
-    let store = this.stores.get(organizationId);
-    if (!store) {
-      store = { sessions: new Map() };
-      this.stores.set(organizationId, store);
+  // ── Estado de la sesión sandbox en Redis (cross-instancia, TTL lazy de 30 min). ──
+  private async getSession(key: string): Promise<SandboxSessionState | null> {
+    try {
+      const raw = await this.redis.client.get(key);
+      return raw ? (JSON.parse(raw) as SandboxSessionState) : null;
+    } catch (err) {
+      this.logger.warn(`sandbox getSession falló: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
     }
-    return store;
   }
 
-  private cleanupIfNeeded(store: SandboxStore): void {
-    if (store.sessions.size <= MAX_SESSIONS_PER_PROCESS) return;
-    const cutoff = Date.now() - SESSION_TTL_MS;
-    for (const [k, v] of store.sessions) {
-      if (v.lastUsedAt < cutoff) store.sessions.delete(k);
+  private async setSession(key: string, s: SandboxSessionState): Promise<void> {
+    try {
+      await this.redis.client.set(key, JSON.stringify(s), 'PX', SESSION_TTL_MS);
+    } catch (err) {
+      this.logger.warn(`sandbox setSession falló: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private async delSession(key: string): Promise<void> {
+    try {
+      await this.redis.client.del(key);
+    } catch (err) {
+      this.logger.warn(`sandbox delSession falló: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -812,7 +802,7 @@ export class BotSandboxService {
 }
 
 function sessionKey(orgId: string, configId: string, userId: string, phone: string): string {
-  return `${orgId}:${configId}:${userId}:${phone}`;
+  return `sandbox:${orgId}:${configId}:${userId}:${phone}`;
 }
 
 function pickSource(

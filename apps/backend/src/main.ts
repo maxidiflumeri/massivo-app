@@ -4,6 +4,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { AppModule } from './app.module';
+import { RedisService } from './common/redis/redis.service';
+import { RedisIoAdapter } from './common/redis/redis-io.adapter';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
@@ -12,6 +14,12 @@ async function bootstrap(): Promise<void> {
   });
 
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
+
+  // Adapter Redis de socket.io: imprescindible para escalar horizontal — propaga
+  // los emits (inbox en vivo, notificaciones, webchat) entre todas las instancias.
+  const redisIoAdapter = new RedisIoAdapter(app, app.get(RedisService));
+  redisIoAdapter.connect();
+  app.useWebSocketAdapter(redisIoAdapter);
 
   const config = app.get(ConfigService);
   const port = config.get<number>('BACKEND_PORT', 3001);

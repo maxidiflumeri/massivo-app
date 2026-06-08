@@ -91,6 +91,23 @@ const draftTopic: BotTopic = {
 
 const router1: BotRouter = { rules: [], defaultTopicId: 'greet' };
 
+// Fake de RedisService: el sandbox guarda la sesión en Redis (cross-instancia).
+// Un Map en memoria por instancia preserva la continuidad de sesión que estos
+// tests verifican (igual que el store en memoria anterior).
+function makeRedis(): never {
+  const store = new Map<string, string>();
+  return {
+    client: {
+      get: async (k: string) => store.get(k) ?? null,
+      set: async (k: string, v: string) => {
+        store.set(k, v);
+        return 'OK';
+      },
+      del: async (k: string) => (store.delete(k) ? 1 : 0),
+    },
+  } as never;
+}
+
 describe('BotSandboxService', () => {
   it('usa botTopicsDraft cuando existe; chain MESSAGE → MENU produce 2 mensajes', async () => {
     const prisma = makePrisma({
@@ -101,7 +118,7 @@ describe('BotSandboxService', () => {
       botTopicsDraft: [draftTopic],
       botRouterDraft: { rules: [], defaultTopicId: 'greet' },
     });
-    const svc = new BotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
+    const svc = new BotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never, makeRedis());
 
     await TenantContext.run(ctxA(), async () => {
       const r = await svc.step('cfg-1', { phone: '5491100', inbound: { kind: 'text', body: 'hola' } });
@@ -122,7 +139,7 @@ describe('BotSandboxService', () => {
       botTopicsDraft: [draftTopic],
       botRouterDraft: { rules: [], defaultTopicId: 'greet' },
     });
-    const svc = new BotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
+    const svc = new BotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never, makeRedis());
 
     await TenantContext.run(ctxA(), async () => {
       const r = await svc.step('cfg-1', {
@@ -149,7 +166,7 @@ describe('BotSandboxService', () => {
       botTopicsDraft: null,
       botRouterDraft: null,
     });
-    const svc = new BotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
+    const svc = new BotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never, makeRedis());
 
     await TenantContext.run(ctxA(), async () => {
       // 1) Texto entra → MESSAGE + MENU.
@@ -187,7 +204,7 @@ describe('BotSandboxService', () => {
       botTopicsDraft: null,
       botRouterDraft: null,
     });
-    const svc = new BotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
+    const svc = new BotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never, makeRedis());
 
     await TenantContext.run(ctxA(), async () => {
       await svc.step('cfg-1', { phone: '5491100', inbound: { kind: 'text', body: 'hola' } });
@@ -212,7 +229,7 @@ describe('BotSandboxService', () => {
       botTopicsDraft: null,
       botRouterDraft: null,
     });
-    const svc = new BotSandboxService(prismaA, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
+    const svc = new BotSandboxService(prismaA, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never, makeRedis());
 
     await TenantContext.run(ctxA(), async () => {
       await svc.step('cfg-1', { phone: '5491100', inbound: { kind: 'text', body: 'hola' } });
@@ -236,7 +253,7 @@ describe('BotSandboxService', () => {
       botTopicsDraft: null,
       botRouterDraft: null,
     });
-    const svc = new BotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never);
+    const svc = new BotSandboxService(prisma, router, { execute: jest.fn().mockResolvedValue({ ok: true, status: 200, body: null, durationMs: 0 }) } as never, { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never, makeRedis());
 
     await TenantContext.run(ctxA(), async () => {
       const r = await svc.step('cfg-1', { phone: '5491100', inbound: { kind: 'text', body: 'x' } });

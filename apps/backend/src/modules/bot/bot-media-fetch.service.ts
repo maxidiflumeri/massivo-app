@@ -128,7 +128,7 @@ export class BotMediaFetchService {
       return { ok: false, error: 'feature-disabled', durationMs: 0 };
     }
 
-    if (!this.rateLimiter.tryAcquire(options.organizationId)) {
+    if (!(await this.rateLimiter.tryAcquire(options.organizationId))) {
       return { ok: false, error: 'rate-limited', durationMs: 0 };
     }
 

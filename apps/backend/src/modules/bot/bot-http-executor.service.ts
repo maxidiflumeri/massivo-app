@@ -82,7 +82,7 @@ export class BotHttpExecutor {
       return errorResult('feature-disabled', 0);
     }
 
-    if (!this.rateLimiter.tryAcquire(options.organizationId)) {
+    if (!(await this.rateLimiter.tryAcquire(options.organizationId))) {
       return errorResult('rate-limited', 0);
     }
 

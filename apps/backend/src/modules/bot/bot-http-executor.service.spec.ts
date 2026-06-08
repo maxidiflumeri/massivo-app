@@ -17,6 +17,37 @@ function makeAuditMock(): jest.Mocked<AuditLogService> {
   } as unknown as jest.Mocked<AuditLogService>;
 }
 
+/**
+ * Rate limiter respaldado por Redis: cada instancia recibe un fake con un Map
+ * propio que replica el token bucket del script Lua (tiempo = Date.now()). Da el
+ * mismo comportamiento observable que el bucket, aislado por test.
+ */
+function makeLimiter(): BotHttpRateLimiterService {
+  const store = new Map<string, { tokens: number; lastRefill: number }>();
+  const fakeRedis = {
+    client: {
+      eval: async (_script: string, _numKeys: number, key: string, capStr: string) => {
+        const capacity = Number(capStr);
+        const now = Date.now();
+        const b = store.get(key) ?? { tokens: capacity, lastRefill: now };
+        const elapsed = now - b.lastRefill;
+        if (elapsed > 0) {
+          b.tokens = Math.min(capacity, b.tokens + (elapsed / 60000) * capacity);
+          b.lastRefill = now;
+        }
+        let allowed = 0;
+        if (b.tokens >= 1) {
+          b.tokens -= 1;
+          allowed = 1;
+        }
+        store.set(key, b);
+        return allowed;
+      },
+    },
+  };
+  return new BotHttpRateLimiterService(fakeRedis as never);
+}
+
 function makeNode(overrides: Partial<BotHttpNode> = {}): BotHttpNode {
   return {
     kind: 'HTTP',
@@ -86,7 +117,7 @@ describe('BotHttpExecutor', () => {
 
   describe('modo mock', () => {
     it('devuelve mockResponse cuando está definido', async () => {
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const audit = makeAuditMock();
       const exec = new BotHttpExecutor(limiter, audit);
       const r = await exec.execute(
@@ -101,7 +132,7 @@ describe('BotHttpExecutor', () => {
     });
 
     it('mockResponse con status 5xx → ok=false', async () => {
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const audit = makeAuditMock();
       const exec = new BotHttpExecutor(limiter, audit);
       const r = await exec.execute(
@@ -115,7 +146,7 @@ describe('BotHttpExecutor', () => {
     });
 
     it('sin mockResponse → error mock-undefined', async () => {
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const audit = makeAuditMock();
       const exec = new BotHttpExecutor(limiter, audit);
       const r = await exec.execute(makeNode(), {}, {
@@ -136,7 +167,7 @@ describe('BotHttpExecutor', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ nombre: 'Juan', pedidos: 3 }),
       };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const audit = makeAuditMock();
       const exec = new BotHttpExecutor(limiter, audit);
       const r = await exec.execute(
@@ -166,7 +197,7 @@ describe('BotHttpExecutor', () => {
 
     it('POST con body JSON y Content-Type auto', async () => {
       nextResponse = { status: 201, headers: { 'content-type': 'application/json' }, body: '{"id":42}' };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({
@@ -186,7 +217,7 @@ describe('BotHttpExecutor', () => {
 
     it('interpola url con {{var}}', async () => {
       nextResponse = { status: 200, body: '{}' };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       await exec.execute(
         makeNode({ url: `${baseUrl}/u/{{userId}}` }),
@@ -198,7 +229,7 @@ describe('BotHttpExecutor', () => {
 
     it('interpola body JSON-safe con comillas (no rompe el JSON)', async () => {
       nextResponse = { status: 200, body: '{}' };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       await exec.execute(
         makeNode({
@@ -216,7 +247,7 @@ describe('BotHttpExecutor', () => {
 
     it('interpola headers con {{var}}', async () => {
       nextResponse = { status: 200, body: '{}' };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       await exec.execute(
         makeNode({
@@ -231,7 +262,7 @@ describe('BotHttpExecutor', () => {
 
     it('content-type text/plain devuelve string', async () => {
       nextResponse = { status: 200, headers: { 'content-type': 'text/plain' }, body: 'hola mundo' };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/text` }),
@@ -247,7 +278,7 @@ describe('BotHttpExecutor', () => {
         headers: { 'content-type': 'application/octet-stream' },
         body: '\x00\x01\x02\x03',
       };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/bin` }),
@@ -271,7 +302,7 @@ describe('BotHttpExecutor', () => {
           '<motivo>L&#xED;mites de velocidad</motivo>' +
           '</root>',
       };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/xml-entities` }),
@@ -311,7 +342,7 @@ describe('BotHttpExecutor', () => {
 
       const soapRequestBody = `<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><getActas><dni>33689563</dni></getActas></soapenv:Body></soapenv:Envelope>`;
 
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({
@@ -346,7 +377,7 @@ describe('BotHttpExecutor', () => {
       // y no setea Content-Type, NO lo asumimos como JSON. El cliente debe
       // setearlo explícito; mientras tanto fetch manda sin Content-Type.
       nextResponse = { status: 200, headers: { 'content-type': 'text/plain' }, body: 'ok' };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       await exec.execute(
         makeNode({
@@ -370,7 +401,7 @@ describe('BotHttpExecutor', () => {
       process.env.NODE_ENV = 'production';
       process.env.WAPI_BOT_HTTP_INSECURE_HOSTS = 'allowed.example.com';
       try {
-        const limiter = new BotHttpRateLimiterService();
+        const limiter = makeLimiter();
         const exec = new BotHttpExecutor(limiter, makeAuditMock());
         const r = await exec.execute(
           makeNode({ url: `${baseUrl}/blocked` }),
@@ -393,7 +424,7 @@ describe('BotHttpExecutor', () => {
       process.env.NODE_ENV = 'production';
       process.env.WAPI_BOT_HTTP_INSECURE_HOSTS = '127.0.0.1, another.example.com';
       try {
-        const limiter = new BotHttpRateLimiterService();
+        const limiter = makeLimiter();
         const exec = new BotHttpExecutor(limiter, makeAuditMock());
         const r = await exec.execute(
           makeNode({ url: `${baseUrl}/allowed` }),
@@ -417,7 +448,7 @@ describe('BotHttpExecutor', () => {
         headers: { 'content-type': 'application/json' },
         body: '{"error":"down"}',
       };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/fail` }),
@@ -432,7 +463,7 @@ describe('BotHttpExecutor', () => {
 
     it('redirect 302 → error redirect-not-followed', async () => {
       nextResponse = { status: 302, headers: { location: '/elsewhere' }, body: '' };
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/redir` }),
@@ -445,7 +476,7 @@ describe('BotHttpExecutor', () => {
     });
 
     it('URL inválida → error invalid-url', async () => {
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: 'not-a-url' }),
@@ -457,7 +488,7 @@ describe('BotHttpExecutor', () => {
     });
 
     it('scheme ftp:// → error invalid-scheme', async () => {
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: 'ftp://example.com/x' }),
@@ -470,7 +501,7 @@ describe('BotHttpExecutor', () => {
 
     it('SSRF bloquea cuando allowPrivate=false', async () => {
       process.env.WAPI_BOT_HTTP_ALLOW_PRIVATE_IPS = 'false';
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: 'http://169.254.169.254/latest/meta-data/' }),
@@ -483,10 +514,10 @@ describe('BotHttpExecutor', () => {
     });
 
     it('rate limited cuando se acaban los tokens', async () => {
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const audit = makeAuditMock();
       // Vaciar tokens: capacity (60 default) — drenamos.
-      for (let i = 0; i < 60; i++) limiter.tryAcquire('org1');
+      for (let i = 0; i < 60; i++) await limiter.tryAcquire('org1');
       const exec = new BotHttpExecutor(limiter, audit);
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/x` }),
@@ -500,7 +531,7 @@ describe('BotHttpExecutor', () => {
 
     it('feature disabled vía env → error feature-disabled', async () => {
       process.env.WAPI_BOT_HTTP_ENABLED = 'false';
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       const r = await exec.execute(
         makeNode({ url: `${baseUrl}/x` }),
@@ -514,20 +545,20 @@ describe('BotHttpExecutor', () => {
   });
 
   describe('rate limiter (token bucket)', () => {
-    it('permite los primeros N requests y bloquea el N+1', () => {
-      const lim = new BotHttpRateLimiterService();
+    it('permite los primeros N requests y bloquea el N+1', async () => {
+      const lim = makeLimiter();
       const cap = lim.capacityForTests;
       for (let i = 0; i < cap; i++) {
-        expect(lim.tryAcquire('org-x')).toBe(true);
+        expect(await lim.tryAcquire('org-x')).toBe(true);
       }
-      expect(lim.tryAcquire('org-x')).toBe(false);
+      expect(await lim.tryAcquire('org-x')).toBe(false);
     });
 
-    it('orgs distintas tienen buckets separados', () => {
-      const lim = new BotHttpRateLimiterService();
-      for (let i = 0; i < lim.capacityForTests; i++) lim.tryAcquire('org-a');
-      expect(lim.tryAcquire('org-a')).toBe(false);
-      expect(lim.tryAcquire('org-b')).toBe(true);
+    it('orgs distintas tienen buckets separados', async () => {
+      const lim = makeLimiter();
+      for (let i = 0; i < lim.capacityForTests; i++) await lim.tryAcquire('org-a');
+      expect(await lim.tryAcquire('org-a')).toBe(false);
+      expect(await lim.tryAcquire('org-b')).toBe(true);
     });
   });
 
@@ -537,7 +568,7 @@ describe('BotHttpExecutor', () => {
     // atajo de IP literal en la URL → undici hace el lookup). Lo simulamos
     // usando `localhost` que en Linux suele resolverse a 127.0.0.1 vía /etc/hosts.
     it('apunta a un hostname que necesita lookup y conecta a localhost server', async () => {
-      const limiter = new BotHttpRateLimiterService();
+      const limiter = makeLimiter();
       const exec = new BotHttpExecutor(limiter, makeAuditMock());
       // Sustituimos 127.0.0.1 por 'localhost' para forzar a undici a llamar lookup.
       const localUrl = baseUrl.replace('127.0.0.1', 'localhost');
