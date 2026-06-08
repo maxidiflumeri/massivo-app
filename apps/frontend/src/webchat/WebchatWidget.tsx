@@ -15,17 +15,36 @@ interface WcMessage {
   caption?: string;
 }
 
+function visitorKey(channelKey: string): string {
+  return `massivo:wc:visitor:${channelKey}`;
+}
+
+function newVisitorId(): string {
+  return `wcv_${Math.random().toString(36).slice(2, 12)}`;
+}
+
 function getVisitorId(channelKey: string): string {
-  const k = `massivo:wc:visitor:${channelKey}`;
+  const k = visitorKey(channelKey);
   try {
     const existing = localStorage.getItem(k);
     if (existing) return existing;
-    const id = `wcv_${Math.random().toString(36).slice(2, 12)}`;
+    const id = newVisitorId();
     localStorage.setItem(k, id);
     return id;
   } catch {
-    return `wcv_${Math.random().toString(36).slice(2, 12)}`;
+    return newVisitorId();
   }
+}
+
+/** Rota a un visitorId nuevo (y lo persiste) → arranca una conversación limpia. */
+function rotateVisitorId(channelKey: string): string {
+  const id = newVisitorId();
+  try {
+    localStorage.setItem(visitorKey(channelKey), id);
+  } catch {
+    // no-op (sin localStorage el id vive en memoria igual)
+  }
+  return id;
 }
 
 /**
@@ -40,7 +59,7 @@ export function WebchatWidget({ channelKey }: { channelKey: string }) {
   const [body, setBody] = useState('');
   const socketRef = useRef<Socket | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
-  const visitorId = useRef(channelKey ? getVisitorId(channelKey) : '').current;
+  const [visitorId, setVisitorId] = useState(() => (channelKey ? getVisitorId(channelKey) : ''));
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -80,6 +99,13 @@ export function WebchatWidget({ channelKey }: { channelKey: string }) {
     setMessages((prev) => [...prev, { id: `out_${Date.now()}`, direction: 'out', type: 'text', text: title }]);
   }
 
+  /** Nueva conversación: rota el visitorId (el useEffect reconecta) y limpia el chat. */
+  const resetConversation = useCallback(() => {
+    if (!channelKey) return;
+    setMessages([]);
+    setVisitorId(rotateVisitorId(channelKey));
+  }, [channelKey]);
+
   function close() {
     try {
       window.parent.postMessage({ massivo: 'close' }, '*');
@@ -97,6 +123,15 @@ export function WebchatWidget({ channelKey }: { channelKey: string }) {
       <div style={S.header}>
         <span style={S.headerTitle}>Chat</span>
         <span style={{ ...S.dot, background: connected ? '#34D399' : '#9CA3AF' }} />
+        <button
+          type="button"
+          aria-label="Reiniciar conversación"
+          title="Reiniciar conversación"
+          style={S.resetBtn}
+          onClick={resetConversation}
+        >
+          ↻
+        </button>
         <button type="button" aria-label="Cerrar" style={S.closeBtn} onClick={close}>
           ✕
         </button>
@@ -170,6 +205,15 @@ const S: Record<string, React.CSSProperties> = {
   },
   headerTitle: { flex: 1, fontSize: 15 },
   dot: { width: 8, height: 8, borderRadius: '50%', display: 'inline-block' },
+  resetBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: '#fff',
+    cursor: 'pointer',
+    fontSize: 17,
+    lineHeight: 1,
+    opacity: 0.9,
+  },
   closeBtn: {
     background: 'transparent',
     border: 'none',
