@@ -10,12 +10,13 @@
 
 **Fase en curso:** Fase 0 + Fase 1 COMPLETAS. **Fase 2 (Messenger) — COMPLETA**
 (backend end-to-end + simulador dev back/front). **Sección "Canales" unificada
-COMPLETA** (sesión 7): admin de canales relocado a `modules/channels` + `/api/channels`;
-UI `/dashboard/channels` con alta/edición multi-canal, íconos de marca, webhook por
-canal + revelar verify token, conectar bot, regenerar webhook; página "Números"
-eliminada (sus ajustes WhatsApp migrados al editor). **Próximo: Fase 3 — Instagram**
-(reusa `MetaMessagingAdapter` + el alta ya soporta nuevos kinds → habilitar la tarjeta).
-**Pendiente externo:** App Review de Meta para Messenger/IG en prod (no es código).
+COMPLETA** (sesión 7). **Fase 3 (Instagram) — COMPLETA en código** (sesión 8):
+`InstagramAdapter` (object 'instagram'), webhook genérico de Meta generalizado
+(`MetaMessagingWebhookHandler` base + subclases Messenger/IG), `/api/channels/instagram/:slug`,
+alta de canal INSTAGRAM (identidad por `pageId`=IG account id, sin migración) y tarjeta
+IG habilitada en la UI. **Próximo: simulador dev de Instagram** ("verlo andar", como
+Messenger) y/o **Fase 4 — Webchat**. **Pendiente externo:** App Review de Meta para
+Messenger/IG en prod (no es código).
 1d (modelo unificado), 1g (bot fuera de `wapi/`) y **1e** (inbox omnicanal: relocación
 completa `modules/inbox` + `features/inbox`, contrato `channelId/externalUserId/
 freeformWindowAt/externalId/channelKind`, eventos `conversation.message.new`/
@@ -229,6 +230,34 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 ---
 
 ## Bitácora (qué se hizo y por qué)
+
+### Sesión 8 — 2026-06-07 (Fase 3 — Instagram, end-to-end en código)
+- **`InstagramAdapter`** (`adapters/instagram.adapter.ts`): subclase de
+  `MetaMessagingAdapter`, sólo fija `kind='INSTAGRAM'` y `webhookObject='instagram'`.
+  Reusa el envío Graph `/me/messages` y el parser de inbound de Messenger sin cambios.
+- **Generalización del webhook de Meta:** se extrajo `MetaMessagingWebhookHandler`
+  (base con toda la lógica: resolver org por slug → matchear `entry[].id` contra
+  `Channel.pageId` del kind → HMAC con appSecret → `parseInbound` → ingest agnóstico),
+  parametrizada por `(adapter, kind, webhookObject)`. `MessengerWebhookHandler` e
+  `InstagramWebhookHandler` quedan como subclases de ~15 líneas (evita duplicar ~170).
+- **Wiring:** `ChannelAdapterRegistry` registra el adapter IG; `WapiModule`
+  provee/exporta `InstagramAdapter`; `ChannelsModule` provee `InstagramWebhookHandler`;
+  el controller del webhook genérico despacha `INSTAGRAM` → handler IG
+  (`/api/channels/instagram/:slug`).
+- **Alta:** `CREATABLE_CHANNEL_KINDS` suma `INSTAGRAM`; el service crea IG por la rama
+  no-WhatsApp (requiere `pageId`, `businessAccountId=''`). **Sin migración de schema:**
+  se reusa la columna `pageId` como "id externo de la cuenta Meta" (page id para
+  Messenger, IG account id para Instagram — el valor que llega en `entry[].id`).
+- **Frontend:** tarjeta de Instagram `available: true`; labels kind-aware en
+  `AddChannelDialog`/`EditChannelDialog` (IG pide "Instagram account ID" con ayuda
+  explicando que el token es el de la página de Facebook vinculada).
+- **Verificación:** backend tsc 0; channels jest 47/47 (incl. test nuevo IG dispatch +
+  501 movido a webchat); frontend tsc 0; vite build verde; DI smoke (AppModule resuelve
+  adapter + handler IG) OK. Commit `bbc3896`.
+- **Pendiente / cabos:** simulador dev IG (mirror del de Messenger, para "verlo andar"
+  sin Meta); confirmar la semántica exacta del webhook IG real (qué id llega en
+  `entry[].id`, y si la nueva "Instagram API with Instagram Login" difiere) cuando se
+  pruebe contra Meta — el modelo `pageId` es reversible si hiciera falta un campo propio.
 
 ### Sesión 7 — 2026-06-07 (Sección "Canales" unificada + frontend Messenger)
 - **Frontend Chat simulado Messenger** (cierre 2-G): `/dashboard/dev/channels/messenger/chat`
