@@ -8,15 +8,17 @@ import {
   InputAdornment,
   List,
   ListItemButton,
+  ListSubheader,
+  MenuItem,
+  Select,
   Stack,
   Tab,
   Tabs,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
+import AllInboxIcon from '@mui/icons-material/AllInbox';
 import DoneIcon from '@mui/icons-material/Done';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import StarIcon from '@mui/icons-material/Star';
@@ -89,13 +91,38 @@ export function ConversationList({
     for (const c of channels) map.set(c.id, c.label);
     return map;
   }, [channels]);
-  // Filtro por tipo de canal (omnicanal): sólo cuando hay más de un kind vivo.
-  const distinctKinds = useMemo(() => {
-    const set = new Set<ChannelKind>();
-    for (const c of channels) set.add(c.kind);
-    return Array.from(set);
+  // Canales agrupados por tipo (para el selector único). `multiKind` decide si
+  // mostramos los encabezados de tipo + el atajo "Todos los <tipo>".
+  const groups = useMemo(() => {
+    const m = new Map<ChannelKind, InboxChannelOption[]>();
+    for (const c of channels) {
+      const arr = m.get(c.kind);
+      if (arr) arr.push(c);
+      else m.set(c.kind, [c]);
+    }
+    return Array.from(m, ([kind, chans]) => ({ kind, channels: chans }));
   }, [channels]);
-  const showKindFilter = distinctKinds.length > 1;
+  const multiKind = groups.length > 1;
+
+  // Valor del selector: 'all' | 'kind:<KIND>' | 'ch:<id>'.
+  const channelSelectValue = selectedChannelId
+    ? `ch:${selectedChannelId}`
+    : selectedChannelKind
+      ? `kind:${selectedChannelKind}`
+      : 'all';
+
+  function handleChannelSelect(v: string) {
+    if (v === 'all') {
+      onChannelChange(null);
+      onChannelKindChange(null);
+    } else if (v.startsWith('kind:')) {
+      onChannelKindChange(v.slice(5) as ChannelKind);
+      onChannelChange(null);
+    } else {
+      onChannelChange(v.slice(3));
+      onChannelKindChange(null);
+    }
+  }
 
   return (
     <Stack
@@ -136,53 +163,50 @@ export function ConversationList({
           />
         </Stack>
       </Box>
-      {showKindFilter && (
-        <Box sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider' }}>
-          <ToggleButtonGroup
-            value={selectedChannelKind}
-            exclusive
-            onChange={(_, v: ChannelKind | null) => onChannelKindChange(v)}
-            size="small"
-            sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, width: '100%' }}
-          >
-            <ToggleButton value={null} sx={{ flex: 1, minWidth: 56, fontSize: 11, py: 0.5 }}>
-              Todos
-            </ToggleButton>
-            {distinctKinds.map((k) => (
-              <ToggleButton
-                key={k}
-                value={k}
-                sx={{ flex: 1, minWidth: 56, fontSize: 11, py: 0.5, gap: 0.5 }}
-              >
-                <ChannelBadge kind={k} size={14} />
-                {channelLabel(k)}
-              </ToggleButton>
-            ))}
-          </ToggleButtonGroup>
-        </Box>
-      )}
       {showChannelSelector && (
         <Box sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider' }}>
-          <ToggleButtonGroup
-            value={selectedChannelId}
-            exclusive
-            onChange={(_, v: string | null) => onChannelChange(v)}
+          <Select
             size="small"
-            sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, width: '100%' }}
+            fullWidth
+            value={channelSelectValue}
+            onChange={(e) => handleChannelSelect(e.target.value)}
+            renderValue={(v) => <ChannelSelectValue value={v} channels={channels} />}
+            MenuProps={{ PaperProps: { sx: { maxHeight: 440 } } }}
+            sx={{ '& .MuiSelect-select': { py: 0.75 } }}
           >
-            <ToggleButton value={null} sx={{ flex: 1, minWidth: 60, fontSize: 11, py: 0.5 }}>
-              Todas
-            </ToggleButton>
-            {channels.map((c) => (
-              <ToggleButton
-                key={c.id}
-                value={c.id}
-                sx={{ flex: 1, minWidth: 60, fontSize: 11, py: 0.5 }}
-              >
-                {c.label}
-              </ToggleButton>
-            ))}
-          </ToggleButtonGroup>
+            <MenuItem value="all">
+              <Stack direction="row" alignItems="center" gap={1}>
+                <AllInboxIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                Todos los canales
+              </Stack>
+            </MenuItem>
+            {multiKind
+              ? groups.flatMap((g) => [
+                  <ListSubheader
+                    key={`h-${g.kind}`}
+                    sx={{ lineHeight: '30px', display: 'flex', alignItems: 'center', gap: 0.75, bgcolor: 'transparent' }}
+                  >
+                    <ChannelBadge kind={g.kind} size={14} />
+                    {channelLabel(g.kind)}
+                  </ListSubheader>,
+                  <MenuItem key={`k-${g.kind}`} value={`kind:${g.kind}`} sx={{ pl: 3.5, fontSize: 13 }}>
+                    Todos los {channelLabel(g.kind)}
+                  </MenuItem>,
+                  ...g.channels.map((c) => (
+                    <MenuItem key={c.id} value={`ch:${c.id}`} sx={{ pl: 3.5, fontSize: 13 }}>
+                      {c.label}
+                    </MenuItem>
+                  )),
+                ])
+              : channels.map((c) => (
+                  <MenuItem key={c.id} value={`ch:${c.id}`}>
+                    <Stack direction="row" alignItems="center" gap={1}>
+                      <ChannelBadge kind={c.kind} size={16} />
+                      {c.label}
+                    </Stack>
+                  </MenuItem>
+                ))}
+          </Select>
         </Box>
       )}
       <Tabs
@@ -240,6 +264,42 @@ export function ConversationList({
           </List>
         )}
       </Box>
+    </Stack>
+  );
+}
+
+/** Trigger del selector de canal: ícono de marca + etiqueta del alcance elegido. */
+function ChannelSelectValue({
+  value,
+  channels,
+}: {
+  value: string;
+  channels: InboxChannelOption[];
+}) {
+  if (value.startsWith('kind:')) {
+    const k = value.slice(5) as ChannelKind;
+    return (
+      <Stack direction="row" alignItems="center" gap={1}>
+        <ChannelBadge kind={k} size={16} />
+        {channelLabel(k)}
+      </Stack>
+    );
+  }
+  if (value.startsWith('ch:')) {
+    const c = channels.find((x) => x.id === value.slice(3));
+    if (c) {
+      return (
+        <Stack direction="row" alignItems="center" gap={1}>
+          <ChannelBadge kind={c.kind} size={16} />
+          {c.label}
+        </Stack>
+      );
+    }
+  }
+  return (
+    <Stack direction="row" alignItems="center" gap={1}>
+      <AllInboxIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+      Todos los canales
     </Stack>
   );
 }
