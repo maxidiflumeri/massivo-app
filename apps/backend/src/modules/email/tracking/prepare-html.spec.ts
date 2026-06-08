@@ -21,7 +21,11 @@ describe('prepareHtmlForTracking', () => {
   it('no reescribe href que ya apuntan al publicUrl', () => {
     const html = `<a href="${base}/unsubscribe?t=abc">x</a>`;
     const out = prepareHtmlForTracking({ html, token, publicUrl: base, unsubscribeUrl: base + "/api/unsubscribe?t=" + token, senderLabel: "TestOrg" });
-    expect(out).toBe(html + expectedPixel(token, base));
+    // El href interno se preserva (no se reescribe a /api/track/click)…
+    expect(out).toContain(`<a href="${base}/unsubscribe?t=abc">x</a>`);
+    expect(out).not.toContain('/api/track/click');
+    // …y el pixel se inyecta igual al final (el footer va en el medio).
+    expect(out).toContain(expectedPixel(token, base));
   });
 
   it('no toca mailto/tel/anchors', () => {
