@@ -37,6 +37,7 @@ import ChatIcon from '@mui/icons-material/Chat';
 import InstagramIcon from '@mui/icons-material/Instagram';
 import HubIcon from '@mui/icons-material/Hub';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import HistoryIcon from '@mui/icons-material/History';
 import AssessmentIcon from '@mui/icons-material/Assessment';
@@ -90,6 +91,18 @@ const NAV_GROUPS: NavGroupSpec[] = [
         },
       ]
     : []),
+  // Agentes IA: plataforma agéntica (v0). Sección propia, NO mezclar con "Bots"
+  // (flujos deterministas). Un agente se conecta a un canal y atiende con un LLM.
+  {
+    label: 'Agentes',
+    items: [
+      {
+        to: '/dashboard/agents',
+        label: 'Mis agentes',
+        icon: <AutoAwesomeIcon fontSize="small" />,
+      },
+    ],
+  },
   // Inbox: omnicanal (Conversation/Channel unificados) → sección propia, fuera de
   // WhatsApp. El badge por fila indica el canal de cada conversación.
   {

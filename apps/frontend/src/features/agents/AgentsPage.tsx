@@ -1,0 +1,401 @@
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  FormControl,
+  FormControlLabel,
+  IconButton,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Slider,
+  Stack,
+  Switch,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import HubIcon from '@mui/icons-material/Hub';
+import { useApi } from '../../api/client';
+import { useNotify } from '../../feedback/NotifyProvider';
+import { useConfirm } from '../../feedback/ConfirmProvider';
+import { agentsApi } from './api';
+import { AGENT_MODEL_PRESETS, type Agent } from './types';
+
+interface ChannelOption {
+  id: string;
+  label: string;
+  kind: string;
+}
+
+export function AgentsPage() {
+  const api = useApi();
+  const notify = useNotify();
+  const confirm = useConfirm();
+
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [channels, setChannels] = useState<ChannelOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<Agent | null>(null);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [agentRows, channelRows] = await Promise.all([
+        agentsApi.list(api),
+        api.get<Array<{ id: string; name: string | null; kind: string; phoneNumberId: string | null }>>('/api/channels'),
+      ]);
+      setAgents(agentRows);
+      setChannels(
+        channelRows.map((c) => ({
+          id: c.id,
+          label: c.name?.trim() || c.phoneNumberId || c.kind,
+          kind: c.kind,
+        })),
+      );
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudieron cargar los agentes');
+    } finally {
+      setLoading(false);
+    }
+  }, [api, notify]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const handleCreate = async () => {
+    if (!createName.trim()) return;
+    setCreating(true);
+    try {
+      const agent = await agentsApi.create(api, createName.trim());
+      setCreateName('');
+      setCreateOpen(false);
+      await reload();
+      setEditing(agent); // abrir el editor recién creado
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudo crear el agente');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const toggleEnabled = async (agent: Agent, enabled: boolean) => {
+    setAgents((prev) => prev.map((a) => (a.id === agent.id ? { ...a, enabled } : a)));
+    try {
+      await agentsApi.update(api, agent.id, { enabled });
+    } catch (err) {
+      setAgents((prev) => prev.map((a) => (a.id === agent.id ? { ...a, enabled: !enabled } : a)));
+      notify.error(err instanceof Error ? err.message : 'No se pudo actualizar');
+    }
+  };
+
+  const handleDelete = async (agent: Agent) => {
+    const ok = await confirm({
+      title: 'Eliminar agente',
+      message: `¿Eliminar "${agent.name}"? Los canales conectados quedarán sin agente.`,
+      confirmText: 'Eliminar',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await agentsApi.remove(api, agent.id);
+      await reload();
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudo eliminar');
+    }
+  };
+
+  return (
+    <Box>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+        <Box>
+          <Typography variant="h5" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <AutoAwesomeIcon sx={{ color: '#8B5BD6' }} /> Agentes
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Agentes de IA que atienden conversaciones con un modelo, tools y (próximamente) tu conocimiento.
+          </Typography>
+        </Box>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)}>
+          Crear agente
+        </Button>
+      </Stack>
+
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          <CircularProgress />
+        </Box>
+      ) : agents.length === 0 ? (
+        <Alert severity="info" sx={{ mt: 2 }}>
+          Todavía no tenés agentes. Creá uno y conectalo a un canal (Webchat es el más fácil para probar).
+        </Alert>
+      ) : (
+        <Stack spacing={1.5} sx={{ mt: 1 }}>
+          {agents.map((agent) => (
+            <Paper key={agent.id} variant="outlined" sx={{ p: 2 }}>
+              <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography variant="subtitle1" fontWeight={700} noWrap>
+                    {agent.name}
+                  </Typography>
+                  <Stack direction="row" gap={0.75} alignItems="center" flexWrap="wrap" sx={{ mt: 0.5 }}>
+                    <Chip size="small" label={agent.model} />
+                    {(agent.channels ?? []).map((c) => (
+                      <Chip key={c.id} size="small" variant="outlined" icon={<HubIcon />} label={c.name || c.kind} />
+                    ))}
+                    {(agent.channels ?? []).length === 0 && (
+                      <Typography variant="caption" color="text.secondary">
+                        sin canales conectados
+                      </Typography>
+                    )}
+                  </Stack>
+                </Box>
+                <FormControlLabel
+                  control={<Switch checked={agent.enabled} onChange={(e) => void toggleEnabled(agent, e.target.checked)} />}
+                  label={agent.enabled ? 'Activo' : 'Inactivo'}
+                />
+                <Tooltip title="Editar">
+                  <IconButton onClick={() => setEditing(agent)}>
+                    <EditIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Eliminar">
+                  <IconButton onClick={() => void handleDelete(agent)}>
+                    <DeleteOutlineIcon />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
+      )}
+
+      {/* Crear */}
+      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Crear agente</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            label="Nombre"
+            value={createName}
+            onChange={(e) => setCreateName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleCreate();
+            }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateOpen(false)}>Cancelar</Button>
+          <Button variant="contained" onClick={() => void handleCreate()} disabled={creating || !createName.trim()}>
+            Crear
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Editar */}
+      {editing && (
+        <EditAgentDialog
+          agent={editing}
+          channels={channels}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void reload();
+          }}
+        />
+      )}
+    </Box>
+  );
+}
+
+function EditAgentDialog({
+  agent,
+  channels,
+  onClose,
+  onSaved,
+}: {
+  agent: Agent;
+  channels: ChannelOption[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const api = useApi();
+  const notify = useNotify();
+
+  const [name, setName] = useState(agent.name);
+  const [model, setModel] = useState(agent.model);
+  const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt ?? '');
+  const [temperature, setTemperature] = useState(agent.temperature);
+  const [maxSteps, setMaxSteps] = useState(agent.maxSteps);
+  const [connected, setConnected] = useState(agent.channels ?? []);
+  const [saving, setSaving] = useState(false);
+
+  const modelOptions = AGENT_MODEL_PRESETS.some((m) => m.value === model)
+    ? AGENT_MODEL_PRESETS
+    : [{ value: model, label: model }, ...AGENT_MODEL_PRESETS];
+
+  const available = channels.filter((c) => !connected.some((cc) => cc.id === c.id));
+
+  const handleConnect = async (channelId: string) => {
+    try {
+      await agentsApi.connect(api, agent.id, channelId);
+      const ch = channels.find((c) => c.id === channelId);
+      if (ch) setConnected((prev) => [...prev, { id: ch.id, name: ch.label, kind: ch.kind }]);
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudo conectar el canal');
+    }
+  };
+
+  const handleDisconnect = async (channelId: string) => {
+    try {
+      await agentsApi.disconnect(api, agent.id, channelId);
+      setConnected((prev) => prev.filter((c) => c.id !== channelId));
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudo desconectar el canal');
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await agentsApi.update(api, agent.id, {
+        name: name.trim(),
+        model,
+        systemPrompt,
+        temperature,
+        maxSteps,
+      });
+      notify.success('Agente guardado');
+      onSaved();
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudo guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Editar agente</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <TextField label="Nombre" value={name} onChange={(e) => setName(e.target.value)} fullWidth />
+
+          <FormControl fullWidth>
+            <InputLabel id="agent-model-label">Modelo</InputLabel>
+            <Select
+              labelId="agent-model-label"
+              label="Modelo"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            >
+              {modelOptions.map((m) => (
+                <MenuItem key={m.value} value={m.value}>
+                  {m.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <TextField
+            label="Instrucciones (system prompt)"
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+            placeholder="Sos el asistente de Massivo. Respondé cordial y conciso. Si no sabés algo, derivá a un operador."
+            multiline
+            minRows={5}
+            fullWidth
+          />
+
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Creatividad (temperature): {temperature.toFixed(1)}
+            </Typography>
+            <Slider
+              value={temperature}
+              onChange={(_, v) => setTemperature(v as number)}
+              min={0}
+              max={2}
+              step={0.1}
+              valueLabelDisplay="auto"
+            />
+          </Box>
+
+          <TextField
+            label="Máx. pasos de tools por turno"
+            type="number"
+            value={maxSteps}
+            onChange={(e) => setMaxSteps(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+            inputProps={{ min: 1, max: 20 }}
+            sx={{ width: 240 }}
+          />
+
+          <Divider />
+
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Canales conectados
+            </Typography>
+            <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mb: 1 }}>
+              {connected.length === 0 && (
+                <Typography variant="caption" color="text.secondary">
+                  Sin canales. Conectá uno para que el agente atienda esa bandeja.
+                </Typography>
+              )}
+              {connected.map((c) => (
+                <Chip
+                  key={c.id}
+                  icon={<HubIcon />}
+                  label={c.name || c.kind}
+                  onDelete={() => void handleDisconnect(c.id)}
+                />
+              ))}
+            </Stack>
+            {available.length > 0 && (
+              <FormControl size="small" sx={{ minWidth: 240 }}>
+                <InputLabel id="agent-connect-label">Conectar a canal…</InputLabel>
+                <Select
+                  labelId="agent-connect-label"
+                  label="Conectar a canal…"
+                  value=""
+                  onChange={(e) => e.target.value && void handleConnect(String(e.target.value))}
+                >
+                  {available.map((c) => (
+                    <MenuItem key={c.id} value={c.id}>
+                      {c.label} · {c.kind}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+          </Box>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cerrar</Button>
+        <Button variant="contained" onClick={() => void handleSave()} disabled={saving || !name.trim()}>
+          Guardar
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
