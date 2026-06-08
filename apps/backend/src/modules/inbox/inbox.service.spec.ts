@@ -5,7 +5,7 @@ import { InboxService } from './inbox.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EncryptionService } from '../../common/security/encryption.service';
 import { EventsService } from '../events/events.service';
-import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
+import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
 import { WapiMediaService } from '../wapi/media/wapi-media.service';
 import { BotEngineService } from '../bot/bot-engine.service';
 import { TenantContext } from '../../common/auth/tenant-context';
@@ -80,7 +80,10 @@ describe('InboxService', () => {
       providers: [
         InboxService,
         { provide: PrismaService, useValue: { scoped: prismaMock } },
-        { provide: WhatsAppAdapter, useValue: adapterMock },
+        {
+          provide: ChannelAdapterRegistry,
+          useValue: { get: () => adapterMock, capabilities: () => adapterMock.capabilities, has: () => true },
+        },
         { provide: EventsService, useValue: eventsMock },
         {
           provide: EncryptionService,

@@ -11,7 +11,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
 import { EncryptionService } from '../../common/security/encryption.service';
 import { EventsService } from '../events/events.service';
-import { WhatsAppAdapter } from '../channels/adapters/whatsapp.adapter';
+import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
+import type { ChannelKind } from '../channels/adapter.types';
 import { WapiSendException } from '../wapi/sender/wapi-sender.types';
 import { WapiMediaService } from '../wapi/media/wapi-media.service';
 import { BotEngineService } from '../bot/bot-engine.service';
@@ -77,7 +78,7 @@ export class InboxService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly whatsapp: WhatsAppAdapter,
+    private readonly registry: ChannelAdapterRegistry,
     private readonly events: EventsService,
     private readonly encryption: EncryptionService,
     private readonly media: WapiMediaService,
@@ -339,6 +340,26 @@ export class InboxService {
     return { items, nextCursor };
   }
 
+  /** Arma la conexión del canal según su kind (con el token desencriptado).
+   *  WhatsApp usa phoneNumberId; Messenger/IG usan pageId; Webchat sólo el channelId. */
+  private buildConn(
+    cfg: {
+      id: string;
+      phoneNumberId: string | null;
+      pageId: string | null;
+      accessTokenEnc: string;
+      isTestMode: boolean;
+    },
+    kind: ChannelKind,
+  ): unknown {
+    if (kind === 'WEBCHAT') return { channelId: cfg.id };
+    const accessToken = this.encryption.decrypt(cfg.accessTokenEnc);
+    if (kind === 'WHATSAPP') {
+      return { phoneNumberId: cfg.phoneNumberId!, accessToken, isTestMode: cfg.isTestMode };
+    }
+    return { pageId: cfg.pageId ?? '', accessToken, isTestMode: cfg.isTestMode };
+  }
+
   async sendText(conversationId: string, dto: SendInboxTextDto): Promise<MessagePayload> {
     const ctx = this.requireContext();
     const conv = await this.prisma.scoped.conversation.findFirst({
@@ -349,11 +370,15 @@ export class InboxService {
       throw new ConflictException('No se puede responder una conversación resuelta — reabrila primero');
     }
 
-    // Fase 1b — guard de ventana de freeform dirigido por la capability del canal.
+    // Adapter del canal resuelto por channelKind (WhatsApp/Messenger/IG/Webchat).
+    const kind = (conv.channelKind ?? 'WHATSAPP') as ChannelKind;
+    const adapter = this.registry.get(kind);
+
+    // Guard de ventana de freeform dirigido por la capability del canal.
     // WhatsApp la aplica (24h); canales sin ventana (ej. webchat) la saltean.
     const freeformWindowAt = conv.freeformWindowAt;
     if (
-      this.whatsapp.capabilities.freeformWindow.enforced &&
+      adapter.capabilities.freeformWindow.enforced &&
       (!freeformWindowAt || freeformWindowAt.getTime() < Date.now())
     ) {
       throw new BadRequestException(
@@ -369,15 +394,13 @@ export class InboxService {
 
     let externalId: string;
     try {
-      // Fase 1b — envío vía WhatsAppAdapter (capa de canal).
-      const result = await this.whatsapp.send(
-        {
-          phoneNumberId: cfg.phoneNumberId!,
-          accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
-          isTestMode: cfg.isTestMode,
-        },
-        { kind: 'text', to: conv.externalUserId, text: dto.body, previewUrl: dto.previewUrl ?? false },
-      );
+      // Envío vía el adapter del canal (la conexión se arma según el kind).
+      const result = await adapter.send(this.buildConn(cfg, kind), {
+        kind: 'text',
+        to: conv.externalUserId,
+        text: dto.body,
+        previewUrl: dto.previewUrl ?? false,
+      });
       externalId = result.externalMessageId;
     } catch (err) {
       if (err instanceof WapiSendException) {
@@ -457,10 +480,12 @@ export class InboxService {
     if (conv.status === 'RESOLVED') {
       throw new ConflictException('No se puede responder una conversación resuelta — reabrila primero');
     }
-    // Fase 1b — guard de ventana dirigido por capability del canal (ver sendText).
+    // Adapter del canal + guard de ventana dirigido por su capability (ver sendText).
+    const kind = (conv.channelKind ?? 'WHATSAPP') as ChannelKind;
+    const adapter = this.registry.get(kind);
     const freeformWindowAt = conv.freeformWindowAt;
     if (
-      this.whatsapp.capabilities.freeformWindow.enforced &&
+      adapter.capabilities.freeformWindow.enforced &&
       (!freeformWindowAt || freeformWindowAt.getTime() < Date.now())
     ) {
       throw new BadRequestException(
@@ -473,6 +498,14 @@ export class InboxService {
     });
     if (!cfg) throw new ConflictException('El canal asociado ya no existe');
     if (!cfg.isActive) throw new ConflictException('El canal está deshabilitado');
+
+    // Media desde el inbox hoy sólo para WhatsApp (sube el binario a la Cloud API).
+    // Messenger/IG necesitan una URL pública (feature aparte); Webchat aún no.
+    if (kind !== 'WHATSAPP') {
+      throw new BadRequestException(
+        'Responder con archivos todavía no está soportado para este canal desde el inbox.',
+      );
+    }
 
     const type: WapiMediaType = dto.type;
     let upload;
@@ -497,22 +530,15 @@ export class InboxService {
 
     let externalId: string;
     try {
-      // Fase 1b — envío vía WhatsAppAdapter (capa de canal).
-      const result = await this.whatsapp.send(
-        {
-          phoneNumberId: cfg.phoneNumberId!,
-          accessToken: this.encryption.decrypt(cfg.accessTokenEnc),
-          isTestMode: cfg.isTestMode,
-        },
-        {
-          kind: 'media',
-          to: conv.externalUserId,
-          mediaType: type,
-          mediaId: upload.mediaId,
-          caption: dto.caption,
-          filename: type === 'document' ? file.originalname : undefined,
-        },
-      );
+      // Envío vía el adapter del canal (WhatsApp; otros kinds se bloquean arriba).
+      const result = await adapter.send(this.buildConn(cfg, kind), {
+        kind: 'media',
+        to: conv.externalUserId,
+        mediaType: type,
+        mediaId: upload.mediaId,
+        caption: dto.caption,
+        filename: type === 'document' ? file.originalname : undefined,
+      });
       externalId = result.externalMessageId;
     } catch (err) {
       if (err instanceof WapiSendException) {
