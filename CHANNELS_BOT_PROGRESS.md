@@ -14,10 +14,13 @@ COMPLETA** (sesión 7). **Fase 3 (Instagram) — COMPLETA en código** (sesión 
 `InstagramAdapter` (object 'instagram'), webhook genérico de Meta generalizado
 (`MetaMessagingWebhookHandler` base + subclases Messenger/IG), `/api/channels/instagram/:slug`,
 alta de canal INSTAGRAM (identidad por `pageId`=IG account id, sin migración), tarjeta
-IG habilitada en la UI **y simulador dev de Instagram** (chat sandbox para "verlo andar"
-sin Meta, mirror del de Messenger). **Próximo: Fase 4 — Webchat** (`WebchatAdapter` +
-WS gateway al visitante + widget). **Pendiente externo:** App Review de Meta para
-Messenger/IG en prod (no es código).
+IG habilitada en la UI **y simulador dev de Instagram**. **Fase 4 (Webchat) — COMPLETA
+en código** (sesión 8): `WebchatAdapter` (outbound por socket vía `EventsService`),
+`WebchatGateway` (namespace `/webchat`, visitante anónimo → ingest), alta WEBCHAT sin
+credenciales (widget key auto en `pageId`), y página dev del widget del visitante.
+**Las 4 fases del milestone están completas en código.** **Próximo: plan de pruebas
+end-to-end + onboarding real de apps Meta (Messenger/IG).** **Pendiente externo:** App
+Review de Meta para Messenger/IG en prod (no es código).
 1d (modelo unificado), 1g (bot fuera de `wapi/`) y **1e** (inbox omnicanal: relocación
 completa `modules/inbox` + `features/inbox`, contrato `channelId/externalUserId/
 freeformWindowAt/externalId/channelKind`, eventos `conversation.message.new`/
@@ -231,6 +234,30 @@ número (Números), y el bot responde end-to-end en el Chat simulado.
 ---
 
 ## Bitácora (qué se hizo y por qué)
+
+### Sesión 8 — 2026-06-07 (Fase 4 — Webchat, end-to-end en código)
+- **Diferencia clave vs Meta:** no hay API externa ni ventana de 24h. El visitante se
+  conecta directo por WebSocket; el outbound es un push a su socket, no un HTTP.
+- **`WebchatAdapter`** (`adapters/webchat.adapter.ts`): `send()` = `EventsService.emitToWebchatVisitor(channelId, visitorId, ...)`. `buildConn` del motor arma `{ channelId }` para WEBCHAT.
+- **`WebchatGateway`** (`webchat.gateway.ts`, namespace `/webchat`, **sin auth**): el visitante
+  conecta con `{ channelKey, visitorId }`; resuelve el Channel por la widget key (columna
+  `pageId`), une el socket a `wc:<channelId>:<visitorId>` e ingiere cada mensaje por
+  `ConversationIngestService` dentro del TenantContext del canal (igual criterio que los webhooks).
+- **Sin ciclo de módulos:** el transporte va por `EventsService` (en `EventsModule`, ya
+  importado por todos), con un namespace `/webchat` aparte del server de equipo. El adapter
+  (WapiModule) depende sólo de `EventsService`; el gateway (ChannelsModule) depende del ingest.
+- **Alta WEBCHAT:** genera una widget key pública (`wc_<hex>`, guardada en `pageId`); no pide
+  credenciales Meta (`accessToken`/`webhookVerifyToken` pasaron a opcionales, se validan por kind).
+  La UI: tarjeta habilitada, alta sin creds, y la ruedita muestra la widget key (sección "Widget").
+- **Widget del visitante (dev):** `WebchatWidgetPage` (`/dashboard/dev/channels/webchat/widget`)
+  simula el widget embebido: conecta al `/webchat` con la widget key, manda mensajes y recibe
+  las respuestas del bot/operador en vivo. Item "Widget Webchat" en el sidebar (Dev).
+- **Verificación:** backend tsc 0; channels jest 47/47; DI smoke (registry WEBCHAT + adapter +
+  gateway) OK; frontend tsc 0; vite build verde. Commits `b697aa5` (back) + `330d89c` (front).
+- **Cabos abiertos:** (a) widget embebible real (script `<embed>` standalone) — hoy sólo está la
+  página dev del visitante; (b) historial al reconectar el visitante (hoy el estado vive en el
+  cliente durante la sesión); (c) el operador respondiendo desde el inbox sale por el mismo adapter
+  (verificar en el plan de pruebas).
 
 ### Sesión 8 — 2026-06-07 (Fase 3 — Instagram, end-to-end en código)
 - **`InstagramAdapter`** (`adapters/instagram.adapter.ts`): subclase de
