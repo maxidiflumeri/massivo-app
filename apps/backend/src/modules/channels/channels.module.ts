@@ -7,6 +7,7 @@ import { ChannelsWebhookController } from './channels-webhook.controller';
 import { ConversationIngestService } from './conversation-ingest.service';
 import { MessengerWebhookHandler } from './messenger-webhook.handler';
 import { InstagramWebhookHandler } from './instagram-webhook.handler';
+import { WebchatGateway } from './webchat.gateway';
 
 /**
  * Fase 1-2 (multi-canal) — Módulo del webhook genérico `/api/channels/:kind/:slug`
@@ -29,7 +30,13 @@ import { InstagramWebhookHandler } from './instagram-webhook.handler';
   // param del webhook. El webhook igual 404ea si el kind no existe, así que el
   // peor caso de un mis-match sería un 404 limpio, no un leak.
   controllers: [ChannelsController, ChannelsWebhookController],
-  providers: [ChannelsService, ConversationIngestService, MessengerWebhookHandler, InstagramWebhookHandler],
+  providers: [
+    ChannelsService,
+    ConversationIngestService,
+    MessengerWebhookHandler,
+    InstagramWebhookHandler,
+    WebchatGateway,
+  ],
   // Exportado para el simulador dev (DevModule), que ingiere inbounds Messenger
   // sin pasar por HMAC/slug.
   exports: [ConversationIngestService],

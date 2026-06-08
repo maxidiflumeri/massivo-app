@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import type { Server } from 'socket.io';
+import type { Namespace, Server } from 'socket.io';
 
 interface ThrottleState {
   lastEmitAt: number;
@@ -11,10 +11,28 @@ interface ThrottleState {
 export class EventsService implements OnModuleDestroy {
   private readonly logger = new Logger(EventsService.name);
   private server: Server | null = null;
+  /** Namespace `/webchat` (visitantes anónimos del widget) — separado del server
+   *  de equipo (autenticado). Lo registra `WebchatGateway`. */
+  private webchatServer: Namespace | null = null;
   private throttleState = new Map<string, ThrottleState>();
 
   setServer(server: Server): void {
     this.server = server;
+  }
+
+  setWebchatServer(ns: Namespace): void {
+    this.webchatServer = ns;
+  }
+
+  /** Room del visitante en el namespace `/webchat`: una sala por (canal, visitante). */
+  static webchatRoom(channelId: string, visitorId: string): string {
+    return `wc:${channelId}:${visitorId}`;
+  }
+
+  /** Empuja un mensaje (respuesta del bot / del operador) al widget del visitante. */
+  emitToWebchatVisitor(channelId: string, visitorId: string, event: string, payload: unknown): void {
+    if (!this.webchatServer) return;
+    this.webchatServer.to(EventsService.webchatRoom(channelId, visitorId)).emit(event, payload);
   }
 
   emitToTeam(teamId: string, event: string, payload: unknown): void {

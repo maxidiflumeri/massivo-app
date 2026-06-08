@@ -116,6 +116,11 @@ export class BotEngineService {
   /** Fase 2 — arma la conexión del canal según su kind (con el token ya
    *  desencriptado). WhatsApp usa phoneNumberId; Messenger/IG usan pageId. */
   private buildConn(cfg: CfgForEngine, kind: ChannelKind): unknown {
+    // Webchat no tiene credenciales externas: el adapter entrega por socket usando
+    // el channelId (el visitante viaja en OutboundMessage.to).
+    if (kind === 'WEBCHAT') {
+      return { channelId: cfg.id };
+    }
     const accessToken = this.encryption.decrypt(cfg.accessTokenEnc);
     if (kind === 'WHATSAPP') {
       return { phoneNumberId: cfg.phoneNumberId!, accessToken, isTestMode: cfg.isTestMode };

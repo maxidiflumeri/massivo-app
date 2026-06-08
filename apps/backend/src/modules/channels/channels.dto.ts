@@ -15,8 +15,8 @@ import {
 /** 4.Q — máximo razonable para el delay (1h). Evita typos catastróficos. */
 const MAX_DELAY_MS = 60 * 60 * 1000;
 
-/** Kinds que hoy se pueden dar de alta vía UI (Webchat llega en Fase 4). */
-export const CREATABLE_CHANNEL_KINDS = ['WHATSAPP', 'MESSENGER', 'INSTAGRAM'] as const;
+/** Kinds que hoy se pueden dar de alta vía UI. */
+export const CREATABLE_CHANNEL_KINDS = ['WHATSAPP', 'MESSENGER', 'INSTAGRAM', 'WEBCHAT'] as const;
 
 export class CreateChannelDto {
   @IsOptional()
@@ -47,14 +47,16 @@ export class CreateChannelDto {
   @MaxLength(100)
   pageId?: string;
 
+  // Meta (WhatsApp/Messenger/Instagram): obligatorios — se validan por kind en el
+  // service. Webchat no tiene credenciales externas (entrega por socket).
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  accessToken!: string;
+  accessToken?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(100)
-  webhookVerifyToken!: string;
+  webhookVerifyToken?: string;
 
   @IsOptional()
   @IsString()

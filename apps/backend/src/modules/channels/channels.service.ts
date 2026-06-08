@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import type { Prisma } from '@massivo/prisma';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
@@ -137,21 +138,30 @@ export class ChannelsService {
     const ctx = this.requireContext();
     assertDelayRange(dto.sendDelayMinMs, dto.sendDelayMaxMs);
 
-    // Fase 2-3 — alta kind-aware. WhatsApp se identifica por phoneNumberId+WABA;
-    // Messenger/Instagram por pageId (page id / IG account id). businessAccountId es
+    // Fase 2-4 — alta kind-aware. WhatsApp se identifica por phoneNumberId+WABA;
+    // Messenger/Instagram por pageId (page id / IG account id); Webchat por una
+    // "widget key" auto-generada (guardada en pageId). businessAccountId es
     // WhatsApp-only (no-WA → '').
-    const kind = (dto.kind ?? 'WHATSAPP') as 'WHATSAPP' | 'MESSENGER' | 'INSTAGRAM';
+    const kind = (dto.kind ?? 'WHATSAPP') as 'WHATSAPP' | 'MESSENGER' | 'INSTAGRAM' | 'WEBCHAT';
     let identity: { phoneNumberId: string | null; pageId: string | null; businessAccountId: string };
     if (kind === 'WHATSAPP') {
       if (!dto.phoneNumberId || !dto.businessAccountId) {
         throw new BadRequestException('WhatsApp requiere phoneNumberId y businessAccountId');
       }
       identity = { phoneNumberId: dto.phoneNumberId, pageId: null, businessAccountId: dto.businessAccountId };
+    } else if (kind === 'WEBCHAT') {
+      // Webchat no tiene proveedor externo: generamos una clave pública para el widget.
+      identity = { phoneNumberId: null, pageId: `wc_${randomBytes(12).toString('hex')}`, businessAccountId: '' };
     } else {
       if (!dto.pageId) {
         throw new BadRequestException(`${kind === 'INSTAGRAM' ? 'Instagram' : 'Messenger'} requiere pageId`);
       }
       identity = { phoneNumberId: null, pageId: dto.pageId, businessAccountId: '' };
+    }
+
+    // Credenciales Meta: obligatorias salvo Webchat (que entrega por socket).
+    if (kind !== 'WEBCHAT' && (!dto.accessToken || !dto.webhookVerifyToken)) {
+      throw new BadRequestException('accessToken y webhookVerifyToken son obligatorios');
     }
 
     const row = await this.prisma.scoped.channel.create({
@@ -161,8 +171,8 @@ export class ChannelsService {
         phoneNumberId: identity.phoneNumberId,
         pageId: identity.pageId,
         businessAccountId: identity.businessAccountId,
-        accessTokenEnc: this.encryption.encrypt(dto.accessToken),
-        webhookVerifyTokenEnc: this.encryption.encrypt(dto.webhookVerifyToken),
+        accessTokenEnc: this.encryption.encrypt(dto.accessToken ?? ''),
+        webhookVerifyTokenEnc: this.encryption.encrypt(dto.webhookVerifyToken ?? ''),
         appSecretEnc: dto.appSecret ? this.encryption.encrypt(dto.appSecret) : dto.appSecret,
         welcomeMessage: dto.welcomeMessage,
         optOutConfirmMessage: dto.optOutConfirmMessage,
