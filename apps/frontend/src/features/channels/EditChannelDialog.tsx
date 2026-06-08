@@ -102,6 +102,11 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
     return channelWebhookUrl(api.baseUrl, channel.kind, webhookSlug);
   }, [channel, webhookSlug, api.baseUrl]);
 
+  // Snippet embebible del widget (el loader v1.js se sirve desde el origin del front).
+  const embedSnippet = isWebchat && channel?.pageId
+    ? `<script src="${window.location.origin}/webchat/v1.js" data-massivo-key="${channel.pageId}" async></script>`
+    : '';
+
   async function copy(text: string, label: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -199,6 +204,23 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
                     size="small"
                     onClick={() => channel?.pageId && void copy(channel.pageId, 'Widget key')}
                   >
+                    <ContentCopyIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1.25, display: 'block' }}>
+                Código para embeber en el sitio del cliente (pegar antes de &lt;/body&gt;):
+              </Typography>
+              <Stack direction="row" alignItems="flex-start" gap={0.5} sx={{ mt: 0.5 }}>
+                <Box
+                  component="code"
+                  sx={{ fontSize: 11, wordBreak: 'break-all', whiteSpace: 'pre-wrap', flex: 1 }}
+                >
+                  {embedSnippet}
+                </Box>
+                <Tooltip title="Copiar código">
+                  <IconButton size="small" onClick={() => embedSnippet && void copy(embedSnippet, 'Código del widget')}>
                     <ContentCopyIcon sx={{ fontSize: 16 }} />
                   </IconButton>
                 </Tooltip>
