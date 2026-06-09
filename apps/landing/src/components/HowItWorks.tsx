@@ -11,7 +11,7 @@ const STEPS: Step[] = [
     num: '01',
     title: 'Conectá tus canales',
     body:
-      'Linkás tu número de WhatsApp Business desde Meta (te guiamos paso a paso) y conectás SES o tu SMTP para email. 10 minutos.',
+      'Linkás WhatsApp, Instagram y Messenger desde Meta (te guiamos paso a paso), sumás un Webchat a tu sitio con un snippet y conectás SES o tu SMTP para email. 10 minutos.',
   },
   {
     num: '02',
@@ -23,7 +23,7 @@ const STEPS: Step[] = [
     num: '03',
     title: 'Automatizá y mandá',
     body:
-      'Construís bots con drag-and-drop, lanzás campañas con A/B, el inbox unificado avisa al equipo cuando una conversación necesita humano.',
+      'Construís bots sin código o activás un agente de IA con tu base de conocimiento; lanzás campañas y el inbox unificado avisa al equipo cuando una conversación necesita una persona.',
   },
 ];
 

@@ -1,6 +1,24 @@
 import { useUser } from '@clerk/clerk-react';
-import { ArrowRight, ShieldCheck, Zap } from 'lucide-react';
+import {
+  ArrowRight,
+  ShieldCheck,
+  Zap,
+  MessageCircle,
+  Instagram,
+  Facebook,
+  MessagesSquare,
+  Mail,
+  type LucideIcon,
+} from 'lucide-react';
 import { PANEL_URL, SIGNUP_URL } from '@/lib/config';
+
+const CHANNELS: Array<{ icon: LucideIcon; label: string }> = [
+  { icon: MessageCircle, label: 'WhatsApp' },
+  { icon: Instagram, label: 'Instagram' },
+  { icon: Facebook, label: 'Messenger' },
+  { icon: MessagesSquare, label: 'Webchat' },
+  { icon: Mail, label: 'Email' },
+];
 
 export function Hero() {
   const { isSignedIn } = useUser();
@@ -13,18 +31,19 @@ export function Hero() {
       <div className="container-narrow relative pt-20 pb-24 sm:pt-28 sm:pb-32 text-center">
         <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300 mb-7">
           <span className="inline-block size-1.5 rounded-full bg-brand-400 animate-pulse" />
-          Meta WhatsApp Business API oficial · sin parches ni libs no-soportadas
+          Multicanal + agentes de IA · WhatsApp Business API oficial
         </div>
 
         <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold tracking-tight text-balance leading-[1.05]">
           Conversaciones que <span className="text-brand-400">venden.</span>
           <br />
-          WhatsApp y Email en un solo lugar.
+          Multicanal, con agentes de IA.
         </h1>
 
         <p className="mx-auto mt-7 max-w-2xl text-lg sm:text-xl text-neutral-400 text-balance">
-          Plataforma multi-canal para equipos comerciales y de atención: campañas masivas,
-          bots automatizados y un inbox unificado. Sin abrir tres tabs distintos.
+          Plataforma multicanal y agéntica para equipos comerciales y de atención: WhatsApp,
+          Instagram, Messenger y Webchat en un inbox unificado, con bots y agentes de IA que
+          responden solos —y derivan a una persona cuando hace falta.
         </p>
 
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -53,6 +72,18 @@ export function Hero() {
           <span className="inline-flex items-center gap-1.5">
             <ShieldCheck className="size-4 text-brand-400" /> Tus datos en tu cuenta
           </span>
+        </div>
+
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-2">
+          {CHANNELS.map(({ icon: Icon, label }) => (
+            <span
+              key={label}
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-neutral-300"
+            >
+              <Icon className="size-3.5 text-brand-400" strokeWidth={2} />
+              {label}
+            </span>
+          ))}
         </div>
       </div>
     </section>

@@ -1,11 +1,11 @@
 import { brand } from '@/lib/brand';
 import {
-  MessageCircle,
+  MessagesSquare,
+  Sparkles,
   Mail,
   Workflow,
   Inbox,
-  Users,
-  Lock,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -17,10 +17,28 @@ type Feature = {
 
 const FEATURES: Feature[] = [
   {
-    icon: MessageCircle,
-    title: 'WhatsApp Business API oficial',
+    icon: MessagesSquare,
+    title: 'Mensajería multicanal',
     body:
-      'Integración directa con Meta. Sin libs caseras que se rompen cuando WhatsApp actualiza. Templates aprobados, sesiones de 24h, multimedia, botones y listas.',
+      'WhatsApp Business API oficial, Instagram, Messenger y un Webchat para tu sitio. El cliente te escribe por donde quiera; vos respondés desde un solo lugar.',
+  },
+  {
+    icon: Sparkles,
+    title: 'Agentes de IA — plataforma agéntica',
+    body:
+      'Un agente con IA atiende solo, usa la base de conocimiento de tu negocio (RAG) para responder con datos reales y deriva a una persona cuando hace falta.',
+  },
+  {
+    icon: Workflow,
+    title: 'Bots conversacionales sin código',
+    body:
+      'Constructor visual de flujos: menús, capturas, condiciones y llamadas a APIs externas. El mismo bot atiende todos tus canales; el equipo entra solo cuando hace falta.',
+  },
+  {
+    icon: Inbox,
+    title: 'Inbox unificado en tiempo real',
+    body:
+      'Todas las conversaciones de WhatsApp, Instagram, Messenger y Webchat en una bandeja compartida. Asignaciones, notas internas, respuestas rápidas y estados.',
   },
   {
     icon: Mail,
@@ -29,28 +47,10 @@ const FEATURES: Feature[] = [
       'Templates con editor visual, variables dinámicas, métricas de aperturas y clicks, bounce y complaint handling automático. Compatible con AWS SES o tu propio SMTP.',
   },
   {
-    icon: Workflow,
-    title: 'Bots conversacionales sin código',
+    icon: ShieldCheck,
+    title: 'Multi-tenant y seguro por diseño',
     body:
-      'Constructor visual de flujos: menús, capturas, condiciones, llamadas a APIs externas. El mismo bot atiende WhatsApp; el equipo solo entra cuando hace falta.',
-  },
-  {
-    icon: Inbox,
-    title: 'Inbox unificado en tiempo real',
-    body:
-      'Todas las conversaciones de WhatsApp en una bandeja compartida. Asignaciones, notas internas, respuestas rápidas, estados. Para equipos de 1 a 50 personas.',
-  },
-  {
-    icon: Users,
-    title: 'Multi-tenant nativo',
-    body:
-      'Cada empresa con su organización, sus teams, sus permisos. Los datos están aislados a nivel de base. Pensado para agencias que manejan varios clientes.',
-  },
-  {
-    icon: Lock,
-    title: 'Cifrado en reposo y en tránsito',
-    body:
-      'Tokens de Meta y credenciales SMTP cifrados con AES-256-GCM. Webhooks firmados con verificación de signature. TLS 1.2+ en todos los endpoints.',
+      'Cada empresa con su organización, equipos y permisos, aislada a nivel de base —ideal para agencias. Tokens y credenciales cifrados con AES-256-GCM y webhooks firmados.',
   },
 ];
 
@@ -66,8 +66,8 @@ export function Features() {
             sin pagar 4 herramientas distintas.
           </h2>
           <p className="mt-5 text-lg text-neutral-400">
-            {brand.name} cubre el ciclo completo: captación por email, conversación por WhatsApp,
-            automatización con bots, y un inbox para que el equipo cierre.
+            {brand.name} cubre el ciclo completo: captás por email, conversás por WhatsApp, Instagram,
+            Messenger y Webchat, automatizás con bots y agentes de IA, y cerrás desde un inbox unificado.
           </p>
         </div>
 
