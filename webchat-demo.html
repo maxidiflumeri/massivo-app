@@ -1,0 +1,109 @@
+<!doctype html>
+<!--
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║  DEMO — sitio de cliente para probar el widget de Webchat de Massivo       ║
+  ║                                                                            ║
+  ║  CÓMO PROBARLO:                                                            ║
+  ║  1) Tené levantado el frontend (localhost:5173) y el backend (localhost:   ║
+  ║     3001) con VITE_ENABLE_DEV_SIMULATOR no hace falta para el widget, pero ║
+  ║     sí necesitás un canal Webchat creado y (idealmente) un bot conectado.  ║
+  ║  2) En el dashboard: Canales → Agregar canal → Webchat. Abrí la ruedita    ║
+  ║     del canal → sección "Widget" → COPIÁ el snippet <script>.              ║
+  ║  3) Pegá ese snippet ABAJO, donde dice "PEGÁ ACÁ EL SNIPPET".              ║
+  ║  4) Abrí este archivo en el navegador (doble click = file://, o servilo    ║
+  ║     con `npx serve` / Live Server). Debería aparecer la burbuja flotante   ║
+  ║     abajo a la derecha. Al abrirla, escribís y el bot responde.            ║
+  ║                                                                            ║
+  ║  En dev el snippet de la ruedita ya apunta a http://localhost:5173, así    ║
+  ║  que funciona aunque abras este HTML como file://.                         ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+-->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Acme S.A. — Demo cliente</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        color: #1f2937;
+        background: #f3f4f6;
+      }
+      header {
+        background: #111827;
+        color: #fff;
+        padding: 18px 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      header .brand { font-weight: 700; font-size: 20px; }
+      header nav a { color: #d1d5db; margin-left: 20px; text-decoration: none; font-size: 14px; }
+      .hero {
+        background: linear-gradient(135deg, #5B5BD6 0%, #7C3AED 100%);
+        color: #fff;
+        padding: 80px 32px;
+        text-align: center;
+      }
+      .hero h1 { font-size: 40px; margin: 0 0 12px; }
+      .hero p { font-size: 18px; opacity: 0.92; max-width: 640px; margin: 0 auto; }
+      .content { max-width: 900px; margin: 0 auto; padding: 48px 32px; }
+      .content h2 { font-size: 26px; }
+      .content p { line-height: 1.7; color: #374151; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-top: 28px; }
+      .card { background: #fff; border-radius: 12px; padding: 22px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+      .card h3 { margin: 0 0 8px; font-size: 17px; }
+      .card p { font-size: 14px; margin: 0; }
+      .note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 14px 16px; margin-top: 32px; font-size: 14px; color: #92400e; }
+      footer { text-align: center; padding: 40px; color: #9ca3af; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">Acme S.A.</div>
+      <nav>
+        <a href="#">Productos</a>
+        <a href="#">Precios</a>
+        <a href="#">Contacto</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <h1>Bienvenido a Acme S.A.</h1>
+      <p>Esta es una página de demostración para ver cómo queda el widget de chat de Massivo embebido en un sitio real.</p>
+    </section>
+
+    <main class="content">
+      <h2>Sobre nosotros</h2>
+      <p>
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit. El widget de chat debería
+        aparecer como una <strong>burbuja flotante</strong> en la esquina inferior derecha de
+        esta página, por encima de todo el contenido. Al hacer clic se abre el panel de chat.
+      </p>
+
+      <div class="cards">
+        <div class="card"><h3>Soporte 24/7</h3><p>Atención al cliente cuando lo necesites.</p></div>
+        <div class="card"><h3>Envíos a todo el país</h3><p>Recibí tu pedido en 48hs.</p></div>
+        <div class="card"><h3>Garantía</h3><p>30 días para cambios y devoluciones.</p></div>
+      </div>
+
+      <div class="note">
+        👉 Si NO ves la burbuja de chat, revisá que hayas pegado el snippet del widget abajo
+        (antes de <code>&lt;/body&gt;</code>) y que el frontend de Massivo esté corriendo.
+      </div>
+    </main>
+
+    <footer>© 2026 Acme S.A. — Página de demo</footer>
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!--  ⬇️  PEGÁ ACÁ EL SNIPPET DEL WIDGET (Canales → ruedita → Widget)  ⬇️   -->
+
+    <script src="http://localhost:5173/webchat/v1.js" data-massivo-key="wc_e45e5b384e70c50d5667a190" async></script>
+
+
+    <!--  ⬆️  PEGÁ ACÁ EL SNIPPET DEL WIDGET  ⬆️                                -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+  </body>
+</html>
