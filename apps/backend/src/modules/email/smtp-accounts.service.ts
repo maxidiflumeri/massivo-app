@@ -8,6 +8,7 @@ import {
 import type { Prisma } from '@massivo/prisma';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
+import { appName } from '../../common/app-brand';
 import { EmailSenderService } from './sender/email-sender.service';
 import type {
   CreateSmtpAccountDto,
@@ -311,8 +312,8 @@ export class SmtpAccountsService {
         },
         {
           to: dto.to,
-          subject: `[Massivo] Test de cuenta SMTP "${account.name}"`,
-          html: `<p>Este es un email de prueba enviado desde Massivo App.</p>
+          subject: `[${appName()}] Test de cuenta SMTP "${account.name}"`,
+          html: `<p>Este es un email de prueba enviado desde ${appName()}.</p>
 <p>Si lo recibiste, la cuenta <strong>${escapeHtml(account.name)}</strong> está configurada correctamente.</p>
 <p>—<br/>Enviado por: ${escapeHtml(account.fromName)} &lt;${escapeHtml(account.fromEmail)}&gt;</p>`,
         },

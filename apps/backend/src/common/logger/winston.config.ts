@@ -2,6 +2,7 @@ import { utilities as nestWinstonModuleUtilities } from 'nest-winston';
 import * as winston from 'winston';
 import { ObservabilityContext } from '../observability/observability-context';
 import { TenantContext } from '../auth/tenant-context';
+import { appName } from '../app-brand';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const logLevel = process.env.LOG_LEVEL ?? (isProduction ? 'info' : 'debug');
@@ -53,7 +54,7 @@ export const winstonConfig: winston.LoggerOptions = {
         observabilityFormat(),
         winston.format.timestamp(),
         winston.format.ms(),
-        nestWinstonModuleUtilities.format.nestLike('Massivo', {
+        nestWinstonModuleUtilities.format.nestLike(appName(), {
           colors: true,
           prettyPrint: true,
         }),

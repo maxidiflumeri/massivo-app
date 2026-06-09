@@ -11,6 +11,8 @@
  * Unlayer es bien formado y usa atributos comillados doble — esto es suficiente
  * para el set de templates que vamos a soportar.
  */
+import { appName } from '../../../common/app-brand';
+
 export interface PrepareHtmlInput {
   html: string;
   token: string;
@@ -39,7 +41,7 @@ function buildFooter(senderLabel: string, unsubscribeUrl: string): string {
 <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:32px;border-top:1px solid #e5e5e5">
   <tr>
     <td style="padding:16px 8px 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:11px;color:#888;text-align:center;line-height:1.6">
-      Enviado por <strong style="color:#555">${safeLabel}</strong> vía Massivo<br>
+      Enviado por <strong style="color:#555">${safeLabel}</strong> vía ${appName()}<br>
       <a href="${safeUrl}" style="color:#888;text-decoration:underline">Cancelar suscripción</a>
     </td>
   </tr>
