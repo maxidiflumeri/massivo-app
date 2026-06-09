@@ -1,3 +1,4 @@
+import { brand } from '@/lib/brand';
 import {
   MessageCircle,
   Mail,
@@ -65,7 +66,7 @@ export function Features() {
             sin pagar 4 herramientas distintas.
           </h2>
           <p className="mt-5 text-lg text-neutral-400">
-            Massivo cubre el ciclo completo: captación por email, conversación por WhatsApp,
+            {brand.name} cubre el ciclo completo: captación por email, conversación por WhatsApp,
             automatización con bots, y un inbox para que el equipo cierre.
           </p>
         </div>

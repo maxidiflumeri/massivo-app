@@ -1,6 +1,7 @@
 import { useUser } from '@clerk/clerk-react';
 import { ArrowRight } from 'lucide-react';
 import { PANEL_URL, SIGNUP_URL } from '@/lib/config';
+import { brand } from '@/lib/brand';
 
 export function CtaBand() {
   const { isSignedIn } = useUser();
@@ -16,7 +17,7 @@ export function CtaBand() {
               en este momento.
             </h2>
             <p className="mt-5 max-w-xl mx-auto text-lg text-neutral-300">
-              Probá Massivo gratis, conectá tu WhatsApp en 10 minutos y empezá a recuperarlas hoy.
+              Probá {brand.name} gratis, conectá tu WhatsApp en 10 minutos y empezá a recuperarlas hoy.
             </p>
             <div className="mt-9">
               <a

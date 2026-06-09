@@ -1,3 +1,5 @@
+import { brand } from '@/lib/brand';
+
 type Step = {
   num: string;
   title: string;
@@ -15,7 +17,7 @@ const STEPS: Step[] = [
     num: '02',
     title: 'Importá tus contactos',
     body:
-      'Subís tu lista CSV con consentimiento o seguís importando desde tu CRM. Massivo deduplica, valida y mantiene una suppression list global.',
+      `Subís tu lista CSV con consentimiento o seguís importando desde tu CRM. ${brand.name} deduplica, valida y mantiene una suppression list global.`,
   },
   {
     num: '03',

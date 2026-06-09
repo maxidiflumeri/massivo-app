@@ -5,7 +5,11 @@
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
+    "start:massivo": "DOCS_TARGET=massivo docusaurus start",
+    "start:rgbot": "DOCS_TARGET=rgbot docusaurus start",
     "build": "docusaurus build",
+    "build:massivo": "DOCS_TARGET=massivo docusaurus build",
+    "build:rgbot": "DOCS_TARGET=rgbot docusaurus build",
     "swizzle": "docusaurus swizzle",
     "clear": "docusaurus clear",
     "serve": "docusaurus serve",

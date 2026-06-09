@@ -7,6 +7,8 @@ on:
       - 'apps/docs/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
+      - '.env.massivo'
+      - '.env.rgbot'
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
     inputs:
@@ -49,9 +51,11 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      # NOTA: docusaurus.config.ts todavía tiene el dominio massivo hardcodeado.
-      # El branding de docs por target queda como follow-up (Eje 3 — docs).
+      # Branding por target: docusaurus.config lee .env.${DOCS_TARGET} + plugin remark
+      # reescribe la marca en la prosa de los .md.
       - name: Build docs
+        env:
+          DOCS_TARGET: ${{ env.TARGET }}
         run: pnpm --filter @massivo/docs build
 
       - name: Configure AWS credentials via OIDC

@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:massivo": "vite --mode massivo",
+    "dev:rgbot": "vite --mode rgbot",
     "build": "vite build",
+    "build:massivo": "vite build --mode massivo",
+    "build:rgbot": "vite build --mode rgbot",
     "preview": "vite preview",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",

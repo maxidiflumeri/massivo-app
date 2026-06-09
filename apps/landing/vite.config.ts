@@ -10,4 +10,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Lee los .env (incl. .env.<target>) desde la raíz del monorepo, igual que el frontend.
+  envDir: path.resolve(__dirname, '../../'),
 });

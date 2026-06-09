@@ -1,6 +1,7 @@
 import { useUser } from '@clerk/clerk-react';
 import { ArrowRight } from 'lucide-react';
 import { PANEL_URL, SIGNUP_URL } from '@/lib/config';
+import { brand } from '@/lib/brand';
 import { cn } from '@/lib/cn';
 
 function LogoTile() {
@@ -21,7 +22,7 @@ export function Nav() {
       <div className="container-narrow flex h-16 items-center justify-between">
         <a href="#top" className="flex items-center gap-2 font-display font-semibold tracking-tight">
           <LogoTile />
-          <span className="text-lg">Massivo</span>
+          <span className="text-lg">{brand.name}</span>
         </a>
 
         <nav className="hidden md:flex items-center gap-7 text-sm text-neutral-300">
@@ -35,7 +36,7 @@ export function Nav() {
             Planes
           </a>
           <a
-            href="https://docs.massivo.app"
+            href={brand.docsUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-white transition"
@@ -68,7 +69,7 @@ export function Nav() {
                   />
                 ) : (
                   <div className="size-8 rounded-full bg-white/10 grid place-items-center text-xs text-neutral-300">
-                    {user?.firstName?.[0] ?? 'M'}
+                    {user?.firstName?.[0] ?? brand.name.charAt(0)}
                   </div>
                 )}
               </div>

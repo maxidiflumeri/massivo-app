@@ -7,6 +7,8 @@ on:
       - 'apps/landing/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
+      - '.env.massivo'
+      - '.env.rgbot'
       - '.github/workflows/deploy-landing.yml'
   workflow_dispatch:
     inputs:
@@ -49,13 +51,13 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
+      # Marca + dominios salen de .env.${TARGET} (committeado, envDir = raíz).
       - name: Build landing
         env:
-          VITE_PANEL_URL: ${{ vars.VITE_PANEL_URL }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
           VITE_ENABLE_DEV_SIMULATOR: 'false'
           VITE_WAPI_BOT_FEATURE_ENABLED: 'true'
-        run: pnpm --filter @massivo/landing exec vite build
+        run: pnpm --filter @massivo/landing exec vite build --mode "$TARGET"
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4

@@ -28,7 +28,6 @@ o el deploy de massivo se rompe (el YAML ya no los tiene hardcodeados).
 | `BACKEND_ECR_REPOSITORY` | `massivo-prod-backend` | `<project>-prod-backend` |
 | `BACKEND_EC2_INSTANCE_ID` | `i-04f54928d8c12d964` | `ec2_instance_id` |
 | `API_URL` | `https://api.massivo.app` | `https://api.rgbot.tech` |
-| `VITE_PANEL_URL` | `https://panel.massivo.app` | `https://panel.rgbot.tech` |
 
 ## Secrets (Settings → Environments → Secrets)
 
@@ -36,13 +35,7 @@ o el deploy de massivo se rompe (el YAML ya no los tiene hardcodeados).
 |---|---|---|
 | `CLERK_PUBLISHABLE_KEY` | pub key de Clerk de massivo | pub key de Clerk de rgbot |
 
-> El branding público del frontend (nombre, dominios) sale de `.env.massivo` / `.env.rgbot`
-> (committeado) vía `vite build --mode <target>`. Acá solo van el secret de Clerk y las
-> coordenadas AWS (que difieren por cuenta).
-
-## Pendiente (follow-up — Eje 3 landing/docs)
-
-`apps/landing` (texto del Nav) y `apps/docs/docusaurus.config.ts` todavía tienen "Massivo" /
-dominios **hardcodeados**. El workflow ya despliega al bucket/cuenta correctos por target,
-pero para que la **landing y las docs de rgbot** queden branded hay que parametrizar esos
-dos (igual que hicimos con el frontend/backend).
+> El branding público de **frontend y landing** sale de `.env.massivo` / `.env.rgbot`
+> (committeado) vía `vite build --mode <target>`; **docs** lo toma del mismo archivo vía
+> `DOCS_TARGET` (+ un plugin remark que reescribe la prosa de los `.md`). Acá solo van el
+> secret de Clerk y las coordenadas AWS (que difieren por cuenta).
