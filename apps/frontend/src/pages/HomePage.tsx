@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 import { Link as RouterLink, Navigate } from 'react-router-dom';
+import { brand } from '../brand';
 import {
   Box,
   Container,
@@ -130,7 +131,7 @@ export function HomePage() {
                 <SendRoundedIcon sx={{ fontSize: 18 }} />
               </Box>
               <Typography variant="h6" fontWeight={700}>
-                Massivo
+                {brand.name}
               </Typography>
             </Box>
             <Tooltip title={isDark ? 'Modo claro' : 'Modo oscuro'}>
@@ -371,7 +372,7 @@ export function HomePage() {
             }}
           >
             <Typography variant="caption" color="text.secondary">
-              © {new Date().getFullYear()} Massivo · Multichannel sender
+              © {new Date().getFullYear()} {brand.name} · {brand.tagline}
             </Typography>
             <Typography variant="caption" color="text.secondary">
               Hecho con NestJS · Prisma · React · MUI

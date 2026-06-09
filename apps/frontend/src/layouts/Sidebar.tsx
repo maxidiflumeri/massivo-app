@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { Collapse } from '@mui/material';
+import { brand } from '../brand';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { NavLink } from 'react-router-dom';
@@ -215,7 +216,7 @@ const NAV_GROUPS: NavGroupSpec[] = [
         icon: <HistoryIcon fontSize="small" />,
       },
       {
-        href: 'https://docs.massivo.app',
+        href: brand.docsUrl,
         label: 'Documentación',
         icon: <MenuBookIcon fontSize="small" />,
       },

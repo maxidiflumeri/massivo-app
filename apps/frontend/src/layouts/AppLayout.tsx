@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { brand } from '../brand';
 import {
   Box,
   AppBar,
@@ -95,7 +96,7 @@ export function AppLayout() {
               <SendRoundedIcon sx={{ fontSize: 18 }} />
             </Box>
             <Typography variant="h6" fontWeight={700} sx={{ display: { xs: 'none', sm: 'block' } }}>
-              Massivo
+              {brand.name}
             </Typography>
           </Box>
 

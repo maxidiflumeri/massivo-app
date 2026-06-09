@@ -7,9 +7,12 @@ import { ClerkWithTheme } from './theme/ClerkWithTheme';
 import { TeamProvider } from './team/TeamContext';
 import { NotifyProvider } from './feedback/NotifyProvider';
 import { ConfirmProvider } from './feedback/ConfirmProvider';
+import { brand } from './brand';
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Root element not found');
+
+document.title = `${brand.name} — Panel`;
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 if (!clerkPubKey) {

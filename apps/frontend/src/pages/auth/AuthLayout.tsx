@@ -1,5 +1,6 @@
 import { Box, Typography, useTheme } from '@mui/material';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
+import { brand } from '../../brand';
 import { Link as RouterLink } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
@@ -110,7 +111,7 @@ export function AuthLayout({ title, subtitle, children }: Props) {
             <SendRoundedIcon sx={{ fontSize: 20 }} />
           </Box>
           <Typography variant="h5" fontWeight={700} sx={{ letterSpacing: '-0.01em' }}>
-            Massivo
+            {brand.name}
           </Typography>
         </Box>
 

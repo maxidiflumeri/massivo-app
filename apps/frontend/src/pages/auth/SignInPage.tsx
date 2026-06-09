@@ -1,11 +1,12 @@
 import { SignIn } from '@clerk/clerk-react';
 import { AuthLayout } from './AuthLayout';
+import { brand } from '../../brand';
 
 export function SignInPage() {
   return (
     <AuthLayout
       title="Bienvenido de vuelta"
-      subtitle="Iniciá sesión para entrar a tu panel de Massivo."
+      subtitle={`Iniciá sesión para entrar a tu panel de ${brand.name}.`}
     >
       <SignIn
         routing="path"
