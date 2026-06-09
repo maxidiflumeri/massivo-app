@@ -19,7 +19,7 @@ import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { Audit } from '../../common/audit/audit.decorator';
 import { ChannelsService } from './channels.service';
-import { CreateChannelDto, UpdateChannelDto } from './channels.dto';
+import { AssignAutomationDto, CreateChannelDto, UpdateChannelDto } from './channels.dto';
 import type { AppAbility } from '@massivo/permissions';
 
 @Controller('channels')
@@ -63,6 +63,17 @@ export class ChannelsController {
   @Audit({ action: 'wapi.config.updated', resourceType: 'WapiConfig', resourceIdFrom: 'param:id' })
   update(@Param('id') id: string, @Body() dto: UpdateChannelDto) {
     return this.service.update(id, dto);
+  }
+
+  /**
+   * Asigna la automatización del canal: bot XOR agente (o ninguno). Centraliza la
+   * asignación que antes estaba repartida entre Canales (bot) y Agentes (agente).
+   */
+  @Patch(':id/automation')
+  @CheckPolicies((ability: AppAbility) => ability.can('update', 'WapiConfig'))
+  @Audit({ action: 'wapi.config.automationAssigned', resourceType: 'WapiConfig', resourceIdFrom: 'param:id' })
+  assignAutomation(@Param('id') id: string, @Body() dto: AssignAutomationDto) {
+    return this.service.assignAutomation(id, dto.type, dto.refId ?? null);
   }
 
   @Delete(':id')

@@ -33,6 +33,10 @@ export const channelsApi = {
   setActive(api: ApiClient, id: string, isActive: boolean) {
     return api.patch<ChannelListItem>(`/api/channels/${id}`, { isActive });
   },
+  /** Asigna la automatización del canal: bot XOR agente (o ninguno). */
+  setAutomation(api: ApiClient, id: string, type: 'none' | 'bot' | 'agent', refId: string | null) {
+    return api.patch<ChannelListItem>(`/api/channels/${id}/automation`, { type, refId: refId ?? undefined });
+  },
   remove(api: ApiClient, id: string) {
     return api.delete<void>(`/api/channels/${id}`);
   },

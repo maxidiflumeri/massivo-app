@@ -18,6 +18,18 @@ const MAX_DELAY_MS = 60 * 60 * 1000;
 /** Kinds que hoy se pueden dar de alta vía UI. */
 export const CREATABLE_CHANNEL_KINDS = ['WHATSAPP', 'MESSENGER', 'INSTAGRAM', 'WEBCHAT'] as const;
 
+/** Asigna la automatización del canal: bot XOR agente (o ninguno). `refId` es el id
+ *  del bot/agente cuando `type` no es 'none'. */
+export class AssignAutomationDto {
+  @IsIn(['none', 'bot', 'agent'])
+  type!: 'none' | 'bot' | 'agent';
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  refId?: string;
+}
+
 export class CreateChannelDto {
   @IsOptional()
   @IsString()

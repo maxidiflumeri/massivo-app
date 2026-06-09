@@ -24,6 +24,8 @@ export interface ChannelListItem {
   createdAt: Date;
   /** Phase 0b (multi-canal): bot conectado a este canal (null si ninguno). */
   botId: string | null;
+  /** Plataforma agéntica: agente IA conectado (null si ninguno). Excluyente con botId. */
+  agentId: string | null;
   /** Fase 1 (multi-canal): tipo de canal (WHATSAPP/INSTAGRAM/…). */
   kind: string;
 }
@@ -73,6 +75,7 @@ function toListItem(row: any): ChannelListItem {
     isTestMode: row.isTestMode ?? false,
     createdAt: row.createdAt,
     botId: row.botId ?? null,
+    agentId: row.agentId ?? null,
     kind: row.kind ?? 'WHATSAPP',
   };
 }
@@ -122,6 +125,7 @@ export class ChannelsService {
       isActive: row.isActive,
       isTestMode: row.isTestMode ?? false,
       botId: row.botId ?? null,
+      agentId: row.agentId ?? null,
       kind: row.kind ?? 'WHATSAPP',
       welcomeMessage: row.welcomeMessage,
       optOutConfirmMessage: row.optOutConfirmMessage,
@@ -251,6 +255,41 @@ export class ChannelsService {
     return {
       webhookVerifyToken: this.encryption.decrypt(row.webhookVerifyTokenEnc),
     };
+  }
+
+  /**
+   * Asigna la automatización de un canal de forma **excluyente**: un canal atiende
+   * con un Bot (flujo determinista) **o** con un Agente IA, nunca ambos. Centraliza
+   * lo que antes se seteaba en dos lugares (bot desde Canales, agente desde Agentes)
+   * y evita el bug de precedencia (con ambos puestos contestaba siempre el agente).
+   */
+  async assignAutomation(
+    id: string,
+    type: 'none' | 'bot' | 'agent',
+    refId: string | null,
+  ): Promise<ChannelListItem> {
+    this.requireContext();
+    const channel = await this.prisma.scoped.channel.findFirst({ where: { id }, select: { id: true } });
+    if (!channel) throw new NotFoundException(`Canal ${id} no encontrado en este scope`);
+
+    let data: { botId: string | null; agentId: string | null };
+    if (type === 'bot') {
+      if (!refId) throw new BadRequestException('Falta el id del bot');
+      const bot = await this.prisma.scoped.bot.findFirst({ where: { id: refId }, select: { id: true } });
+      if (!bot) throw new NotFoundException(`Bot ${refId} no encontrado en este scope`);
+      data = { botId: refId, agentId: null };
+    } else if (type === 'agent') {
+      if (!refId) throw new BadRequestException('Falta el id del agente');
+      const agent = await this.prisma.scoped.agent.findFirst({ where: { id: refId }, select: { id: true } });
+      if (!agent) throw new NotFoundException(`Agente ${refId} no encontrado en este scope`);
+      data = { botId: null, agentId: refId };
+    } else {
+      data = { botId: null, agentId: null };
+    }
+
+    const row = await this.prisma.scoped.channel.update({ where: { id }, data: data as never });
+    this.logger.log(`Channel ${id} automation → ${type}${refId ? `:${refId}` : ''}`);
+    return toListItem(row);
   }
 
   async remove(id: string): Promise<void> {

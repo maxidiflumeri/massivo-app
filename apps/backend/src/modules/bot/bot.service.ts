@@ -759,7 +759,8 @@ export class BotService {
     if (botId) await this.loadBotById(botId); // valida que el bot sea del tenant
     await this.prisma.scoped.channel.update({
       where: { id: configId },
-      data: { botId } as never,
+      // Exclusividad bot/agente: conectar un bot desvincula cualquier agente del canal.
+      data: { botId, ...(botId ? { agentId: null } : {}) } as never,
     });
     this.logger.log(`Canal configId=${configId} ${botId ? `conectado a botId=${botId}` : 'desconectado'}`);
     return { configId: config.id, name: config.name, phoneNumberId: config.phoneNumberId, kind: 'WHATSAPP' };

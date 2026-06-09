@@ -6,6 +6,7 @@ import {
   CircularProgress,
   FormControl,
   IconButton,
+  ListSubheader,
   MenuItem,
   Paper,
   Select,
@@ -17,6 +18,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SettingsIcon from '@mui/icons-material/Settings';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import LinkIcon from '@mui/icons-material/Link';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
@@ -25,6 +27,8 @@ import { useNotify } from '../../feedback/NotifyProvider';
 import { useConfirm } from '../../feedback/ConfirmProvider';
 import { botsApi } from '../bots/api';
 import type { BotListItem } from '../bots/types';
+import { agentsApi } from '../agents/api';
+import type { Agent } from '../agents/types';
 import { ChannelIcon, channelMeta } from './channelMeta';
 import { channelsApi, channelWebhookUrl } from './api';
 import { AddChannelDialog } from './AddChannelDialog';
@@ -42,6 +46,7 @@ export function ChannelsPage() {
 
   const [items, setItems] = useState<ChannelListItem[] | null>(null);
   const [bots, setBots] = useState<BotListItem[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [webhookSlug, setWebhookSlug] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ChannelListItem | null>(null);
@@ -60,19 +65,26 @@ export function ChannelsPage() {
       .list(api)
       .then(setBots)
       .catch(() => undefined);
+    void agentsApi
+      .list(api)
+      .then(setAgents)
+      .catch(() => undefined);
     void api
       .get<MeContextSlice>('/api/me/context')
       .then((me) => setWebhookSlug(me.organizations[0]?.webhookSlug ?? null))
       .catch(() => undefined);
   }, [api, load]);
 
-  async function handleSetBot(channel: ChannelListItem, botId: string) {
+  async function handleSetAutomation(
+    channel: ChannelListItem,
+    type: 'none' | 'bot' | 'agent',
+    refId: string | null,
+  ) {
     try {
-      if (botId) await botsApi.connectChannel(api, botId, channel.id);
-      else if (channel.botId) await botsApi.disconnectChannel(api, channel.botId, channel.id);
+      await channelsApi.setAutomation(api, channel.id, type, refId);
       await load();
     } catch (e) {
-      notify.error(e instanceof Error ? e.message : 'No se pudo conectar el bot');
+      notify.error(e instanceof Error ? e.message : 'No se pudo asignar la automatización');
     }
   }
 
@@ -176,8 +188,9 @@ export function ChannelsPage() {
               key={ch.id}
               channel={ch}
               bots={bots}
+              agents={agents}
               webhookUrl={webhookSlug ? channelWebhookUrl(api.baseUrl, ch.kind, webhookSlug) : null}
-              onSetBot={(botId) => void handleSetBot(ch, botId)}
+              onSetAutomation={(type, refId) => void handleSetAutomation(ch, type, refId)}
               onEdit={() => setEditing(ch)}
               onCopyWebhook={() => void copyWebhook(ch)}
               onDelete={() => void handleDelete(ch)}
@@ -212,21 +225,43 @@ export function ChannelsPage() {
 function ChannelRow({
   channel,
   bots,
+  agents,
   webhookUrl,
-  onSetBot,
+  onSetAutomation,
   onEdit,
   onCopyWebhook,
   onDelete,
 }: {
   channel: ChannelListItem;
   bots: BotListItem[];
+  agents: Agent[];
   webhookUrl: string | null;
-  onSetBot: (botId: string) => void;
+  onSetAutomation: (type: 'none' | 'bot' | 'agent', refId: string | null) => void;
   onEdit: () => void;
   onCopyWebhook: () => void;
   onDelete: () => void;
 }) {
   const meta = channelMeta(channel.kind);
+  // Valor del selector unificado: '' (sin), 'agent:<id>' o 'bot:<id>'. El agente
+  // tiene precedencia visual si por algún dato viejo estuvieran ambos seteados.
+  const automationValue = channel.agentId
+    ? `agent:${channel.agentId}`
+    : channel.botId
+      ? `bot:${channel.botId}`
+      : '';
+  const selectedAgent = channel.agentId ? agents.find((a) => a.id === channel.agentId) : undefined;
+  const selectedBot = channel.botId ? bots.find((b) => b.botId === channel.botId) : undefined;
+  const assignedDisabled =
+    (!!channel.agentId && selectedAgent && !selectedAgent.enabled) ||
+    (!!channel.botId && selectedBot && !selectedBot.enabled);
+
+  const handleAutomationChange = (v: string) => {
+    if (!v) return onSetAutomation('none', null);
+    const sep = v.indexOf(':');
+    const type = v.slice(0, sep) as 'bot' | 'agent';
+    const refId = v.slice(sep + 1);
+    onSetAutomation(type, refId);
+  };
   const identifier = useMemo(() => {
     if (channel.kind === 'WHATSAPP') return channel.phoneNumberId;
     return channel.pageId ?? '';
@@ -272,34 +307,53 @@ function ChannelRow({
           )}
         </Box>
 
-        {/* Conectar bot */}
-        <FormControl size="small" sx={{ minWidth: 170 }}>
-          <Select
-            displayEmpty
-            value={channel.botId ?? ''}
-            onChange={(e) => onSetBot(e.target.value)}
-            renderValue={(v) => {
-              const bot = bots.find((b) => b.botId === v);
-              return (
-                <Stack direction="row" alignItems="center" gap={0.75}>
-                  <SmartToyIcon sx={{ fontSize: 16, color: bot ? 'primary.main' : 'text.disabled' }} />
-                  <Typography variant="body2" noWrap>
-                    {bot ? bot.name : 'Sin bot'}
-                  </Typography>
-                </Stack>
-              );
-            }}
-          >
-            <MenuItem value="">
-              <em>Sin bot</em>
-            </MenuItem>
-            {bots.map((b) => (
-              <MenuItem key={b.botId} value={b.botId}>
-                {b.name}
+        {/* Automatización: bot XOR agente (excluyente). Centralizado acá. */}
+        <Stack direction="row" alignItems="center" gap={0.75}>
+          <FormControl size="small" sx={{ minWidth: 190 }}>
+            <Select
+              displayEmpty
+              value={automationValue}
+              onChange={(e) => handleAutomationChange(String(e.target.value))}
+              renderValue={() => {
+                const assigned = selectedAgent ?? selectedBot;
+                const Icon = selectedAgent ? AutoAwesomeIcon : SmartToyIcon;
+                return (
+                  <Stack direction="row" alignItems="center" gap={0.75}>
+                    <Icon sx={{ fontSize: 16, color: assigned ? 'primary.main' : 'text.disabled' }} />
+                    <Typography variant="body2" noWrap>
+                      {assigned?.name ?? 'Sin automatización'}
+                    </Typography>
+                  </Stack>
+                );
+              }}
+            >
+              <MenuItem value="">
+                <em>Sin automatización</em>
               </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+              {agents.length > 0 && <ListSubheader>Agentes IA</ListSubheader>}
+              {agents.map((a) => (
+                <MenuItem key={a.id} value={`agent:${a.id}`}>
+                  <AutoAwesomeIcon sx={{ fontSize: 16, mr: 1, color: 'primary.main' }} />
+                  {a.name}
+                  {!a.enabled && ' · off'}
+                </MenuItem>
+              ))}
+              {bots.length > 0 && <ListSubheader>Bots</ListSubheader>}
+              {bots.map((b) => (
+                <MenuItem key={b.botId} value={`bot:${b.botId}`}>
+                  <SmartToyIcon sx={{ fontSize: 16, mr: 1, color: 'text.secondary' }} />
+                  {b.name}
+                  {!b.enabled && ' · off'}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          {assignedDisabled && (
+            <Tooltip title="La automatización asignada está deshabilitada — no responderá hasta activarla.">
+              <Chip size="small" color="warning" variant="outlined" label="off" sx={{ height: 20, fontSize: 10.5 }} />
+            </Tooltip>
+          )}
+        </Stack>
 
         <Tooltip title="Editar canal">
           <IconButton size="small" onClick={onEdit}>

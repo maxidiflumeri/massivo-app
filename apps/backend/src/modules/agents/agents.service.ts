@@ -123,7 +123,8 @@ export class AgentsService {
     if (!channel) throw new NotFoundException(`Canal ${channelId} no encontrado`);
     await this.prisma.scoped.channel.update({
       where: { id: channelId },
-      data: { agentId } as never,
+      // Exclusividad bot/agente: conectar un agente desvincula cualquier bot del canal.
+      data: { agentId, botId: null } as never,
     });
     return { id: channelId, agentId };
   }

@@ -36,19 +36,12 @@ import { useConfirm } from '../../feedback/ConfirmProvider';
 import { agentsApi } from './api';
 import { AGENT_MODEL_PRESETS, type Agent, type AgentDocument } from './types';
 
-interface ChannelOption {
-  id: string;
-  label: string;
-  kind: string;
-}
-
 export function AgentsPage() {
   const api = useApi();
   const notify = useNotify();
   const confirm = useConfirm();
 
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [channels, setChannels] = useState<ChannelOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
@@ -58,18 +51,7 @@ export function AgentsPage() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [agentRows, channelRows] = await Promise.all([
-        agentsApi.list(api),
-        api.get<Array<{ id: string; name: string | null; kind: string; phoneNumberId: string | null }>>('/api/channels'),
-      ]);
-      setAgents(agentRows);
-      setChannels(
-        channelRows.map((c) => ({
-          id: c.id,
-          label: c.name?.trim() || c.phoneNumberId || c.kind,
-          kind: c.kind,
-        })),
-      );
+      setAgents(await agentsApi.list(api));
     } catch (err) {
       notify.error(err instanceof Error ? err.message : 'No se pudieron cargar los agentes');
     } finally {
@@ -216,7 +198,6 @@ export function AgentsPage() {
       {editing && (
         <EditAgentDialog
           agent={editing}
-          channels={channels}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -230,12 +211,10 @@ export function AgentsPage() {
 
 function EditAgentDialog({
   agent,
-  channels,
   onClose,
   onSaved,
 }: {
   agent: Agent;
-  channels: ChannelOption[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -247,33 +226,13 @@ function EditAgentDialog({
   const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt ?? '');
   const [temperature, setTemperature] = useState(agent.temperature);
   const [maxSteps, setMaxSteps] = useState(agent.maxSteps);
-  const [connected, setConnected] = useState(agent.channels ?? []);
   const [saving, setSaving] = useState(false);
 
   const modelOptions = AGENT_MODEL_PRESETS.some((m) => m.value === model)
     ? AGENT_MODEL_PRESETS
     : [{ value: model, label: model }, ...AGENT_MODEL_PRESETS];
 
-  const available = channels.filter((c) => !connected.some((cc) => cc.id === c.id));
-
-  const handleConnect = async (channelId: string) => {
-    try {
-      await agentsApi.connect(api, agent.id, channelId);
-      const ch = channels.find((c) => c.id === channelId);
-      if (ch) setConnected((prev) => [...prev, { id: ch.id, name: ch.label, kind: ch.kind }]);
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : 'No se pudo conectar el canal');
-    }
-  };
-
-  const handleDisconnect = async (channelId: string) => {
-    try {
-      await agentsApi.disconnect(api, agent.id, channelId);
-      setConnected((prev) => prev.filter((c) => c.id !== channelId));
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : 'No se pudo desconectar el canal');
-    }
-  };
+  const connected = agent.channels ?? [];
 
   const handleSave = async () => {
     setSaving(true);
@@ -353,41 +312,21 @@ function EditAgentDialog({
           <Divider />
 
           <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
               Canales conectados
             </Typography>
-            <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mb: 1 }}>
-              {connected.length === 0 && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+              La asignación se gestiona desde <strong>Canales</strong>: a cada canal le elegís un bot o un agente.
+            </Typography>
+            <Stack direction="row" gap={0.75} flexWrap="wrap">
+              {connected.length === 0 ? (
                 <Typography variant="caption" color="text.secondary">
-                  Sin canales. Conectá uno para que el agente atienda esa bandeja.
+                  Este agente no está asignado a ningún canal todavía.
                 </Typography>
+              ) : (
+                connected.map((c) => <Chip key={c.id} icon={<HubIcon />} label={c.name || c.kind} />)
               )}
-              {connected.map((c) => (
-                <Chip
-                  key={c.id}
-                  icon={<HubIcon />}
-                  label={c.name || c.kind}
-                  onDelete={() => void handleDisconnect(c.id)}
-                />
-              ))}
             </Stack>
-            {available.length > 0 && (
-              <FormControl size="small" sx={{ minWidth: 240 }}>
-                <InputLabel id="agent-connect-label">Conectar a canal…</InputLabel>
-                <Select
-                  labelId="agent-connect-label"
-                  label="Conectar a canal…"
-                  value=""
-                  onChange={(e) => e.target.value && void handleConnect(String(e.target.value))}
-                >
-                  {available.map((c) => (
-                    <MenuItem key={c.id} value={c.id}>
-                      {c.label} · {c.kind}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
           </Box>
 
           <Divider />

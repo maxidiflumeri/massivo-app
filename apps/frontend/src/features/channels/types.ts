@@ -13,8 +13,10 @@ export interface ChannelListItem {
   isActive: boolean;
   isTestMode: boolean;
   createdAt: string;
-  /** Bot conectado (null si ninguno). */
+  /** Bot conectado (null si ninguno). Excluyente con agentId. */
   botId: string | null;
+  /** Agente IA conectado (null si ninguno). Excluyente con botId. */
+  agentId: string | null;
 }
 
 export interface CreateChannelPayload {
