@@ -11,27 +11,34 @@ on:
       - 'pnpm-workspace.yaml'
       - 'turbo.json'
       - 'tsconfig.base.json'
+      - '.env.massivo'
+      - '.env.rgbot'
       - '.github/workflows/deploy-frontend.yml'
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target a desplegar'
+        type: choice
+        options: [massivo, rgbot]
+        default: massivo
 
 permissions:
   id-token: write
   contents: read
 
-env:
-  AWS_REGION: us-east-1
-  AWS_ROLE_ARN: arn:aws:iam::811261691778:role/massivo-prod-github-actions
-  S3_BUCKET: massivo-prod-frontend-811261691778
-  CF_DISTRIBUTION_ID: E11IK4CYGMJAK9
-  VITE_API_BASE_URL: https://api.massivo.app
-  VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
-  VITE_ENABLE_DEV_SIMULATOR: 'false'
-  VITE_WAPI_BOT_FEATURE_ENABLED: 'true'
-
 jobs:
   build-and-deploy:
     name: Build → S3 sync → CloudFront invalidate
     runs-on: ubuntu-24.04
+    # El environment (massivo-prod / rgbot-prod) provee las coordenadas AWS (vars) y
+    # los secrets. Push a main → massivo; "Run workflow" → el target elegido.
+    environment: ${{ github.event.inputs.target || 'massivo' }}-prod
+    env:
+      TARGET: ${{ github.event.inputs.target || 'massivo' }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      S3_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
+      CF_DISTRIBUTION_ID: ${{ vars.FRONTEND_CF_DISTRIBUTION_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,14 +58,22 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Verify Clerk pubkey is set
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
         run: |
           if [ -z "${VITE_CLERK_PUBLISHABLE_KEY}" ]; then
-            echo "::error::CLERK_PUBLISHABLE_KEY secret no está configurado en GitHub Actions. Setear en Settings → Secrets → Actions."
+            echo "::error::Falta el secret CLERK_PUBLISHABLE_KEY en el environment ${TARGET}-prod."
             exit 1
           fi
 
+      # La marca + dominios públicos salen de .env.${TARGET} (committeado); el secret
+      # (Clerk) y los flags vienen del environment / workflow.
       - name: Build frontend (vite only, skip tsc)
-        run: pnpm --filter @massivo/frontend exec vite build
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          VITE_ENABLE_DEV_SIMULATOR: 'false'
+          VITE_WAPI_BOT_FEATURE_ENABLED: 'true'
+        run: pnpm --filter @massivo/frontend exec vite build --mode "$TARGET"
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4

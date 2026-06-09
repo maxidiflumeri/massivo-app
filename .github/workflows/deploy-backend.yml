@@ -13,21 +13,31 @@ on:
       - 'infra/docker-compose.yml'
       - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target a desplegar'
+        type: choice
+        options: [massivo, rgbot]
+        default: massivo
 
 permissions:
   id-token: write   # OIDC trust con AWS
   contents: read
 
-env:
-  AWS_REGION: us-east-1
-  ECR_REPOSITORY: massivo-prod-backend
-  EC2_INSTANCE_ID: i-04f54928d8c12d964
-  AWS_ROLE_ARN: arn:aws:iam::811261691778:role/massivo-prod-github-actions
-
 jobs:
   build-and-deploy:
     name: Build (linux/arm64) → push → SSM deploy
     runs-on: ubuntu-24.04-arm
+    # El environment (massivo-prod / rgbot-prod) provee las coordenadas AWS (vars).
+    # Push a main → massivo; "Run workflow" → el target elegido.
+    environment: ${{ github.event.inputs.target || 'massivo' }}-prod
+    env:
+      TARGET: ${{ github.event.inputs.target || 'massivo' }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      ECR_REPOSITORY: ${{ vars.BACKEND_ECR_REPOSITORY }}
+      EC2_INSTANCE_ID: ${{ vars.BACKEND_EC2_INSTANCE_ID }}
+      API_URL: ${{ vars.API_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -162,7 +172,7 @@ jobs:
         run: |
           # Espera a que el container esté healthy (curl al health vía Nginx)
           for i in $(seq 1 30); do
-            if curl -sf https://api.massivo.app/api/health > /dev/null; then
+            if curl -sf "${API_URL}/api/health" > /dev/null; then
               echo "API healthy ✅"
               exit 0
             fi
