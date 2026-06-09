@@ -1,14 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { VoyageEmbeddingProvider } from './voyage-embedding.provider';
+import { EMBEDDING_PROVIDER, type EmbeddingProvider } from './embedding-provider';
 
 const DEFAULT_TOP_K = 5;
 /** Distancia coseno máxima para considerar relevante un chunk (0 = idéntico, 2 = opuesto). */
 const DEFAULT_MAX_DISTANCE = 0.6;
 
 /**
- * Retrieval de la base de conocimiento (RAG) de un Agente. Embebe la query (Voyage,
- * `input_type=query`) y busca los chunks más cercanos por distancia coseno con
+ * Retrieval de la base de conocimiento (RAG) de un Agente. Embebe la query
+ * (EmbeddingProvider, `input_type=query`) y busca los chunks más cercanos por distancia coseno con
  * pgvector (`<=>`). Corre en contexto de sistema (cliente raw `prisma`), filtrando
  * por `agentId` + `organizationId` explícitos. Fail-open: ante cualquier problema
  * devuelve [] y el agente responde igual (sin contexto).
@@ -19,7 +19,7 @@ export class AgentRetrievalService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly voyage: VoyageEmbeddingProvider,
+    @Inject(EMBEDDING_PROVIDER) private readonly embeddings: EmbeddingProvider,
   ) {}
 
   async retrieve(
@@ -39,7 +39,7 @@ export class AgentRetrievalService {
 
     let vec: string;
     try {
-      const emb = await this.voyage.embedOne(q, 'query');
+      const emb = await this.embeddings.embedOne(q, 'query');
       vec = `[${emb.join(',')}]`;
     } catch (err) {
       this.logger.warn(

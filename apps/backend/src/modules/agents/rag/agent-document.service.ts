@@ -1,13 +1,14 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
-import { VoyageEmbeddingProvider } from './voyage-embedding.provider';
+import { EMBEDDING_PROVIDER, type EmbeddingProvider } from './embedding-provider';
 import { chunkText } from './text-chunker';
 
 /** Tope defensivo de texto por documento (v0, ingesta síncrona). */
@@ -41,7 +42,7 @@ const DOC_SELECT = {
 
 /**
  * Gestión de los documentos de conocimiento (RAG) de un Agente. CRUD tenant-scoped
- * (`prisma.scoped`) + ingesta: extrae texto → chunking → embeddings (Voyage) →
+ * (`prisma.scoped`) + ingesta: extrae texto → chunking → embeddings (EmbeddingProvider) →
  * persiste los `AgentChunk` con su vector vía SQL raw (la columna `vector` es
  * Unsupported en Prisma). Ingesta síncrona en v0 (docs chicos); el `status` refleja
  * PROCESSING/READY/FAILED para la UI.
@@ -52,7 +53,7 @@ export class AgentDocumentService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly voyage: VoyageEmbeddingProvider,
+    @Inject(EMBEDDING_PROVIDER) private readonly embeddings: EmbeddingProvider,
   ) {}
 
   private ctx() {
@@ -126,7 +127,7 @@ export class AgentDocumentService {
     try {
       const chunks = chunkText(text);
       if (chunks.length === 0) throw new Error('No se pudo extraer texto del documento');
-      const embeddings = await this.voyage.embed(
+      const embeddings = await this.embeddings.embed(
         chunks.map((c) => c.content),
         'document',
       );

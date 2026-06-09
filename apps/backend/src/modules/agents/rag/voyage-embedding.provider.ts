@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EMBEDDING_DIM, type EmbeddingInputType, type EmbeddingProvider } from './embedding-provider';
 
 const VOYAGE_URL = 'https://api.voyageai.com/v1/embeddings';
 /** Voyage acepta hasta 1000 inputs por request; usamos lotes chicos por límites de tokens. */
@@ -7,9 +8,6 @@ const BATCH = 100;
 
 /** voyage-3.5-lite: buena relación calidad/costo, free tier generoso. 1024 dims (matchea la columna vector(1024)). */
 export const VOYAGE_MODEL = 'voyage-3.5-lite';
-export const EMBEDDING_DIM = 1024;
-
-export type EmbeddingInputType = 'document' | 'query';
 
 /**
  * Proveedor de embeddings vía la API de Voyage AI. `input_type` distingue
@@ -17,7 +15,8 @@ export type EmbeddingInputType = 'document' | 'query';
  * recall. Usa `fetch` nativo (sin SDK). La key sale de `VOYAGE_API_KEY`.
  */
 @Injectable()
-export class VoyageEmbeddingProvider {
+export class VoyageEmbeddingProvider implements EmbeddingProvider {
+  readonly id = 'voyage';
   readonly model = VOYAGE_MODEL;
   readonly dimension = EMBEDDING_DIM;
 
