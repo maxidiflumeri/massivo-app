@@ -29,7 +29,7 @@ const CHANNEL_SELECT = {
     select: { enabled: true, flow: true, sessionTtlMin: true, topics: true, router: true, variables: true },
   },
   agent: {
-    select: { enabled: true, model: true, systemPrompt: true, temperature: true, maxSteps: true },
+    select: { id: true, enabled: true, model: true, systemPrompt: true, temperature: true, maxSteps: true },
   },
 } as const;
 

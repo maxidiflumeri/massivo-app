@@ -8,6 +8,7 @@ describe('AgentRuntimeService', () => {
   let registry: { get: jest.Mock };
   let encryption: { decrypt: jest.Mock };
   let events: { emitToTeam: jest.Mock };
+  let retrieval: { retrieve: jest.Mock };
   let svc: AgentRuntimeService;
 
   const input: AgentRunInput = {
@@ -21,7 +22,7 @@ describe('AgentRuntimeService', () => {
       phoneNumberId: null,
       pageId: null,
     },
-    agent: { model: 'anthropic/claude-x', systemPrompt: 'Sos un asistente', temperature: 0.5, maxSteps: 4 },
+    agent: { id: 'agent1', model: 'anthropic/claude-x', systemPrompt: 'Sos un asistente', temperature: 0.5, maxSteps: 4 },
     conversationId: 'conv1',
     externalUserId: 'visitor1',
   };
@@ -45,6 +46,7 @@ describe('AgentRuntimeService', () => {
     tools = { defs: jest.fn().mockReturnValue([]), get: jest.fn() };
     encryption = { decrypt: jest.fn((v: string) => v) };
     events = { emitToTeam: jest.fn() };
+    retrieval = { retrieve: jest.fn().mockResolvedValue([]) };
     svc = new AgentRuntimeService(
       prisma as never,
       gateway as never,
@@ -52,6 +54,7 @@ describe('AgentRuntimeService', () => {
       registry as never,
       encryption as never,
       events as never,
+      retrieval as never,
     );
   });
 

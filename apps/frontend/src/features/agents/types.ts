@@ -19,6 +19,21 @@ export interface Agent {
   channels?: AgentChannelRef[];
 }
 
+export interface AgentDocument {
+  id: string;
+  name: string;
+  /** TEXT | FILE */
+  source: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  /** PENDING | PROCESSING | READY | FAILED */
+  status: string;
+  error: string | null;
+  chunkCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UpdateAgentPayload {
   name?: string;
   enabled?: boolean;

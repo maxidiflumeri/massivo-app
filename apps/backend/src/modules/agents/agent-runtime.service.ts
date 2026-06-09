@@ -8,6 +8,7 @@ import { ModelGatewayService } from './model/model-gateway.service';
 import type { AgentMessage } from './model/model-types';
 import { AgentToolRegistry } from './tools/agent-tool.registry';
 import type { AgentToolContext } from './tools/agent-tool.types';
+import { AgentRetrievalService } from './rag/agent-retrieval.service';
 
 /** Canal resuelto que el runtime necesita para enviar la respuesta. */
 export interface AgentRunChannel {
@@ -22,6 +23,7 @@ export interface AgentRunChannel {
 }
 
 export interface AgentRunConfig {
+  id: string;
   model: string;
   systemPrompt: string | null;
   temperature: number;
@@ -92,6 +94,7 @@ export class AgentRuntimeService {
     private readonly registry: ChannelAdapterRegistry,
     private readonly encryption: EncryptionService,
     private readonly events: EventsService,
+    private readonly retrieval: AgentRetrievalService,
   ) {}
 
   async handleInbound(input: AgentRunInput): Promise<void> {
@@ -108,9 +111,19 @@ export class AgentRuntimeService {
       const messages = await this.loadHistory(conversationId);
       if (messages.length === 0) return;
 
-      const system = agent.systemPrompt?.trim()
+      const base = agent.systemPrompt?.trim()
         ? `${agent.systemPrompt.trim()}\n\n${RUNTIME_GUIDANCE}`
         : RUNTIME_GUIDANCE;
+
+      // RAG: recuperamos contexto de la base de conocimiento del agente para el
+      // último mensaje del usuario y lo inyectamos al system prompt (fail-open).
+      const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+      const retrieved = await this.retrieval.retrieve(agent.id, channel.organizationId, lastUserText);
+      if (retrieved.length) {
+        this.logger.log(`RAG: ${retrieved.length} fragmento(s) inyectado(s) conv=${conversationId}`);
+      }
+      const system = retrieved.length ? `${base}\n\n${buildContextBlock(retrieved)}` : base;
+
       const toolDefs = this.tools.defs();
       const toolCtx: AgentToolContext = {
         organizationId: channel.organizationId,
@@ -280,6 +293,17 @@ export class AgentRuntimeService {
     }
     return { pageId: channel.pageId ?? '', accessToken, isTestMode: channel.isTestMode };
   }
+}
+
+/** Bloque de contexto RAG que se anexa al system prompt con los chunks recuperados. */
+function buildContextBlock(chunks: string[]): string {
+  const body = chunks.map((c, i) => `[${i + 1}] ${c}`).join('\n\n');
+  return (
+    'CONTEXTO RELEVANTE (de la base de conocimiento del negocio). Usalo para responder ' +
+    'si aplica; no digas "según el documento", respondé natural. Si el contexto no alcanza ' +
+    'para responder con certeza, decilo y, si corresponde, derivá a una persona.\n\n' +
+    body
+  );
 }
 
 /** Extrae el texto plano de un `Message.content` JSON (o un placeholder por tipo). */

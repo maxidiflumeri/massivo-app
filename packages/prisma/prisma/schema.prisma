@@ -147,6 +147,7 @@ model Organization {
   botSessions         BotSession[]
   bots                Bot[]
   agents              Agent[]
+  agentDocuments      AgentDocument[]
   notifications       Notification[]
 
   contacts                Contact[]
@@ -193,6 +194,7 @@ model Team {
   botSessions         BotSession[]
   bots                Bot[]
   agents              Agent[]
+  agentDocuments      AgentDocument[]
   notifications       Notification[]
 
   contacts       Contact[]
@@ -784,9 +786,69 @@ model Agent {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   channels     Channel[]
+  documents    AgentDocument[]
 
   @@index([organizationId])
   @@index([teamId])
+}
+
+enum AgentDocumentSource {
+  TEXT
+  FILE
+}
+
+enum AgentDocumentStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+/// Documento de conocimiento de un Agente IA (RAG). El texto se extrae, se parte en
+/// `AgentChunk`s y se vectoriza (Voyage). Multi-tenant (org+team) para scoping.
+model AgentDocument {
+  id             String              @id @default(cuid())
+  organizationId String
+  teamId         String
+  agentId        String
+  name           String
+  source         AgentDocumentSource @default(TEXT)
+  mimeType       String?
+  sizeBytes      Int?
+  status         AgentDocumentStatus @default(PENDING)
+  error          String?
+  chunkCount     Int                 @default(0)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  agent        Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  chunks       AgentChunk[]
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([agentId])
+}
+
+/// Fragmento vectorizado de un `AgentDocument`. La columna `embedding` es pgvector
+/// (`vector(1024)`, Voyage voyage-3.5-lite) — Prisma no la tipa; se inserta/consulta
+/// vía $queryRaw. org/team/agentId denormalizados para filtrar en el search raw.
+model AgentChunk {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  agentId        String
+  documentId     String
+  index          Int
+  content        String
+  embedding      Unsupported("vector(1024)")
+  createdAt      DateTime @default(now())
+
+  document AgentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@index([documentId])
 }
 
 model WapiTemplate {

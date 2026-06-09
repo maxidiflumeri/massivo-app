@@ -61,3 +61,14 @@ export class ConnectChannelDto {
   @IsNotEmpty()
   channelId!: string;
 }
+
+export class CreateAgentDocumentDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  name!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  text!: string;
+}

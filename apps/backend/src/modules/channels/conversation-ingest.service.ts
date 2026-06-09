@@ -33,6 +33,7 @@ export interface IngestChannel {
   // el agente (precedencia sobre el bot). Opcional: si el caller no lo carga,
   // queda undefined y se usa el bot.
   agent?: {
+    id: string;
     enabled: boolean;
     model: string;
     systemPrompt: string | null;
@@ -183,6 +184,7 @@ export class ConversationIngestService {
           pageId: channel.pageId,
         },
         agent: {
+          id: channel.agent.id,
           model: channel.agent.model,
           systemPrompt: channel.agent.systemPrompt,
           temperature: channel.agent.temperature,

@@ -3,8 +3,12 @@ import { WapiModule } from '../wapi/wapi.module';
 import { EventsModule } from '../events/events.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AgentsController } from './agents.controller';
+import { AgentDocumentsController } from './agent-documents.controller';
 import { AgentsService } from './agents.service';
 import { AgentRuntimeService } from './agent-runtime.service';
+import { AgentDocumentService } from './rag/agent-document.service';
+import { AgentRetrievalService } from './rag/agent-retrieval.service';
+import { VoyageEmbeddingProvider } from './rag/voyage-embedding.provider';
 import { ModelGatewayService } from './model/model-gateway.service';
 import { AnthropicModelProvider } from './model/anthropic.provider';
 import {
@@ -28,10 +32,13 @@ import { EscalateToOperatorTool } from './tools/escalate-to-operator.tool';
  */
 @Module({
   imports: [WapiModule, EventsModule, NotificationsModule],
-  controllers: [AgentsController],
+  controllers: [AgentsController, AgentDocumentsController],
   providers: [
     AgentsService,
     AgentRuntimeService,
+    AgentDocumentService,
+    AgentRetrievalService,
+    VoyageEmbeddingProvider,
     ModelGatewayService,
     AnthropicModelProvider,
     OpenAiModelProvider,

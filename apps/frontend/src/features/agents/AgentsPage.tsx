@@ -29,11 +29,12 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import HubIcon from '@mui/icons-material/Hub';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { useApi } from '../../api/client';
 import { useNotify } from '../../feedback/NotifyProvider';
 import { useConfirm } from '../../feedback/ConfirmProvider';
 import { agentsApi } from './api';
-import { AGENT_MODEL_PRESETS, type Agent } from './types';
+import { AGENT_MODEL_PRESETS, type Agent, type AgentDocument } from './types';
 
 interface ChannelOption {
   id: string;
@@ -130,7 +131,7 @@ export function AgentsPage() {
             <AutoAwesomeIcon sx={{ color: '#8B5BD6' }} /> Agentes
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Agentes de IA que atienden conversaciones con un modelo, tools y (próximamente) tu conocimiento.
+            Agentes de IA que atienden conversaciones con un modelo, tools y tu conocimiento (RAG).
           </Typography>
         </Box>
         <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)}>
@@ -388,6 +389,10 @@ function EditAgentDialog({
               </FormControl>
             )}
           </Box>
+
+          <Divider />
+
+          <KnowledgeSection agentId={agent.id} />
         </Stack>
       </DialogContent>
       <DialogActions>
@@ -397,5 +402,193 @@ function EditAgentDialog({
         </Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+function docStatusChip(status: string): { label: string; color: 'default' | 'success' | 'warning' | 'error' } {
+  switch (status) {
+    case 'READY':
+      return { label: 'Listo', color: 'success' };
+    case 'PROCESSING':
+      return { label: 'Procesando', color: 'warning' };
+    case 'FAILED':
+      return { label: 'Error', color: 'error' };
+    default:
+      return { label: 'Pendiente', color: 'default' };
+  }
+}
+
+/** Base de conocimiento (RAG) del agente: subir textos/archivos que se vectorizan. */
+function KnowledgeSection({ agentId }: { agentId: string }) {
+  const api = useApi();
+  const notify = useNotify();
+  const confirm = useConfirm();
+
+  const [docs, setDocs] = useState<AgentDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [docName, setDocName] = useState('');
+  const [docText, setDocText] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setDocs(await agentsApi.documents.list(api, agentId));
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudieron cargar los documentos');
+    } finally {
+      setLoading(false);
+    }
+  }, [api, agentId, notify]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const afterAdd = (doc: AgentDocument) => {
+    if (doc.status === 'FAILED') {
+      notify.error(`No se pudo vectorizar: ${doc.error ?? 'error desconocido'}`);
+    } else {
+      notify.success(`"${doc.name}" agregado (${doc.chunkCount} fragmentos)`);
+    }
+  };
+
+  const handleAddText = async () => {
+    if (!docText.trim()) return;
+    setBusy(true);
+    try {
+      const doc = await agentsApi.documents.addText(api, agentId, docName.trim() || 'Texto', docText.trim());
+      setDocName('');
+      setDocText('');
+      afterAdd(doc);
+      await load();
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudo agregar el texto');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUpload = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const doc = await agentsApi.documents.upload(api, agentId, file);
+      afterAdd(doc);
+      await load();
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudo subir el archivo');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemove = async (doc: AgentDocument) => {
+    const ok = await confirm({
+      title: 'Eliminar documento',
+      message: `¿Eliminar "${doc.name}" de la base de conocimiento?`,
+      confirmText: 'Eliminar',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await agentsApi.documents.remove(api, agentId, doc.id);
+      await load();
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudo eliminar');
+    }
+  };
+
+  return (
+    <Box>
+      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+        Base de conocimiento (RAG)
+      </Typography>
+      <Typography variant="caption" color="text.secondary">
+        Subí textos o archivos (txt, md, csv, json). Se vectorizan y el agente los usa para responder.
+      </Typography>
+
+      <Stack spacing={1} sx={{ mt: 1.5 }}>
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+            <CircularProgress size={22} />
+          </Box>
+        ) : docs.length === 0 ? (
+          <Typography variant="caption" color="text.secondary">
+            Todavía no hay documentos.
+          </Typography>
+        ) : (
+          docs.map((d) => {
+            const s = docStatusChip(d.status);
+            return (
+              <Stack
+                key={d.id}
+                direction="row"
+                alignItems="center"
+                gap={1}
+                sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, px: 1, py: 0.5 }}
+              >
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography variant="body2" noWrap>
+                    {d.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                    {d.source === 'FILE' ? 'Archivo' : 'Texto'} · {d.chunkCount} fragmentos
+                    {d.error ? ` · ${d.error}` : ''}
+                  </Typography>
+                </Box>
+                <Chip size="small" color={s.color} label={s.label} />
+                <IconButton size="small" onClick={() => void handleRemove(d)}>
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            );
+          })
+        )}
+      </Stack>
+
+      <Stack spacing={1} sx={{ mt: 1.5 }}>
+        <TextField
+          size="small"
+          label="Título (opcional)"
+          value={docName}
+          onChange={(e) => setDocName(e.target.value)}
+          fullWidth
+        />
+        <TextField
+          size="small"
+          label="Pegá texto para que el agente aprenda…"
+          value={docText}
+          onChange={(e) => setDocText(e.target.value)}
+          multiline
+          minRows={3}
+          fullWidth
+        />
+        <Stack direction="row" gap={1} alignItems="center">
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<AddIcon />}
+            disabled={busy || !docText.trim()}
+            onClick={() => void handleAddText()}
+          >
+            Agregar texto
+          </Button>
+          <Button size="small" variant="outlined" component="label" startIcon={<UploadFileIcon />} disabled={busy}>
+            Subir archivo
+            <input
+              hidden
+              type="file"
+              accept=".txt,.md,.markdown,.csv,.json,.log,.html,.htm,.xml,.yaml,.yml,text/*,application/json"
+              onChange={(e) => {
+                void handleUpload(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+          </Button>
+          {busy && <CircularProgress size={22} />}
+        </Stack>
+      </Stack>
+    </Box>
   );
 }

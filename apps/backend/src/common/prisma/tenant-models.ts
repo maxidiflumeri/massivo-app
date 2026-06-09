@@ -26,6 +26,9 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'Bot',
   // Plataforma agéntica (v0) — Agente IA de primera clase.
   'Agent',
+  // RAG de agentes: documentos de conocimiento + sus chunks vectorizados.
+  'AgentDocument',
+  'AgentChunk',
   // Notificaciones del inbox (campanita del navbar) — scoping por org+team.
   'Notification',
   // Cross-cutting (Fase 2.C)

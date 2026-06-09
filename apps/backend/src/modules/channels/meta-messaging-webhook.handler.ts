@@ -117,7 +117,7 @@ export abstract class MetaMessagingWebhookHandler {
           },
         },
         agent: {
-          select: { enabled: true, model: true, systemPrompt: true, temperature: true, maxSteps: true },
+          select: { id: true, enabled: true, model: true, systemPrompt: true, temperature: true, maxSteps: true },
         },
       },
     })) as Array<IngestChannel & { pageId: string | null; appSecretEnc: string | null }>;
