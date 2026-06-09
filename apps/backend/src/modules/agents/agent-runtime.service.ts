@@ -111,6 +111,12 @@ export class AgentRuntimeService {
       const messages = await this.loadHistory(conversationId);
       if (messages.length === 0) return;
 
+      // Webchat: indicador "escribiendo…" mientras el agente piensa (RAG + modelo).
+      // Best-effort (solo visitantes WS); el widget lo limpia al llegar la respuesta.
+      if (channel.kind === 'WEBCHAT') {
+        this.events.emitToWebchatVisitor(channel.id, externalUserId, 'typing', { typing: true });
+      }
+
       const base = agent.systemPrompt?.trim()
         ? `${agent.systemPrompt.trim()}\n\n${RUNTIME_GUIDANCE}`
         : RUNTIME_GUIDANCE;

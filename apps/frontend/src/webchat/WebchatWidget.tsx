@@ -4,6 +4,16 @@ import { io, type Socket } from 'socket.io-client';
 const SOCKET_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const BRAND = '#5B5BD6';
 
+// Animaciones (los estilos inline no soportan @keyframes ni pseudo-clases).
+const WC_CSS = `
+@keyframes wcBlink { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+.wc-dot { display: inline-block; width: 6px; height: 6px; margin: 0 2px; border-radius: 50%; background: #9CA3AF; animation: wcBlink 1.2s infinite both; }
+.wc-dot:nth-child(2) { animation-delay: 0.15s; }
+.wc-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes wcCaret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.wc-caret { color: #9CA3AF; margin-left: 1px; animation: wcCaret 0.9s steps(1) infinite; }
+`;
+
 interface WcMessage {
   id: string;
   direction: 'in' | 'out';
@@ -60,10 +70,37 @@ export function WebchatWidget({ channelKey }: { channelKey: string }) {
   const socketRef = useRef<Socket | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const [visitorId, setVisitorId] = useState(() => (channelKey ? getVisitorId(channelKey) : ''));
+  const [typing, setTyping] = useState(false);
+  // Mensaje entrante que se está revelando con efecto typewriter (id + chars visibles).
+  const [stream, setStream] = useState<{ id: string; shown: number } | null>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, typing, stream]);
+
+  // Safety: si por algún motivo no llega respuesta, oculta el indicador (best-effort).
+  useEffect(() => {
+    if (!typing) return;
+    const t = setTimeout(() => setTyping(false), 30000);
+    return () => clearTimeout(t);
+  }, [typing]);
+
+  // Typewriter: avanza los chars visibles del mensaje en `stream` hasta completarlo.
+  useEffect(() => {
+    if (!stream) return;
+    const msg = messages.find((x) => x.id === stream.id);
+    const full = msg?.text ?? '';
+    if (stream.shown >= full.length) {
+      setStream(null);
+      return;
+    }
+    const t = setTimeout(() => {
+      setStream((s) =>
+        s && s.id === stream.id ? { ...s, shown: Math.min(full.length, s.shown + 1) } : s,
+      );
+    }, 22);
+    return () => clearTimeout(t);
+  }, [stream, messages]);
 
   useEffect(() => {
     if (!channelKey) return;
@@ -76,8 +113,14 @@ export function WebchatWidget({ channelKey }: { channelKey: string }) {
     s.on('ready', () => setConnected(true));
     s.on('disconnect', () => setConnected(false));
     s.on('connect_error', () => setConnected(false));
+    s.on('typing', (p: { typing?: boolean }) => setTyping(!!p?.typing));
     s.on('message', (m: WcMessage) => {
+      setTyping(false);
       setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, { ...m, direction: 'in' }]));
+      // Arranca el typewriter solo para texto (botones/medios aparecen al terminar).
+      if (m.type === 'text' && typeof m.text === 'string' && m.text.length > 0) {
+        setStream({ id: m.id, shown: 0 });
+      }
     });
     return () => {
       s.disconnect();
@@ -90,6 +133,7 @@ export function WebchatWidget({ channelKey }: { channelKey: string }) {
     if (!text || !socketRef.current || !connected) return;
     socketRef.current.emit('message', { text });
     setMessages((prev) => [...prev, { id: `out_${Date.now()}`, direction: 'out', type: 'text', text }]);
+    setTyping(true);
     setBody('');
   }, [body, connected]);
 
@@ -97,6 +141,7 @@ export function WebchatWidget({ channelKey }: { channelKey: string }) {
     if (!socketRef.current || !connected) return;
     socketRef.current.emit('message', { buttonId, text: title });
     setMessages((prev) => [...prev, { id: `out_${Date.now()}`, direction: 'out', type: 'text', text: title }]);
+    setTyping(true);
   }
 
   /** Nueva conversación: rota el visitorId (el useEffect reconecta) y limpia el chat. */
@@ -120,6 +165,7 @@ export function WebchatWidget({ channelKey }: { channelKey: string }) {
 
   return (
     <div style={S.root}>
+      <style>{WC_CSS}</style>
       <div style={S.header}>
         <span style={S.headerTitle}>Chat</span>
         <span style={{ ...S.dot, background: connected ? '#34D399' : '#9CA3AF' }} />
@@ -141,24 +187,39 @@ export function WebchatWidget({ channelKey }: { channelKey: string }) {
         {messages.length === 0 ? (
           <div style={S.empty}>¡Hola! ¿En qué te ayudamos?</div>
         ) : (
-          messages.map((m) => (
-            <div key={m.id} style={{ display: 'flex', justifyContent: m.direction === 'out' ? 'flex-end' : 'flex-start' }}>
-              <div style={{ maxWidth: '78%' }}>
-                <div style={m.direction === 'out' ? S.bubbleOut : S.bubbleIn}>
-                  {m.text || (m.type === 'media' ? `[${m.mediaType}] ${m.caption ?? ''}` : '')}
-                </div>
-                {m.type === 'buttons' && m.buttons && (
-                  <div style={S.buttonsRow}>
-                    {m.buttons.map((b) => (
-                      <button key={b.id} type="button" style={S.quickReply} onClick={() => clickButton(b.id, b.title)}>
-                        {b.title}
-                      </button>
-                    ))}
+          messages.map((m) => {
+            const streamShown = stream && stream.id === m.id ? stream.shown : null;
+            const streaming = streamShown !== null;
+            const shownText = streaming ? (m.text ?? '').slice(0, streamShown) : m.text;
+            return (
+              <div key={m.id} style={{ display: 'flex', justifyContent: m.direction === 'out' ? 'flex-end' : 'flex-start' }}>
+                <div style={{ maxWidth: '78%' }}>
+                  <div style={m.direction === 'out' ? S.bubbleOut : S.bubbleIn}>
+                    {shownText || (m.type === 'media' ? `[${m.mediaType}] ${m.caption ?? ''}` : '')}
+                    {streaming && <span className="wc-caret">▍</span>}
                   </div>
-                )}
+                  {!streaming && m.type === 'buttons' && m.buttons && (
+                    <div style={S.buttonsRow}>
+                      {m.buttons.map((b) => (
+                        <button key={b.id} type="button" style={S.quickReply} onClick={() => clickButton(b.id, b.title)}>
+                          {b.title}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
+            );
+          })
+        )}
+        {typing && (
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <div style={{ ...S.bubbleIn, ...S.typingBubble }}>
+              <span className="wc-dot" />
+              <span className="wc-dot" />
+              <span className="wc-dot" />
             </div>
-          ))
+          </div>
         )}
         <div ref={endRef} />
       </div>
@@ -232,6 +293,7 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 14,
     whiteSpace: 'pre-wrap',
   },
+  typingBubble: { display: 'inline-flex', alignItems: 'center', padding: '10px 12px' },
   bubbleOut: {
     background: BRAND,
     color: '#fff',

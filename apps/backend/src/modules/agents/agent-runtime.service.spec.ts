@@ -7,7 +7,7 @@ describe('AgentRuntimeService', () => {
   let adapter: { send: jest.Mock };
   let registry: { get: jest.Mock };
   let encryption: { decrypt: jest.Mock };
-  let events: { emitToTeam: jest.Mock };
+  let events: { emitToTeam: jest.Mock; emitToWebchatVisitor: jest.Mock };
   let retrieval: { retrieve: jest.Mock };
   let svc: AgentRuntimeService;
 
@@ -45,7 +45,7 @@ describe('AgentRuntimeService', () => {
     registry = { get: jest.fn().mockReturnValue(adapter) };
     tools = { defs: jest.fn().mockReturnValue([]), get: jest.fn() };
     encryption = { decrypt: jest.fn((v: string) => v) };
-    events = { emitToTeam: jest.fn() };
+    events = { emitToTeam: jest.fn(), emitToWebchatVisitor: jest.fn() };
     retrieval = { retrieve: jest.fn().mockResolvedValue([]) };
     svc = new AgentRuntimeService(
       prisma as never,
