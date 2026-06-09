@@ -1,0 +1,16 @@
+# Target: MASSIVO  (workspace de Terraform: default)
+# Copialo a massivo.tfvars:  cp massivo.tfvars.example massivo.tfvars
+# (Estos valores coinciden con los defaults de variables.tf — explícitos para claridad.)
+
+aws_profile = "massivo" # profile en ~/.aws/credentials de la cuenta de massivo
+project     = "massivo" # prefijo/tag de todos los recursos
+region      = "us-east-1"
+
+frontend_domain     = "panel.massivo.app"
+landing_apex_domain = "massivo.app"
+landing_www_domain  = "www.massivo.app"
+docs_domain         = "docs.massivo.app"
+api_domain          = "api.massivo.app"
+
+github_repo         = "maxidiflumeri/massivo-app"
+ssh_public_key_path = "~/.ssh/massivo_aws.pub"

@@ -45,6 +45,6 @@ resource "aws_sns_topic_policy" "ses_events" {
 resource "aws_sns_topic_subscription" "ses_events_backend" {
   topic_arn              = aws_sns_topic.ses_events.arn
   protocol               = "https"
-  endpoint               = "https://api.massivo.app/api/webhooks/ses"
+  endpoint               = "https://${var.api_domain}/api/webhooks/ses"
   endpoint_auto_confirms = true
 }

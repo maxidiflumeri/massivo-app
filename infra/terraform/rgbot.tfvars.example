@@ -1,0 +1,17 @@
+# Target: RGBOT  (workspace de Terraform: rgbot)
+# Copialo a rgbot.tfvars:  cp rgbot.tfvars.example rgbot.tfvars
+# IMPORTANTE: aws_profile debe apuntar al profile de la CUENTA AWS de rgbot
+# (configuralo con: aws configure --profile rgbot).
+
+aws_profile = "rgbot" # profile en ~/.aws/credentials de la cuenta de rgbot
+project     = "rgbot" # prefijo/tag de todos los recursos (buckets, roles, etc.)
+region      = "us-east-1"
+
+frontend_domain     = "panel.rgbot.tech"
+landing_apex_domain = "rgbot.tech"
+landing_www_domain  = "www.rgbot.tech"
+docs_domain         = "docs.rgbot.tech"
+api_domain          = "api.rgbot.tech"
+
+github_repo         = "maxidiflumeri/massivo-app" # mismo repo (white-label)
+ssh_public_key_path = "~/.ssh/rgbot_aws.pub"

@@ -49,7 +49,7 @@ output "ec2_ami_id" {
 }
 
 output "ec2_public_ip" {
-  description = "IP pública (Elastic IP) de la API — registrar como A record api.massivo.app en Netlify"
+  description = "IP pública (Elastic IP) de la API — registrar como A record del api_domain en tu DNS"
   value       = aws_eip.api.public_ip
 }
 
@@ -60,7 +60,7 @@ output "ec2_public_dns" {
 
 output "ssh_connect_command" {
   description = "Comando para conectarte por SSH"
-  value       = "ssh -i ~/.ssh/massivo_aws ubuntu@${aws_eip.api.public_ip}"
+  value       = "ssh -i ${trimsuffix(var.ssh_public_key_path, ".pub")} ubuntu@${aws_eip.api.public_ip}"
 }
 
 output "rds_endpoint" {
@@ -100,7 +100,7 @@ output "s3_frontend_bucket" {
 }
 
 output "acm_validation_records" {
-  description = "Registros DNS que hay que crear MANUALMENTE en Netlify para validar el cert ACM"
+  description = "Registros DNS que hay que crear MANUALMENTE en tu DNS para validar el cert ACM del frontend"
   value = {
     for dvo in aws_acm_certificate.frontend.domain_validation_options : dvo.domain_name => {
       name  = dvo.resource_record_name
@@ -116,7 +116,7 @@ output "cloudfront_distribution_id" {
 }
 
 output "cloudfront_domain" {
-  description = "Dominio CloudFront (xxx.cloudfront.net) — apuntar panel.massivo.app a esto vía CNAME en Netlify"
+  description = "Dominio CloudFront (xxx.cloudfront.net) — apuntar el frontend_domain a esto vía CNAME en tu DNS"
   value       = aws_cloudfront_distribution.frontend.domain_name
 }
 
@@ -126,7 +126,7 @@ output "landing_s3_bucket" {
 }
 
 output "landing_acm_validation_records" {
-  description = "Registros DNS para validar el cert ACM de la landing (2 SANs: massivo.app + www.massivo.app)"
+  description = "Registros DNS para validar el cert ACM de la landing (2 SANs: apex + www del landing)"
   value = {
     for dvo in aws_acm_certificate.landing.domain_validation_options : dvo.domain_name => {
       name  = dvo.resource_record_name
@@ -142,7 +142,7 @@ output "landing_cloudfront_distribution_id" {
 }
 
 output "landing_cloudfront_domain" {
-  description = "Dominio CloudFront landing — apuntar massivo.app + www a esto en Netlify"
+  description = "Dominio CloudFront landing — apuntar apex + www del landing a esto en tu DNS"
   value       = aws_cloudfront_distribution.landing.domain_name
 }
 
@@ -152,7 +152,7 @@ output "docs_s3_bucket" {
 }
 
 output "docs_acm_validation_records" {
-  description = "Registros DNS que hay que crear en NS1 para validar el cert ACM de docs.massivo.app"
+  description = "Registros DNS que hay que crear en tu DNS para validar el cert ACM de docs (docs_domain)"
   value = {
     for dvo in aws_acm_certificate.docs.domain_validation_options : dvo.domain_name => {
       name  = dvo.resource_record_name
@@ -168,7 +168,7 @@ output "docs_cloudfront_distribution_id" {
 }
 
 output "docs_cloudfront_domain" {
-  description = "Dominio CloudFront docs — apuntar docs.massivo.app a esto vía CNAME en NS1"
+  description = "Dominio CloudFront docs — apuntar el docs_domain a esto vía CNAME en tu DNS"
   value       = aws_cloudfront_distribution.docs.domain_name
 }
 

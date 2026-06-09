@@ -100,6 +100,12 @@ variable "docs_domain" {
   default     = "docs.massivo.app"
 }
 
+variable "api_domain" {
+  description = "Subdominio de la API (backend en la EC2). Se usa en el webhook de SES y se registra a mano apuntando a la Elastic IP."
+  type        = string
+  default     = "api.massivo.app"
+}
+
 variable "github_repo" {
   description = "Repo de GitHub que puede assumir el role de CI (formato owner/repo)"
   type        = string
