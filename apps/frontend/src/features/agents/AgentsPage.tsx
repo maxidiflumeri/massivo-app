@@ -172,7 +172,7 @@ export function AgentsPage() {
       )}
 
       {/* Crear */}
-      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Crear agente</DialogTitle>
         <DialogContent>
           <TextField
@@ -255,27 +255,35 @@ function EditAgentDialog({
   };
 
   return (
-    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>Editar agente</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
-          <TextField label="Nombre" value={name} onChange={(e) => setName(e.target.value)} fullWidth />
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              label="Nombre"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              fullWidth
+              sx={{ flex: 1.4 }}
+            />
 
-          <FormControl fullWidth>
-            <InputLabel id="agent-model-label">Modelo</InputLabel>
-            <Select
-              labelId="agent-model-label"
-              label="Modelo"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            >
-              {modelOptions.map((m) => (
-                <MenuItem key={m.value} value={m.value}>
-                  {m.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+            <FormControl fullWidth sx={{ flex: 1 }}>
+              <InputLabel id="agent-model-label">Modelo</InputLabel>
+              <Select
+                labelId="agent-model-label"
+                label="Modelo"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                {modelOptions.map((m) => (
+                  <MenuItem key={m.value} value={m.value}>
+                    {m.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
 
           <TextField
             label="Instrucciones (system prompt)"
@@ -287,28 +295,30 @@ function EditAgentDialog({
             fullWidth
           />
 
-          <Box>
-            <Typography variant="caption" color="text.secondary">
-              Creatividad (temperature): {temperature.toFixed(1)}
-            </Typography>
-            <Slider
-              value={temperature}
-              onChange={(_, v) => setTemperature(v as number)}
-              min={0}
-              max={2}
-              step={0.1}
-              valueLabelDisplay="auto"
-            />
-          </Box>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                Creatividad (temperature): {temperature.toFixed(1)}
+              </Typography>
+              <Slider
+                value={temperature}
+                onChange={(_, v) => setTemperature(v as number)}
+                min={0}
+                max={2}
+                step={0.1}
+                valueLabelDisplay="auto"
+              />
+            </Box>
 
-          <TextField
-            label="Máx. pasos de tools por turno"
-            type="number"
-            value={maxSteps}
-            onChange={(e) => setMaxSteps(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
-            inputProps={{ min: 1, max: 20 }}
-            sx={{ width: 240 }}
-          />
+            <TextField
+              label="Máx. pasos de tools por turno"
+              type="number"
+              value={maxSteps}
+              onChange={(e) => setMaxSteps(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+              inputProps={{ min: 1, max: 20 }}
+              sx={{ width: 240, flexShrink: 0 }}
+            />
+          </Stack>
 
           <Divider />
 
