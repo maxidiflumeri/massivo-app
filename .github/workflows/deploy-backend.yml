@@ -38,6 +38,9 @@ jobs:
       ECR_REPOSITORY: ${{ vars.BACKEND_ECR_REPOSITORY }}
       EC2_INSTANCE_ID: ${{ vars.BACKEND_EC2_INSTANCE_ID }}
       API_URL: ${{ vars.API_URL }}
+      # Path del repo en la EC2. Parametrizado por environment (white-label);
+      # fallback al layout original de massivo si el environment no lo define.
+      APP_DIR: ${{ vars.BACKEND_APP_DIR || '/opt/massivo/app' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,12 +95,14 @@ jobs:
           set -euo pipefail
           export AWS_REGION=${AWS_REGION}
           export BACKEND_IMAGE="${IMAGE_SHA}"
+          # Nombres de containers/red/volumen del compose (\${PROJECT_NAME:-massivo})
+          export PROJECT_NAME=${TARGET}
           # SSM corre como root pero el repo es de ubuntu — usamos
           # sudo -u ubuntu -H para que git vea su ownership correctamente
           # y HOME apunte al de ubuntu (sino git config se rompe).
           # reset --hard + clean -fd para no fallar ante mods locales o
           # archivos untracked que pudieron quedar de debug manual previo.
-          cd /opt/massivo/app
+          cd ${APP_DIR}
           sudo -u ubuntu -H git fetch origin main
           sudo -u ubuntu -H git reset --hard origin/main
           sudo -u ubuntu -H git clean -fd

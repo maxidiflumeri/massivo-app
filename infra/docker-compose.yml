@@ -17,7 +17,7 @@ services:
     # build:
     #   context: ..
     #   dockerfile: apps/backend/Dockerfile
-    container_name: massivo-api
+    container_name: ${PROJECT_NAME:-massivo}-api
     env_file:
       - ../.env
     environment:
@@ -42,7 +42,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: massivo-redis
+    container_name: ${PROJECT_NAME:-massivo}-redis
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     volumes:
       - redis-data:/data
@@ -68,7 +68,7 @@ services:
   # Bound a 127.0.0.1:8888 para que solo nginx pueda alcanzarlo.
   dozzle:
     image: amir20/dozzle:v8
-    container_name: massivo-dozzle
+    container_name: ${PROJECT_NAME:-massivo}-dozzle
     environment:
       DOZZLE_NO_ANALYTICS: "true"
     volumes:
@@ -86,8 +86,8 @@ services:
 
 volumes:
   redis-data:
-    name: massivo-redis-data
+    name: ${PROJECT_NAME:-massivo}-redis-data
 
 networks:
   internal:
-    name: massivo-internal
+    name: ${PROJECT_NAME:-massivo}-internal
