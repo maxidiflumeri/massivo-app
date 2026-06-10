@@ -35,8 +35,9 @@ export interface AgentCustomToolRow {
  *
  * La ejecución delega en `BotHttpExecutor` (SSRF guard, anti DNS-rebinding,
  * timeout clamp, cap 1 MB, rate limit por org). Los args que decidió el modelo
- * viajan como `{ args }` en el BotData, así url/headers/body interpolan con
- * `{{args.x}}` / `{{= args.x }}`.
+ * viajan como `{ args }` en el BotData; url/headers/body los interpolan con la
+ * sintaxis JSONata `{{= args.x }}` (la plana `{{x}}` NO soporta el path `args.x`
+ * porque no acepta puntos — quedaría literal).
  *
  * El executor nunca tira excepción: ante `{ok:false}` devolvemos al modelo un
  * texto que lo instruye a avisar el fallo y seguir ayudando (sin stop: el loop

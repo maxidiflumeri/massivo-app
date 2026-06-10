@@ -449,9 +449,9 @@ function ToolFormDialog({
                   label="URL"
                   value={form.url}
                   onChange={(e) => set('url', e.target.value)}
-                  placeholder="https://api.tudominio.com/stock/{{args.sku}}"
+                  placeholder="https://api.tudominio.com/stock/{{= args.sku }}"
                   fullWidth
-                  helperText="Usá {{args.nombre}} para interpolar los parámetros."
+                  helperText="Usá {{= args.nombre }} para interpolar un parámetro (sintaxis con = para acceder a args)."
                   InputProps={{ sx: { fontFamily: 'monospace', fontSize: 14 } }}
                 />
               </Stack>
@@ -463,12 +463,12 @@ function ToolFormDialog({
                   label="Body (JSON)"
                   value={form.bodyText}
                   onChange={(e) => set('bodyText', e.target.value)}
-                  placeholder={'{\n  "sku": "{{args.sku}}",\n  "cantidad": "{{args.cantidad}}"\n}'}
+                  placeholder={'{\n  "sku": "{{= args.sku }}",\n  "cantidad": "{{= args.cantidad }}"\n}'}
                   multiline
                   minRows={4}
                   fullWidth
                   error={!!bodyError}
-                  helperText={bodyError ?? 'JSON con {{args.x}} en los valores. Opcional.'}
+                  helperText={bodyError ?? 'JSON con {{= args.x }} en los valores. Opcional.'}
                   InputProps={{ sx: { fontFamily: 'monospace', fontSize: 14 } }}
                 />
               )}

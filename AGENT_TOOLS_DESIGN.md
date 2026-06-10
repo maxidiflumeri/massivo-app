@@ -45,7 +45,7 @@ Dos caras de la misma entidad:
 | Cara | Quién la consume | Qué contiene |
 |---|---|---|
 | **Definición** (lo que ve el LLM) | El modelo, vía `tools` del gateway | `name` (slug), `description` (cuándo usarla / cuándo NO), `parameters` (JSON Schema de args) |
-| **Acción** (lo que ejecuta el backend) | `HttpAgentTool` → `BotHttpExecutor` | `method`, `url`, `headers`, `bodyTemplate`, `timeoutMs` — con `{{args.*}}` interpolables |
+| **Acción** (lo que ejecuta el backend) | `HttpAgentTool` → `BotHttpExecutor` | `method`, `url`, `headers`, `bodyTemplate`, `timeoutMs` — con `{{= args.*}}` interpolables |
 
 Las tools se definen **a nivel team** (una vez) y cada agente **elige cuáles
 usa** (m2m), mismo patrón que canales↔agente. La descripción es el 80% del
@@ -82,9 +82,9 @@ model AgentCustomTool {
 
   // --- Acción HTTP ---
   method       String  // GET|POST|PUT|PATCH|DELETE
-  url          String  // soporta {{args.x}}
+  url          String  // soporta {{= args.x}}
   headers      Json?   // [{key, value, secret: bool}] — value encriptado si secret
-  bodyTemplate Json?   // shape JSON con {{args.x}} en las hojas (POST/PUT/PATCH)
+  bodyTemplate Json?   // shape JSON con {{= args.x}} en las hojas (POST/PUT/PATCH)
   timeoutMs    Int?    // el executor clampa 100..10000
 
   enabled   Boolean  @default(true)
@@ -232,7 +232,7 @@ Nueva sección **"Herramientas"** dentro de la plataforma agéntica
      descripción | requerido` → el front genera el JSON Schema. NO exponer JSON
      crudo de entrada (modo avanzado opcional después).
    - Acción HTTP: reusar la UX del nodo HTTP del bot designer (método, URL,
-     headers con toggle "secreto", body). Placeholder hint: `{{args.sku}}`.
+     headers con toggle "secreto", body). Placeholder hint: `{{= args.sku}}`.
 3. **Botón "Probar"**: form auto-generado desde los parámetros → llama
    `POST /:id/test` → muestra status, duración y body (o el código de error del
    executor). Clave para que el usuario no descubra en producción que su
@@ -279,7 +279,7 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
 
 - **Scope de la tool**: team (propuesto, igual que `Agent`) vs org. Si aparece
   el caso "compartir tools entre teams", se sube después.
-- **`bodyTemplate` como JSON con `{{args.*}}` en hojas** vs editor de texto
+- **`bodyTemplate` como JSON con `{{= args.*}}` en hojas** vs editor de texto
   crudo. Propuesto: JSON (reusa `interpolateBodyLeaves` del executor).
 - **Resultado para el modelo**: ¿body completo truncado (v0) o exigir transform
   JSONata? Propuesto: truncado v0, JSONata opcional en slice 3.
@@ -306,7 +306,7 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
   (`/dashboard/agents/tools`, sub-ítem del grupo Agentes, gated por `permissions.hasAi`):
   lista con enabled/host/método/#agentes + form con **builder de parámetros**
   (filas nombre/tipo/descripción/obligatorio → JSON Schema vía `rowsToSchema`/
-  `schemaToRows`) y **acción HTTP** (método, URL con hint `{{args.x}}`, headers
+  `schemaToRows`) y **acción HTTP** (método, URL con hint `{{= args.x}}`, headers
   con toggle secreto + reveal, body JSON validado en vivo solo en POST/PUT/PATCH,
   timeout). En el **editor del agente**: `ToolsSection` con checkboxes (instant-save,
   built-in escalate fija). Detalles no fijados por el diseño: se agregó `put<T>`
@@ -335,3 +335,16 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
   cayó en el umbral (su `curl` pasaba por mandar `curl/x`). Plan: validar desde **prod
   (IP de la EC2)**, que casi seguro tiene mejor reputación. El fix vale igual para el
   resto de endpoints con WAF.
+- **2026-06-10 (BUG sintaxis de interpolación)** — Open-Meteo daba 403 también desde
+  la EC2 → es **política de Open-Meteo** (bloquea clouds/datacenters, free tier
+  no-comercial). Alternativa que SÍ anda desde servidores: **MET Norway / Yr.no**
+  (`api.met.no`, gratis, sin key, exige `User-Agent` identificable con contacto —
+  valida nuestro fix). Al probar MET salió a la luz un **bug propio**: la URL llegaba
+  con `{{args.lat}}` **literal**. Causa: la sintaxis plana `{{var}}` de `interpolate.ts`
+  solo matchea `[a-zA-Z_][a-zA-Z0-9_]*` (SIN puntos) → `{{args.lat}}` no matchea y queda
+  tal cual. **La sintaxis correcta para paths es JSONata `{{= args.x }}`** (verificado:
+  `{{args.lat}}`→literal, `{{= args.lat }}`→`-34.61`). postman-echo lo ocultó (200 con el
+  placeholder literal → el agente alucinaba el clima). Fix: corregidos los hints/placeholder
+  de la UI (`ToolsPage`), el comentario de `HttpAgentTool` y este doc para enseñar
+  `{{= args.x }}`. El motor de interpolación NO se tocó (es compartido con el bot).
+  **Pendiente de evaluar**: si conviene además aplanar args para permitir `{{x}}` simple.
