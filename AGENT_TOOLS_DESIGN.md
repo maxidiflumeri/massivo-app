@@ -265,7 +265,7 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
 ### Slice 3 — operación
 - [ ] Botón "Probar" (endpoint `/test` + form de args)
 - [x] Telemetría: logs por invocación — en el runtime (`Tool → invoke`/`✓`/`✗ EXCEPCIÓN`/`DESCONOCIDA` con agent/tool/conv/args/durationMs) y en `HttpAgentTool` (`HTTP →`/`✓`/`✗` con status/error/durationMs + preview del body, clave para debuggear 4xx/5xx). Adelantado durante el smoke real. **Pendiente refinar**: nivel de log / PII de args+body para prod
-- [ ] Default `User-Agent: massivo-agent/1.0` en el executor (algunos WAF —p.ej. Open-Meteo— devuelven 403 sin él; ver bitácora 2026-06-10)
+- [x] Default `User-Agent` en el executor (`Mozilla/5.0 (compatible; HttpBot/1.0)`, override env `BOT_HTTP_USER_AGENT`) — undici manda `user-agent: undici` con el dispatcher custom del IP-pinning, y varios WAF lo bloquean. **OJO**: no alcanzó para Open-Meteo desde IP residencial (su WAF puntúa reputación de IP, no solo el UA) → a validar desde prod (IP EC2)
 - [ ] (opcional) transform de respuesta con JSONata para achicar lo que ve el LLM
 
 ### Futuro (fuera de alcance v0)
@@ -326,3 +326,12 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
   `188.40.99.226`, IPv4-only) también da 200 → la diferencia está en los **headers** que manda undici;
   sospecha: falta `User-Agent` (Slice 3). (5) **postman-echo** (refleja args/headers) → ✓ 200, smoke
   cerrado. Open-Meteo queda como caso para validar el fix del User-Agent.
+- **2026-06-10 (fix User-Agent)** — postman-echo reveló que el executor manda
+  `user-agent: undici` (no `node` como el fetch global) por el dispatcher custom del
+  IP-pinning. Se agregó default `User-Agent: Mozilla/5.0 (compatible; HttpBot/1.0)`
+  (override `BOT_HTTP_USER_AGENT`) en el executor. **No resolvió Open-Meteo desde la
+  IP residencial de Maxi**: probado por mí, `undici`/`node`/browser/sin-UA todos dan 200
+  desde otra IP → el WAF de Open-Meteo combina **reputación de IP + UA**, y la IP local
+  cayó en el umbral (su `curl` pasaba por mandar `curl/x`). Plan: validar desde **prod
+  (IP de la EC2)**, que casi seguro tiene mejor reputación. El fix vale igual para el
+  resto de endpoints con WAF.

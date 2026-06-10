@@ -53,6 +53,15 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const MIN_TIMEOUT_MS = 100;
 const MAX_TIMEOUT_MS = 10_000;
 
+/**
+ * User-Agent por defecto. Con un dispatcher custom (el del IP-pinning) undici
+ * manda `user-agent: undici`, y varios WAF lo bloquean (403). Mandamos uno
+ * identificable salvo que el cliente haya seteado el suyo en los headers.
+ * Override por env (`BOT_HTTP_USER_AGENT`) para white-label / personalización.
+ */
+const DEFAULT_USER_AGENT =
+  process.env.BOT_HTTP_USER_AGENT || 'Mozilla/5.0 (compatible; HttpBot/1.0)';
+
 export interface ExecuteOptions {
   mode: 'mock' | 'real';
   configId: string;
@@ -178,6 +187,11 @@ export class BotHttpExecutor {
         !Object.keys(finalHeaders).find((k) => k.toLowerCase() === 'content-type')
       ) {
         finalHeaders['Content-Type'] = 'application/json';
+      }
+      // Default User-Agent: undici manda 'undici' con dispatcher custom y varios
+      // WAF lo bloquean (403). Lo seteamos salvo que el cliente ya tenga el suyo.
+      if (!Object.keys(finalHeaders).find((k) => k.toLowerCase() === 'user-agent')) {
+        finalHeaders['User-Agent'] = DEFAULT_USER_AGENT;
       }
 
       const res = await undiciFetch(urlInterp, {
