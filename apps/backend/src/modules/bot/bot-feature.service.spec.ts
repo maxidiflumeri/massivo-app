@@ -12,13 +12,16 @@ function makeConfig(envOn: boolean): ConfigService {
   } as unknown as ConfigService;
 }
 
-function makePrisma(orgRow: { botEnabled: boolean } | null) {
+function makePrisma(orgRow: { plan: { features: { bot?: boolean } } } | null) {
   return {
     organization: {
       findUnique: jest.fn().mockResolvedValue(orgRow),
     },
   } as never;
 }
+
+const planWithBot = { plan: { features: { bot: true } } };
+const planWithoutBot = { plan: { features: { bot: false } } };
 
 const ctx: RequestContext = {
   organizationId: 'org-1',
@@ -28,47 +31,54 @@ const ctx: RequestContext = {
 
 describe('BotFeatureService', () => {
   it('isEnabled = false si env off, sin tocar DB', async () => {
-    const svc = new BotFeatureService(makeConfig(false), makePrisma({ botEnabled: true }));
+    const svc = new BotFeatureService(makeConfig(false), makePrisma(planWithBot));
     await TenantContext.run(ctx, async () => {
       expect(await svc.isEnabled()).toBe(false);
     });
   });
 
-  it('isEnabled = false si env on pero org off', async () => {
-    const svc = new BotFeatureService(makeConfig(true), makePrisma({ botEnabled: false }));
+  it('isEnabled = false si env on pero el plan no incluye bots', async () => {
+    const svc = new BotFeatureService(makeConfig(true), makePrisma(planWithoutBot));
     await TenantContext.run(ctx, async () => {
       expect(await svc.isEnabled()).toBe(false);
     });
   });
 
-  it('isEnabled = true si env on AND org on', async () => {
-    const svc = new BotFeatureService(makeConfig(true), makePrisma({ botEnabled: true }));
+  it('isEnabled = false si la org no existe', async () => {
+    const svc = new BotFeatureService(makeConfig(true), makePrisma(null));
+    await TenantContext.run(ctx, async () => {
+      expect(await svc.isEnabled()).toBe(false);
+    });
+  });
+
+  it('isEnabled = true si env on AND el plan incluye bots', async () => {
+    const svc = new BotFeatureService(makeConfig(true), makePrisma(planWithBot));
     await TenantContext.run(ctx, async () => {
       expect(await svc.isEnabled()).toBe(true);
     });
   });
 
   it('isEnabled = false sin contexto tenant (defensive)', async () => {
-    const svc = new BotFeatureService(makeConfig(true), makePrisma({ botEnabled: true }));
+    const svc = new BotFeatureService(makeConfig(true), makePrisma(planWithBot));
     expect(await svc.isEnabled()).toBe(false);
   });
 
   it('assertEnabled lanza Forbidden si env off', async () => {
-    const svc = new BotFeatureService(makeConfig(false), makePrisma({ botEnabled: true }));
+    const svc = new BotFeatureService(makeConfig(false), makePrisma(planWithBot));
     await TenantContext.run(ctx, async () => {
       await expect(svc.assertEnabled()).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
-  it('assertEnabled lanza Forbidden si org off', async () => {
-    const svc = new BotFeatureService(makeConfig(true), makePrisma({ botEnabled: false }));
+  it('assertEnabled lanza Forbidden si el plan no incluye bots', async () => {
+    const svc = new BotFeatureService(makeConfig(true), makePrisma(planWithoutBot));
     await TenantContext.run(ctx, async () => {
       await expect(svc.assertEnabled()).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
-  it('assertEnabled pasa si ambos on', async () => {
-    const svc = new BotFeatureService(makeConfig(true), makePrisma({ botEnabled: true }));
+  it('assertEnabled pasa si env on y el plan incluye bots', async () => {
+    const svc = new BotFeatureService(makeConfig(true), makePrisma(planWithBot));
     await TenantContext.run(ctx, async () => {
       await expect(svc.assertEnabled()).resolves.toBeUndefined();
     });

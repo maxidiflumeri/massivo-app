@@ -48,11 +48,6 @@ import { PlanManagement } from '../features/billing/PlanManagement';
 import { useApi } from '../api/client';
 
 const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
-// 4.O.1 — kill-switch del feature de bots (env). El backend además valida
-// `Organization.botEnabled`; acá sólo ocultamos el item del sidebar para
-// orgs sin la feature contratada (mostramos siempre si env está prendido —
-// el backend devuelve 403 si la org no la tiene y la página lo refleja).
-const WAPI_BOT_FEATURE_ENABLED = import.meta.env.VITE_WAPI_BOT_FEATURE_ENABLED === 'true';
 
 export const SIDEBAR_WIDTH = 248;
 export const SIDEBAR_COLLAPSED_WIDTH = 64;
@@ -84,9 +79,9 @@ const buildNavGroups = (flags: PlanNavFlags): NavGroupSpec[] => [
     items: [{ to: '/dashboard', label: 'Inicio', icon: <HomeIcon fontSize="small" /> }],
   },
   // Bots: entidad cross-canal (un bot se conecta a N canales) → sección propia,
-  // fuera de WhatsApp. Gated por el kill-switch del feature (env) AND el plan
-  // de la org activa (features.bot — FREE no lo trae).
-  ...(WAPI_BOT_FEATURE_ENABLED && flags.bots
+  // fuera de WhatsApp. Gated por el plan de la org activa (features.bot del /me,
+  // que ya viene AND-eado con el kill-switch de emergencia del backend).
+  ...(flags.bots
     ? [
         {
           label: 'Bots',

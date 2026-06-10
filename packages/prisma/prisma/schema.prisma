@@ -112,10 +112,6 @@ model Organization {
   plan             Plan      @relation(fields: [planId], references: [id])
   stripeCustomerId String?   @unique
   status           OrgStatus @default(ACTIVE)
-  // Feature flag por organización (4.O.1). Combinado con WAPI_BOT_FEATURE_ENABLED
-  // (env kill-switch) gobierna acceso al motor de bots, endpoints CRUD y UI.
-  // Default false: cobramos como add-on de plan superior, se enciende manual.
-  botEnabled       Boolean   @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

@@ -72,7 +72,6 @@ jobs:
         env:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
           VITE_ENABLE_DEV_SIMULATOR: 'false'
-          VITE_WAPI_BOT_FEATURE_ENABLED: 'true'
         run: pnpm --filter @massivo/frontend exec vite build --mode "$TARGET"
 
       - name: Configure AWS credentials via OIDC

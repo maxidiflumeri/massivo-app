@@ -11,8 +11,9 @@ import { TenantContext } from '../../common/auth/tenant-context';
 
 /**
  * 4.O.1 — Feature gate del bot. Dos niveles AND:
- *   1. `WAPI_BOT_FEATURE_ENABLED=true` (env, kill-switch global)
- *   2. `Organization.botEnabled = true` (per-org, add-on de plan superior)
+ *   1. `WAPI_BOT_FEATURE_ENABLED=true` (env, kill-switch global de EMERGENCIA
+ *      operativa — apagar todo el motor sin deploy si algo se descontrola)
+ *   2. el plan de la org incluye bots (`Plan.features.bot === true`)
  *
  * Si cualquiera está off, todos los endpoints `/wapi/configs/:id/bot*`
  * devuelven 403, el motor de bot ignora inbounds y la UI oculta el item.
@@ -35,22 +36,18 @@ export class BotFeatureService {
     return this.config.get<string>('WAPI_BOT_FEATURE_ENABLED') === 'true';
   }
 
-  /** True si el plan trae `features.bot=true` (preferido) o si la org tiene el
-   *  flag legacy `botEnabled=true` como override. Hace 1 SELECT con join al
-   *  plan. Usa el cliente raíz (no scoped): la lookup es por orgId explícito
-   *  y la tenant-extension no aplica a `Organization`. */
+  /** True si el plan de la org trae `features.bot=true`. Hace 1 SELECT con
+   *  join al plan. Usa el cliente raíz (no scoped): la lookup es por orgId
+   *  explícito y la tenant-extension no aplica a `Organization`. */
   async isOrgEnabled(organizationId: string): Promise<boolean> {
     const row = await this.prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { botEnabled: true, plan: { select: { features: true } } } as never,
+      select: { plan: { select: { features: true } } } as never,
     });
     const r = row as unknown as {
-      botEnabled?: boolean;
       plan?: { features?: Record<string, unknown> | null };
     } | null;
-    if (!r) return false;
-    if (r.botEnabled === true) return true; // legacy per-org override
-    return r.plan?.features?.bot === true;
+    return r?.plan?.features?.bot === true;
   }
 
   /** AND de env + org. Devuelve false si falta contexto (defensive). */
