@@ -48,4 +48,8 @@ del target. Imposible aplicar rgbot sobre el state de massivo.
   CloudFront, registros de validación ACM); los registros los creás vos en tu DNS.
 - **pgvector**: en la RDS nueva, crear `CREATE EXTENSION vector` como master user
   antes de `prisma migrate deploy`.
+- **Seed de planes** (una vez, tras el primer deploy del backend): las migraciones crean
+  el esquema pero NO los datos — sin los planes, el webhook de Clerk falla con
+  "No se encontró el plan FREE" al crear la primera org. Correr en la EC2:
+  `docker exec <project>-api sh -c "cd /app/packages/prisma && npx ts-node prisma/seed.ts"`
 - **`.env` del backend** en la EC2 (secrets, `APP_NAME`, dominios), Clerk, Meta, email, Stripe.
