@@ -25,6 +25,7 @@ import { InboxPage } from './features/inbox/InboxPage';
 import { WapiQuickRepliesPage } from './features/wapi/quick-replies/WapiQuickRepliesPage';
 import { BotsPage } from './features/bots/BotsPage';
 import { AgentsPage } from './features/agents/AgentsPage';
+import { ToolsPage } from './features/agents/tools/ToolsPage';
 import { WapiLivePage } from './features/wapi/live/WapiLivePage';
 import { WapiSimulatorPage } from './features/dev/WapiSimulatorPage';
 import { WapiSimulatorChatPage } from './features/dev/WapiSimulatorChatPage';
@@ -88,6 +89,7 @@ export function App() {
         <Route path="wapi/quick-replies" element={<WapiQuickRepliesPage />} />
         <Route path="bots" element={<BotsPage />} />
         <Route path="agents" element={<AgentsPage />} />
+        <Route path="agents/tools" element={<ToolsPage />} />
         {/* Bot dejó de ser sub-feature de WhatsApp (es cross-canal) → /dashboard/bots.
             Redirect del path viejo por compat. */}
         <Route path="wapi/bots" element={<Navigate to="/dashboard/bots" replace />} />

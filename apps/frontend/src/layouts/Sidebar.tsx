@@ -39,6 +39,7 @@ import InstagramIcon from '@mui/icons-material/Instagram';
 import HubIcon from '@mui/icons-material/Hub';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import BuildIcon from '@mui/icons-material/Build';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import HistoryIcon from '@mui/icons-material/History';
 import AssessmentIcon from '@mui/icons-material/Assessment';
@@ -107,6 +108,11 @@ const buildNavGroups = (flags: PlanNavFlags): NavGroupSpec[] => [
               to: '/dashboard/agents',
               label: 'Mis agentes',
               icon: <AutoAwesomeIcon fontSize="small" />,
+            },
+            {
+              to: '/dashboard/agents/tools',
+              label: 'Herramientas',
+              icon: <BuildIcon fontSize="small" />,
             },
           ],
         },
@@ -603,7 +609,7 @@ function NavRow({
       <ListItemButton
         component={NavLink}
         to={item.to!}
-        end={item.to === '/dashboard'}
+        end={item.to === '/dashboard' || item.to === '/dashboard/agents'}
         onClick={() => onNavigate?.()}
         sx={baseSx}
       >

@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -35,6 +36,8 @@ import { useNotify } from '../../feedback/NotifyProvider';
 import { useConfirm } from '../../feedback/ConfirmProvider';
 import { agentsApi } from './api';
 import { AGENT_MODEL_PRESETS, type Agent, type AgentDocument } from './types';
+import { agentToolsApi } from './tools/api';
+import type { AgentTool } from './tools/types';
 import { brand } from '../../brand';
 
 export function AgentsPage() {
@@ -342,6 +345,10 @@ function EditAgentDialog({
 
           <Divider />
 
+          <ToolsSection agentId={agent.id} />
+
+          <Divider />
+
           <KnowledgeSection agentId={agent.id} />
         </Stack>
       </DialogContent>
@@ -366,6 +373,114 @@ function docStatusChip(status: string): { label: string; color: 'default' | 'suc
     default:
       return { label: 'Pendiente', color: 'default' };
   }
+}
+
+/**
+ * Herramientas del agente: checkboxes de las tools del team (m2m). La built-in
+ * `escalate_to_operator` se muestra fija (siempre disponible, no desactivable en
+ * v0). Cada cambio persiste al toque (PUT reemplaza el set completo), igual que
+ * la asignación de canales.
+ */
+function ToolsSection({ agentId }: { agentId: string }) {
+  const api = useApi();
+  const notify = useNotify();
+
+  const [tools, setTools] = useState<AgentTool[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [all, assigned] = await Promise.all([
+        agentToolsApi.list(api),
+        agentToolsApi.listForAgent(api, agentId),
+      ]);
+      setTools(all);
+      setSelected(new Set(assigned.toolIds));
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : 'No se pudieron cargar las herramientas');
+    } finally {
+      setLoading(false);
+    }
+  }, [api, agentId, notify]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const toggle = async (toolId: string, checked: boolean) => {
+    const prev = selected;
+    const next = new Set(prev);
+    if (checked) next.add(toolId);
+    else next.delete(toolId);
+    setSelected(next); // optimista
+    setSaving(true);
+    try {
+      await agentToolsApi.setForAgent(api, agentId, [...next]);
+    } catch (err) {
+      setSelected(prev); // rollback
+      notify.error(err instanceof Error ? err.message : 'No se pudo actualizar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Box>
+      <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 0.5 }}>
+        <Typography variant="subtitle2">Herramientas</Typography>
+        {saving && <CircularProgress size={14} />}
+      </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+        Acciones que este agente puede invocar. Se gestionan en <strong>Agentes → Herramientas</strong>.
+      </Typography>
+
+      <Stack spacing={0.5}>
+        {/* Built-in fija */}
+        <FormControlLabel
+          control={<Checkbox checked disabled size="small" />}
+          label={
+            <Stack direction="row" alignItems="center" gap={0.75}>
+              <Typography variant="body2">Escalar a un operador</Typography>
+              <Chip size="small" variant="outlined" label="siempre disponible" />
+            </Stack>
+          }
+        />
+
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
+            <CircularProgress size={20} />
+          </Box>
+        ) : tools.length === 0 ? (
+          <Typography variant="caption" color="text.secondary">
+            Todavía no hay herramientas en el team. Crealas en <strong>Agentes → Herramientas</strong>.
+          </Typography>
+        ) : (
+          tools.map((t) => (
+            <FormControlLabel
+              key={t.id}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={selected.has(t.id)}
+                  onChange={(e) => void toggle(t.id, e.target.checked)}
+                />
+              }
+              label={
+                <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap">
+                  <Typography variant="body2">{t.displayName}</Typography>
+                  <Chip size="small" label={t.name} sx={{ fontFamily: 'monospace' }} />
+                  {!t.enabled && <Chip size="small" color="warning" variant="outlined" label="inactiva" />}
+                </Stack>
+              }
+            />
+          ))
+        )}
+      </Stack>
+    </Box>
+  );
 }
 
 /** Base de conocimiento (RAG) del agente: subir textos/archivos que se vectorizan. */

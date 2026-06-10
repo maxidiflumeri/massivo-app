@@ -258,9 +258,9 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
 - [ ] Smoke real: tool contra un endpoint público + conversación por webchat dev
 
 ### Slice 2 — UI
-- [ ] `features/agents/tools/`: lista + form (builder de parámetros + HTTP)
-- [ ] Checkboxes en el editor del agente
-- [ ] Enmascarado de headers secretos
+- [x] `features/agents/tools/`: lista + form (builder de parámetros + acción HTTP) — `ToolsPage.tsx`, sección "Herramientas" (`/dashboard/agents/tools`) bajo el grupo Agentes
+- [x] Checkboxes en el editor del agente (`ToolsSection` en `AgentsPage`, instant-save vía `PUT /api/agents/:id/tools`; built-in `escalate_to_operator` fija)
+- [x] Enmascarado de headers secretos (toggle "secreto" + reveal; al enfocar un `••••` se limpia para reingresar, si no se toca el backend conserva el secreto)
 
 ### Slice 3 — operación
 - [ ] Botón "Probar" (endpoint `/test` + form de args)
@@ -301,3 +301,16 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
   tool/agent scoped antes de escribir con el cliente raíz); error de tool al
   modelo sin `stop` (el loop sigue y el modelo redacta el aviso).
   Próximo paso: smoke real (endpoint público + webchat dev) → Slice 2 (UI).
+- **2026-06-10 (cont.)** — Slice 2 (UI) COMPLETO. Nueva sección **"Herramientas"**
+  (`/dashboard/agents/tools`, sub-ítem del grupo Agentes, gated por `permissions.hasAi`):
+  lista con enabled/host/método/#agentes + form con **builder de parámetros**
+  (filas nombre/tipo/descripción/obligatorio → JSON Schema vía `rowsToSchema`/
+  `schemaToRows`) y **acción HTTP** (método, URL con hint `{{args.x}}`, headers
+  con toggle secreto + reveal, body JSON validado en vivo solo en POST/PUT/PATCH,
+  timeout). En el **editor del agente**: `ToolsSection` con checkboxes (instant-save,
+  built-in escalate fija). Detalles no fijados por el diseño: se agregó `put<T>`
+  al `ApiClient` (faltaba); auto-sugerencia de slug desde el displayName hasta que
+  el usuario lo edita; `end` exacto en el NavLink de `/dashboard/agents` para que
+  no quede activo en la subruta. tsc + eslint limpios (el front no tiene unit
+  tests). Pendientes: **smoke real** (sigue abierto) y **Slice 3** (botón "Probar"
+  → falta el endpoint `POST /api/agent-tools/:id/test` + telemetría por invocación).

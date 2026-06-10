@@ -19,6 +19,7 @@ export interface DownloadedFile {
 export interface ApiClient {
   get<T>(path: string, init?: RequestInit): Promise<T>;
   post<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
+  put<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
   patch<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>;
   delete<T>(path: string, init?: RequestInit): Promise<T>;
   /**
@@ -159,6 +160,8 @@ export function useApi(): ApiClient {
       get: (path, init) => request(path, { ...init, method: 'GET' }),
       post: (path, body, init) =>
         request(path, { ...init, method: 'POST', body: body !== undefined ? JSON.stringify(body) : undefined }),
+      put: (path, body, init) =>
+        request(path, { ...init, method: 'PUT', body: body !== undefined ? JSON.stringify(body) : undefined }),
       patch: (path, body, init) =>
         request(path, { ...init, method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
       delete: (path, init) => request(path, { ...init, method: 'DELETE' }),
