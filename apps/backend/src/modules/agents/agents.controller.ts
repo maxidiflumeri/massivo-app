@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -20,7 +21,13 @@ import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { Audit } from '../../common/audit/audit.decorator';
 import { AgentsService } from './agents.service';
 import { AgentsFeatureGuard } from './agents-feature.guard';
-import { ConnectChannelDto, CreateAgentDto, UpdateAgentConfigDto } from './agents.dto';
+import { AgentCustomToolsService } from './agent-custom-tools.service';
+import {
+  AssignAgentToolsDto,
+  ConnectChannelDto,
+  CreateAgentDto,
+  UpdateAgentConfigDto,
+} from './agents.dto';
 
 /**
  * API de Agentes IA. Reusa los permisos CASL de `WapiConfig` (read/update), igual
@@ -30,7 +37,10 @@ import { ConnectChannelDto, CreateAgentDto, UpdateAgentConfigDto } from './agent
 @UseGuards(ClerkAuthGuard, TenantContextGuard, AgentsFeatureGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
 export class AgentsController {
-  constructor(private readonly service: AgentsService) {}
+  constructor(
+    private readonly service: AgentsService,
+    private readonly customTools: AgentCustomToolsService,
+  ) {}
 
   @Get()
   @CheckPolicies((a: AppAbility) => a.can('read', 'WapiConfig'))
@@ -78,5 +88,18 @@ export class AgentsController {
   @Audit({ action: 'agent.disconnected', resourceType: 'Agent', resourceIdFrom: 'param:id' })
   disconnect(@Param('id') id: string, @Body() dto: ConnectChannelDto) {
     return this.service.disconnectChannel(id, dto.channelId);
+  }
+
+  @Get(':id/tools')
+  @CheckPolicies((a: AppAbility) => a.can('read', 'WapiConfig'))
+  listTools(@Param('id') id: string) {
+    return this.customTools.listForAgent(id);
+  }
+
+  @Put(':id/tools')
+  @CheckPolicies((a: AppAbility) => a.can('update', 'WapiConfig'))
+  @Audit({ action: 'agent.tools.assigned', resourceType: 'Agent', resourceIdFrom: 'param:id' })
+  assignTools(@Param('id') id: string, @Body() dto: AssignAgentToolsDto) {
+    return this.customTools.assignToAgent(id, dto.toolIds);
   }
 }

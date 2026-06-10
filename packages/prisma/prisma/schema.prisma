@@ -144,6 +144,7 @@ model Organization {
   bots                Bot[]
   agents              Agent[]
   agentDocuments      AgentDocument[]
+  agentCustomTools    AgentCustomTool[]
   notifications       Notification[]
 
   contacts                Contact[]
@@ -191,6 +192,7 @@ model Team {
   bots                Bot[]
   agents              Agent[]
   agentDocuments      AgentDocument[]
+  agentCustomTools    AgentCustomTool[]
   notifications       Notification[]
 
   contacts       Contact[]
@@ -783,9 +785,66 @@ model Agent {
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   channels     Channel[]
   documents    AgentDocument[]
+  customToolLinks AgentCustomToolLink[]
 
   @@index([organizationId])
   @@index([teamId])
+}
+
+enum AgentCustomToolType {
+  HTTP
+  // Futuro: MCP, etc.
+}
+
+/// Tool personalizada definida por el usuario a nivel team. Dos caras: la
+/// definición (name/description/parameters = lo que ve el LLM para rutear) y
+/// la acción HTTP (lo que ejecuta el backend vía BotHttpExecutor). Los agentes
+/// eligen cuáles usan vía AgentCustomToolLink (m2m). Se llama AgentCustomTool
+/// (no AgentTool) para no colisionar con la interfaz TS del runtime.
+model AgentCustomTool {
+  id             String              @id @default(cuid())
+  organizationId String
+  teamId         String
+  type           AgentCustomToolType @default(HTTP)
+
+  // --- Definición (lo que ve el LLM) ---
+  // Slug ^[a-z][a-z0-9_]{0,63}$, único por team; no puede pisar built-ins.
+  name        String
+  displayName String
+  description String
+  parameters  Json // JSON Schema { type: "object", properties, required }
+
+  // --- Acción HTTP ---
+  method       String // GET|POST|PUT|PATCH|DELETE
+  url          String // soporta {{args.x}}
+  headers      Json? // [{ key, value, secret }] — value encriptado si secret
+  bodyTemplate Json? // shape JSON con {{args.x}} en las hojas (POST/PUT/PATCH)
+  timeoutMs    Int? // el executor clampa 100..10000
+
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  agents       AgentCustomToolLink[]
+
+  @@unique([teamId, name])
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+/// m2m agente↔tool: qué agente usa qué tool.
+model AgentCustomToolLink {
+  agentId   String
+  toolId    String
+  createdAt DateTime @default(now())
+
+  agent Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tool  AgentCustomTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, toolId])
+  @@index([toolId])
 }
 
 enum AgentDocumentSource {

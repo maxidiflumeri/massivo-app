@@ -95,7 +95,16 @@ function makePrisma(seedBots: Row[] = []) {
     }),
   };
 
-  const prisma = { scoped: { bot, channel: wapiConfig } } as never;
+  const prisma = {
+    scoped: { bot, channel: wapiConfig },
+    // Quota check de createBot (Plan.limits.bots): plan generoso por default.
+    organization: {
+      findUniqueOrThrow: jest.fn().mockResolvedValue({
+        plan: { code: 'TEST', limits: { bots: -1 } },
+      }),
+    },
+    bot: { count: jest.fn().mockResolvedValue(0) },
+  } as never;
   return { prisma, bots, configs, botModel: bot, wapiConfig };
 }
 

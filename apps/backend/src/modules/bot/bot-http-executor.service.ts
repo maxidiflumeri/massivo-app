@@ -53,11 +53,16 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const MIN_TIMEOUT_MS = 100;
 const MAX_TIMEOUT_MS = 10_000;
 
-interface ExecuteOptions {
+export interface ExecuteOptions {
   mode: 'mock' | 'real';
   configId: string;
   nodeId: string;
   organizationId: string;
+  /** Action del audit log. Default: el nodo HTTP del bot. Las tools de agentes
+   *  pasan la suya ('agent.tool.http.executed') para poder filtrar por origen. */
+  auditAction?: string;
+  /** ResourceType del audit log. Default: 'WapiBotHttpNode'. */
+  auditResourceType?: string;
 }
 
 @Injectable()
@@ -208,8 +213,8 @@ export class BotHttpExecutor {
       const result: HttpExecResult = { ok, status: res.status, body, durationMs };
 
       void this.audit.log({
-        action: 'wapi.bot.http.executed',
-        resourceType: 'WapiBotHttpNode',
+        action: options.auditAction ?? 'wapi.bot.http.executed',
+        resourceType: options.auditResourceType ?? 'WapiBotHttpNode',
         resourceId: `${options.configId}:${options.nodeId}`,
         metadata: {
           configId: options.configId,

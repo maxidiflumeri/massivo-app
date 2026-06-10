@@ -109,6 +109,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
     // Núcleo compartido del inbound (upsert de conversación) — lo usan el ingest
     // agnóstico (ChannelsModule) y el webhook de WhatsApp.
     ConversationCoreService,
+    // Ejecutor HTTP endurecido (SSRF/timeout/rate-limit) — lo reusan las tools
+    // custom de los agentes IA (AgentsModule).
+    BotHttpExecutor,
   ],
 })
 export class WapiModule {}

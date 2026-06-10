@@ -130,7 +130,9 @@ export class AgentRuntimeService {
       }
       const system = retrieved.length ? `${base}\n\n${buildContextBlock(retrieved)}` : base;
 
-      const toolDefs = this.tools.defs();
+      // Set per-agent: built-ins + custom tools linkeadas (foto consistente del turno).
+      const resolvedTools = await this.tools.resolveForAgent(agent.id);
+      const toolDefs = resolvedTools.defs;
       const toolCtx: AgentToolContext = {
         organizationId: channel.organizationId,
         teamId: channel.teamId,
@@ -166,7 +168,7 @@ export class AgentRuntimeService {
         messages.push({ role: 'assistant', content: result.text, toolCalls: result.toolCalls });
         let stop = false;
         for (const call of result.toolCalls) {
-          const tool = this.tools.get(call.name);
+          const tool = resolvedTools.get(call.name);
           let content: string;
           if (!tool) {
             content = `Tool desconocida: ${call.name}`;

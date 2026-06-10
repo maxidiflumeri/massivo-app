@@ -5,7 +5,9 @@ import { EventsModule } from '../events/events.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AgentsController } from './agents.controller';
 import { AgentDocumentsController } from './agent-documents.controller';
+import { AgentCustomToolsController } from './agent-custom-tools.controller';
 import { AgentsService } from './agents.service';
+import { AgentCustomToolsService } from './agent-custom-tools.service';
 import { AgentRuntimeService } from './agent-runtime.service';
 import { AgentDocumentService } from './rag/agent-document.service';
 import { AgentRetrievalService } from './rag/agent-retrieval.service';
@@ -34,9 +36,10 @@ import { EscalateToOperatorTool } from './tools/escalate-to-operator.tool';
  */
 @Module({
   imports: [WapiModule, EventsModule, NotificationsModule],
-  controllers: [AgentsController, AgentDocumentsController],
+  controllers: [AgentsController, AgentDocumentsController, AgentCustomToolsController],
   providers: [
     AgentsService,
+    AgentCustomToolsService,
     AgentRuntimeService,
     AgentDocumentService,
     AgentRetrievalService,

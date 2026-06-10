@@ -3,7 +3,8 @@ import { AgentRuntimeService, type AgentRunInput } from './agent-runtime.service
 describe('AgentRuntimeService', () => {
   let prisma: any;
   let gateway: { generate: jest.Mock };
-  let tools: { defs: jest.Mock; get: jest.Mock };
+  let toolsGet: jest.Mock;
+  let tools: { resolveForAgent: jest.Mock };
   let adapter: { send: jest.Mock };
   let registry: { get: jest.Mock };
   let encryption: { decrypt: jest.Mock };
@@ -43,7 +44,10 @@ describe('AgentRuntimeService', () => {
     gateway = { generate: jest.fn() };
     adapter = { send: jest.fn().mockResolvedValue({ externalMessageId: 'ext-1' }) };
     registry = { get: jest.fn().mockReturnValue(adapter) };
-    tools = { defs: jest.fn().mockReturnValue([]), get: jest.fn() };
+    toolsGet = jest.fn();
+    tools = {
+      resolveForAgent: jest.fn().mockResolvedValue({ defs: [], get: toolsGet }),
+    };
     encryption = { decrypt: jest.fn((v: string) => v) };
     events = { emitToTeam: jest.fn(), emitToWebchatVisitor: jest.fn() };
     retrieval = { retrieve: jest.fn().mockResolvedValue([]) };
@@ -79,7 +83,7 @@ describe('AgentRuntimeService', () => {
       })
       .mockResolvedValueOnce({ text: 'Te derivo con una persona.', toolCalls: [], finishReason: 'stop' });
     const escalate = { execute: jest.fn().mockResolvedValue({ content: 'escalado' }) };
-    tools.get.mockReturnValue(escalate);
+    toolsGet.mockReturnValue(escalate);
 
     await svc.handleInbound(input);
 

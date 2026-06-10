@@ -29,6 +29,9 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   // RAG de agentes: documentos de conocimiento + sus chunks vectorizados.
   'AgentDocument',
   'AgentChunk',
+  // Tools personalizadas de agentes (definición + acción HTTP). El Link m2m no
+  // tiene organizationId/teamId propio: se accede siempre vía tool/agent scoped.
+  'AgentCustomTool',
   // Notificaciones del inbox (campanita del navbar) — scoping por org+team.
   'Notification',
   // Cross-cutting (Fase 2.C)

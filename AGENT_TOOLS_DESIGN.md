@@ -249,12 +249,12 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
 ## 6. Plan por slices
 
 ### Slice 1 — núcleo backend (sin UI)
-- [ ] Migración: `AgentCustomTool` + `AgentCustomToolLink` (+ enum)
-- [ ] Exportar `BotHttpExecutor` de `WapiModule` + action de audit parametrizable
-- [ ] `HttpAgentTool` (wrapper + interpolación de args + truncado + headers secret)
-- [ ] `AgentToolRegistry.resolveForAgent()` + cambio en el runtime
-- [ ] CRUD `/api/agent-tools` + asignación al agente + validaciones
-- [ ] Specs: wrapper (mock executor), registry per-agent, validaciones CRUD
+- [x] Migración: `AgentCustomTool` + `AgentCustomToolLink` (+ enum) — `20260610190000_agent_custom_tools` (manual, shadow-db/pgvector)
+- [x] Exportar `BotHttpExecutor` de `WapiModule` + action de audit parametrizable (`auditAction`/`auditResourceType` en `ExecuteOptions`)
+- [x] `HttpAgentTool` (wrapper + interpolación de args + truncado + headers secret) — `tools/http-agent-tool.ts`
+- [x] `AgentToolRegistry.resolveForAgent()` + cambio en el runtime (foto consistente por turno)
+- [x] CRUD `/api/agent-tools` + `GET/PUT /api/agents/:id/tools` + validaciones (slug, built-ins, JSON Schema raíz, URL con placeholders, mask `••••` conserva secreto en updates; sin `includeBody` en el audit del create — traería secretos en plano)
+- [x] Specs: wrapper (mock executor), registry per-agent, validaciones CRUD (14 tests nuevos)
 - [ ] Smoke real: tool contra un endpoint público + conversación por webchat dev
 
 ### Slice 2 — UI
@@ -292,3 +292,12 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
 - **2026-06-09** — Diseño escrito y consensuado. Contexto previo del mismo día:
   embeddings del RAG ahora pluggables (`EMBEDDING_PROVIDER`, commit `33299f7`).
   Próximo paso: Slice 1.
+- **2026-06-10** — Slice 1 COMPLETO salvo el smoke real (queda como apertura de
+  la próxima sesión). Todo según diseño, sin desvíos. Suite completa verde
+  (77 suites / 845 tests; los nuevos: http-agent-tool, registry per-agent,
+  validaciones CRUD). Detalles de implementación que el diseño no fijaba:
+  el runtime guarda `resolvedTools` por turno; el Link m2m NO está en
+  `TENANT_SCOPED_MODELS` (sin org/team propio — pertenencia validada vía
+  tool/agent scoped antes de escribir con el cliente raíz); error de tool al
+  modelo sin `stop` (el loop sigue y el modelo redacta el aviso).
+  Próximo paso: smoke real (endpoint público + webchat dev) → Slice 2 (UI).
