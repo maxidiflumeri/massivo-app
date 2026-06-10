@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
@@ -8,10 +9,16 @@ import { RedisService } from './common/redis/redis.service';
 import { RedisIoAdapter } from './common/redis/redis-io.adapter';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
     rawBody: true,
   });
+
+  // SNS publica con Content-Type "text/plain; charset=UTF-8". El json parser
+  // default solo procesa application/json, así que req.rawBody quedaba vacío
+  // para esos webhooks (ses-webhook.controller dependía de él y devolvía 400).
+  // Extender el type mantiene el verify de rawBody para ambos content-types.
+  app.useBodyParser('json', { type: ['application/json', 'text/plain'] });
 
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
