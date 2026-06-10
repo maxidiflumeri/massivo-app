@@ -1,0 +1,36 @@
+/**
+ * Theme override rgbot — identidad ResguarIT: teal #0dc1ba + navy #08083a.
+ * Se carga DESPUÉS de custom.css solo cuando DOCS_TARGET=rgbot (ver
+ * docusaurus.config.ts); pisa únicamente los tokens de color de marca.
+ */
+
+:root {
+  --ifm-color-primary: #0dc1ba;
+  --ifm-color-primary-dark: #0ba9a3;
+  --ifm-color-primary-darker: #0a9a95;
+  --ifm-color-primary-darkest: #087f7a;
+  --ifm-color-primary-light: #1fd0c9;
+  --ifm-color-primary-lighter: #2dd4cd;
+  --ifm-color-primary-lightest: #5cdfd9;
+  --docusaurus-highlighted-code-line-bg: rgba(13, 193, 186, 0.1);
+}
+
+/* Dark mode: teal un toque más claro para legibilidad sobre navy. */
+[data-theme='dark'] {
+  --ifm-color-primary: #3fcdc6;
+  --ifm-color-primary-dark: #2cc7bf;
+  --ifm-color-primary-darker: #21beb6;
+  --ifm-color-primary-darkest: #0d9e98;
+  --ifm-color-primary-light: #55d2cc;
+  --ifm-color-primary-lighter: #62d5cf;
+  --ifm-color-primary-lightest: #8ce2dd;
+  --docusaurus-highlighted-code-line-bg: rgba(63, 205, 198, 0.15);
+
+  --ifm-background-color: #06061e;
+  --ifm-background-surface-color: #0e0e30;
+}
+
+/* CTA de la navbar: teal → navy */
+.navbar__cta {
+  background: linear-gradient(135deg, #0dc1ba 0%, #08083a 100%);
+}

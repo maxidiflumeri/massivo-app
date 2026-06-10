@@ -3,6 +3,7 @@ import { ClerkProvider } from '@clerk/clerk-react';
 import { dark } from '@clerk/themes';
 import { esES } from '@clerk/localizations';
 import { useColorMode } from './ThemeProvider';
+import { brand } from '../brand';
 
 interface Props {
   publishableKey: string;
@@ -20,7 +21,7 @@ export function ClerkWithTheme({ publishableKey, children }: Props) {
       appearance={{
         baseTheme: isDark ? dark : undefined,
         variables: {
-          colorPrimary: '#5B5BD6',
+          colorPrimary: brand.colors.primary,
           borderRadius: '10px',
           ...(isDark
             ? {

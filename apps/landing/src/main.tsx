@@ -4,6 +4,12 @@ import { ClerkProvider } from '@clerk/clerk-react';
 import { App } from './App';
 import './index.css';
 
+// Tema por target: el MODE se resuelve en build-time, así que el CSS de rgbot
+// ni siquiera viaja en el bundle de massivo (dead-branch elimination de Vite).
+if (import.meta.env.MODE === 'rgbot') {
+  void import('./theme-rgbot.css');
+}
+
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
 // Webchat propio: solo se carga si el target define su key (massivo sí, rgbot aún no).

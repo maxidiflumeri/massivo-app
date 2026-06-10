@@ -13,4 +13,9 @@ export const brand = {
   tagline: (env.VITE_APP_TAGLINE as string | undefined)?.trim() || 'Multichannel sender',
   /** URL pública de la documentación. */
   docsUrl: (env.VITE_DOCS_URL as string | undefined)?.trim() || 'https://docs.massivo.app',
+  /** Colores de marca (theme MUI, Clerk, gradientes). Defaults = paleta Massivo. */
+  colors: {
+    primary: (env.VITE_BRAND_PRIMARY as string | undefined)?.trim() || '#5B5BD6',
+    gradientEnd: (env.VITE_BRAND_GRADIENT_END as string | undefined)?.trim() || '#8B5BD6',
+  },
 };

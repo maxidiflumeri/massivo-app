@@ -1,0 +1,33 @@
+/* Tema rgbot — identidad ResguarIT: teal #0dc1ba + navy profundo #08083a.
+ * Se importa SOLO en builds --mode rgbot (ver main.tsx); pisa las variables
+ * --color-brand-* que Tailwind v4 genera desde el @theme de index.css y las
+ * utilities con colores hardcodeados de massivo. */
+:root {
+  --color-brand-50: #effbfa;
+  --color-brand-100: #d4f6f3;
+  --color-brand-200: #aeece8;
+  --color-brand-300: #79dcd7;
+  --color-brand-400: #3fcdc6;
+  --color-brand-500: #0dc1ba;
+  --color-brand-600: #0a9a95;
+  --color-brand-700: #0c7b78;
+  --color-brand-800: #0e6260;
+  --color-brand-900: #105150;
+  --color-brand-gradient-end: #08083a;
+}
+
+/* Halo radial del hero en teal */
+.hero-glow {
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    rgba(13, 193, 186, 0.2) 0%,
+    rgba(8, 8, 58, 0.35) 40%,
+    transparent 70%
+  );
+}
+
+/* Cuadrado del logo: teal → navy */
+.logo-tile {
+  background-image: linear-gradient(135deg, #0dc1ba 0%, #08083a 100%);
+  box-shadow: 0 4px 12px rgba(13, 193, 186, 0.35);
+}

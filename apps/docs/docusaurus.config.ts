@@ -24,6 +24,7 @@ function loadTargetEnv(): Record<string, string> {
 }
 
 const e = loadTargetEnv();
+const TARGET = process.env.DOCS_TARGET || 'massivo';
 const APP_NAME = e.VITE_APP_NAME || 'Massivo';
 const DOMAIN_ROOT = e.VITE_DOMAIN_ROOT || 'massivo.app';
 const DOCS_URL = e.VITE_DOCS_URL || `https://docs.${DOMAIN_ROOT}`;
@@ -51,7 +52,8 @@ function brandRemarkPlugin() {
 const config: Config = {
   title: `${APP_NAME} Docs`,
   tagline: 'WhatsApp Business + Email marketing en un solo lugar',
-  favicon: 'img/favicon.svg',
+  // Assets por target: massivo usa los archivos base, otras marcas el sufijo
+  favicon: TARGET === 'massivo' ? 'img/favicon.svg' : `img/favicon-${TARGET}.svg`,
 
   future: {
     v4: true,
@@ -100,7 +102,11 @@ const config: Config = {
         // Sin blog por ahora — lo activamos en F9 si lo necesitamos.
         blog: false,
         theme: {
-          customCss: './src/css/custom.css',
+          // El CSS del target pisa los tokens de color de custom.css (orden importa)
+          customCss: [
+            './src/css/custom.css',
+            ...(TARGET !== 'massivo' ? [`./src/css/custom-${TARGET}.css`] : []),
+          ],
         },
       } satisfies Preset.Options,
     ],
@@ -116,7 +122,7 @@ const config: Config = {
       title: `${APP_NAME} Docs`,
       logo: {
         alt: APP_NAME,
-        src: 'img/logo.svg',
+        src: TARGET === 'massivo' ? 'img/logo.svg' : `img/logo-${TARGET}.svg`,
       },
       items: [
         {

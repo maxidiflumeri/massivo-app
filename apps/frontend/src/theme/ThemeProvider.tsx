@@ -11,6 +11,7 @@ import {
   ThemeProvider as MuiThemeProvider,
   GlobalStyles,
 } from '@mui/material';
+import { brand } from '../brand';
 
 type ColorMode = 'light' | 'dark';
 
@@ -26,7 +27,7 @@ function buildTheme(mode: ColorMode) {
   return createTheme({
     palette: {
       mode,
-      primary: { main: '#5B5BD6' },
+      primary: { main: brand.colors.primary },
       secondary: { main: '#10B981' },
       ...(isDark
         ? {
@@ -93,7 +94,8 @@ function buildTheme(mode: ColorMode) {
             backgroundColor: isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.32)',
           },
           '::selection': {
-            backgroundColor: 'rgba(91, 91, 214, 0.35)',
+            // Hex de 8 dígitos: primary de la marca con alpha ~35% (0x59)
+            backgroundColor: `${brand.colors.primary}59`,
           },
         },
       },

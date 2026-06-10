@@ -86,6 +86,7 @@ import { CreateBotDialog } from './CreateBotDialog';
 import { SandboxDrawer } from './SandboxDrawer';
 import { VariablesPanel } from './VariablesPanel';
 import { collectImplicitVariableNames } from './implicitVars';
+import { brand } from '../../brand';
 
 const EMPTY_FLOW: BotFlow = {
   startNodeId: 'start',
@@ -313,7 +314,7 @@ function BotsEditorInner() {
               label: opt.label,
               animated: false,
               markerEnd: { type: MarkerType.ArrowClosed },
-              style: { stroke: '#5B5BD6' },
+              style: { stroke: brand.colors.primary },
               labelStyle: { fontSize: 11 },
             });
           }
@@ -1456,7 +1457,7 @@ function BotsEditorInner() {
               zoomable
               nodeColor={(n) =>
                 n.type === 'menu'
-                  ? '#5B5BD6'
+                  ? brand.colors.primary
                   : n.type === 'message'
                     ? '#0288d1'
                     : n.type === 'capture'

@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Box, Chip, Stack, Typography } from '@mui/material';
+import { brand } from '../../brand';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import HeadsetMicIcon from '@mui/icons-material/HeadsetMic';
@@ -53,7 +54,7 @@ const headerSx = {
 const handleSx = {
   width: 10,
   height: 10,
-  background: '#5B5BD6',
+  background: brand.colors.primary,
   border: '2px solid #fff',
 };
 

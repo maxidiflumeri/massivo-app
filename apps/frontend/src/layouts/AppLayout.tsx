@@ -85,12 +85,13 @@ export function AppLayout() {
                 width: 30,
                 height: 30,
                 borderRadius: 1.5,
-                background: 'linear-gradient(135deg, #5B5BD6 0%, #8B5BD6 100%)',
+                background: `linear-gradient(135deg, ${brand.colors.primary} 0%, ${brand.colors.gradientEnd} 100%)`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: 'common.white',
-                boxShadow: '0 4px 12px rgba(91,91,214,0.35)',
+                // Hex de 8 dígitos: primary con alpha ~35% (0x59)
+                boxShadow: `0 4px 12px ${brand.colors.primary}59`,
               }}
             >
               <SendRoundedIcon sx={{ fontSize: 18 }} />

@@ -35,6 +35,7 @@ import { useNotify } from '../../feedback/NotifyProvider';
 import { useConfirm } from '../../feedback/ConfirmProvider';
 import { agentsApi } from './api';
 import { AGENT_MODEL_PRESETS, type Agent, type AgentDocument } from './types';
+import { brand } from '../../brand';
 
 export function AgentsPage() {
   const api = useApi();
@@ -110,7 +111,7 @@ export function AgentsPage() {
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
         <Box>
           <Typography variant="h5" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <AutoAwesomeIcon sx={{ color: '#8B5BD6' }} /> Agentes
+            <AutoAwesomeIcon sx={{ color: brand.colors.primary }} /> Agentes
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Agentes de IA que atienden conversaciones con un modelo, tools y tu conocimiento (RAG).

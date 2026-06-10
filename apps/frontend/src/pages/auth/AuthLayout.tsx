@@ -100,12 +100,13 @@ export function AuthLayout({ title, subtitle, children }: Props) {
               width: 36,
               height: 36,
               borderRadius: 1.5,
-              background: 'linear-gradient(135deg, #5B5BD6 0%, #8B5BD6 100%)',
+              background: `linear-gradient(135deg, ${brand.colors.primary} 0%, ${brand.colors.gradientEnd} 100%)`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: 'common.white',
-              boxShadow: '0 4px 16px rgba(91,91,214,0.4)',
+              // Hex de 8 dígitos: primary con alpha ~40% (0x66)
+              boxShadow: `0 4px 16px ${brand.colors.primary}66`,
             }}
           >
             <SendRoundedIcon sx={{ fontSize: 20 }} />
