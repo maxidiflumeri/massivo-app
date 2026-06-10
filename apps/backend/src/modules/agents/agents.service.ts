@@ -74,6 +74,25 @@ export class AgentsService {
 
   async create(dto: CreateAgentDto): Promise<AgentDto> {
     const ctx = this.ctx();
+    // Quota check contra Plan.limits.agents (mismo patrón que dedicatedDomains).
+    // Límite por organización; -1 = ilimitado, ausente = 0.
+    const org = await this.prisma.organization.findUniqueOrThrow({
+      where: { id: ctx.organizationId },
+      include: { plan: true },
+    });
+    const limits = (org.plan.limits ?? {}) as Record<string, unknown>;
+    const rawLimit = limits.agents;
+    const limit = typeof rawLimit === 'number' ? rawLimit : 0;
+    if (limit >= 0) {
+      const current = await this.prisma.agent.count({
+        where: { organizationId: ctx.organizationId },
+      });
+      if (current >= limit) {
+        throw new ForbiddenException(
+          `El plan ${org.plan.code} permite hasta ${limit} agente(s). Subí de plan para crear más.`,
+        );
+      }
+    }
     const created = await this.prisma.scoped.agent.create({
       data: {
         organizationId: ctx.organizationId,

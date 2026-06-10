@@ -19,6 +19,7 @@ import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { Audit } from '../../common/audit/audit.decorator';
 import { AgentsService } from './agents.service';
+import { AgentsFeatureGuard } from './agents-feature.guard';
 import { ConnectChannelDto, CreateAgentDto, UpdateAgentConfigDto } from './agents.dto';
 
 /**
@@ -26,7 +27,7 @@ import { ConnectChannelDto, CreateAgentDto, UpdateAgentConfigDto } from './agent
  * criterio que el bot, para no proliferar subjects en el v0.
  */
 @Controller('agents')
-@UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
+@UseGuards(ClerkAuthGuard, TenantContextGuard, AgentsFeatureGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
 export class AgentsController {
   constructor(private readonly service: AgentsService) {}

@@ -20,6 +20,7 @@ import { PoliciesGuard } from '../../common/auth/policies.guard';
 import { CheckPolicies } from '../../common/auth/check-policies.decorator';
 import { Audit } from '../../common/audit/audit.decorator';
 import { AgentDocumentService } from './rag/agent-document.service';
+import { AgentsFeatureGuard } from './agents-feature.guard';
 import { CreateAgentDocumentDto } from './agents.dto';
 
 /** Tope de tamaño de archivo subido a la base de conocimiento (10MB). */
@@ -30,7 +31,7 @@ const DOC_MAX_BYTES = 10 * 1024 * 1024;
  * Reusa los permisos CASL de `WapiConfig` (read/update), igual que el resto de Agentes.
  */
 @Controller('agents/:id/documents')
-@UseGuards(ClerkAuthGuard, TenantContextGuard, PoliciesGuard)
+@UseGuards(ClerkAuthGuard, TenantContextGuard, AgentsFeatureGuard, PoliciesGuard)
 @UseInterceptors(TenantContextInterceptor)
 export class AgentDocumentsController {
   constructor(private readonly docs: AgentDocumentService) {}

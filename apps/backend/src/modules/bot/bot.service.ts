@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -694,6 +695,25 @@ export class BotService {
     if (!ctx) throw new BadRequestException('Sin contexto de organización');
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException('El nombre del bot es obligatorio');
+    // Quota check contra Plan.limits.bots (mismo patrón que dedicatedDomains).
+    // Límite por organización; -1 = ilimitado, ausente = 0.
+    const org = await this.prisma.organization.findUniqueOrThrow({
+      where: { id: ctx.organizationId },
+      include: { plan: true },
+    });
+    const limits = (org.plan.limits ?? {}) as Record<string, unknown>;
+    const rawLimit = limits.bots;
+    const limit = typeof rawLimit === 'number' ? rawLimit : 0;
+    if (limit >= 0) {
+      const current = await this.prisma.bot.count({
+        where: { organizationId: ctx.organizationId },
+      });
+      if (current >= limit) {
+        throw new ForbiddenException(
+          `El plan ${org.plan.code} permite hasta ${limit} bot(s). Subí de plan para crear más.`,
+        );
+      }
+    }
     const created = (await this.prisma.scoped.bot.create({
       data: { organizationId: ctx.organizationId, teamId: ctx.teamId, name },
       select: BOT_SELECT,

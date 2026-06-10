@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Collapse } from '@mui/material';
 import { brand } from '../brand';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -42,9 +42,10 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import HistoryIcon from '@mui/icons-material/History';
 import AssessmentIcon from '@mui/icons-material/Assessment';
-import { OrganizationSwitcher } from '@clerk/clerk-react';
+import { OrganizationSwitcher, useOrganization } from '@clerk/clerk-react';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import { PlanManagement } from '../features/billing/PlanManagement';
+import { useApi } from '../api/client';
 
 const DEV_SIMULATOR_ENABLED = import.meta.env.VITE_ENABLE_DEV_SIMULATOR === 'true';
 // 4.O.1 — kill-switch del feature de bots (env). El backend además valida
@@ -71,14 +72,21 @@ interface NavGroupSpec {
   items: NavItemSpec[];
 }
 
-const NAV_GROUPS: NavGroupSpec[] = [
+/** Flags de plan que gatean secciones del sidebar (vienen de /api/me/context). */
+interface PlanNavFlags {
+  bots: boolean;
+  agents: boolean;
+}
+
+const buildNavGroups = (flags: PlanNavFlags): NavGroupSpec[] => [
   {
     label: 'General',
     items: [{ to: '/dashboard', label: 'Inicio', icon: <HomeIcon fontSize="small" /> }],
   },
   // Bots: entidad cross-canal (un bot se conecta a N canales) → sección propia,
-  // fuera de WhatsApp. Gated por el kill-switch del feature.
-  ...(WAPI_BOT_FEATURE_ENABLED
+  // fuera de WhatsApp. Gated por el kill-switch del feature (env) AND el plan
+  // de la org activa (features.bot — FREE no lo trae).
+  ...(WAPI_BOT_FEATURE_ENABLED && flags.bots
     ? [
         {
           label: 'Bots',
@@ -94,16 +102,21 @@ const NAV_GROUPS: NavGroupSpec[] = [
     : []),
   // Agentes IA: plataforma agéntica (v0). Sección propia, NO mezclar con "Bots"
   // (flujos deterministas). Un agente se conecta a un canal y atiende con un LLM.
-  {
-    label: 'Agentes',
-    items: [
-      {
-        to: '/dashboard/agents',
-        label: 'Mis agentes',
-        icon: <AutoAwesomeIcon fontSize="small" />,
-      },
-    ],
-  },
+  // Gated por plan (features.ai vía permissions.hasAi — FREE no lo trae).
+  ...(flags.agents
+    ? [
+        {
+          label: 'Agentes',
+          items: [
+            {
+              to: '/dashboard/agents',
+              label: 'Mis agentes',
+              icon: <AutoAwesomeIcon fontSize="small" />,
+            },
+          ],
+        },
+      ]
+    : []),
   // Inbox: omnicanal (Conversation/Channel unificados) → sección propia, fuera de
   // WhatsApp. El badge por fila indica el canal de cada conversación.
   {
@@ -266,12 +279,53 @@ interface SidebarProps {
   showCollapseButton?: boolean;
 }
 
+/** Shape mínimo de /api/me/context que necesita el sidebar (gating por plan). */
+type MeContextNav = {
+  organizations?: Array<{
+    clerkOrgId: string;
+    features?: { bot?: boolean };
+    permissions?: { hasAi?: boolean };
+  }>;
+};
+
 export function Sidebar({
   collapsed = false,
   onToggleCollapsed,
   onNavigate,
   showCollapseButton = true,
 }: SidebarProps) {
+  const api = useApi();
+  const { organization } = useOrganization();
+  const clerkOrgId = organization?.id ?? null;
+
+  // Flags de plan de la org activa. Conservador hasta cargar (items gated
+  // ocultos) — el backend igual devuelve 403 si se fuerza la URL a mano.
+  const [planFlags, setPlanFlags] = useState<PlanNavFlags>({ bots: false, agents: false });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await api.get<MeContextNav>('/api/me/context');
+        if (cancelled) return;
+        const org = clerkOrgId
+          ? me.organizations?.find((o) => o.clerkOrgId === clerkOrgId)
+          : me.organizations?.[0];
+        setPlanFlags({
+          bots: org?.features?.bot === true,
+          agents: org?.permissions?.hasAi === true,
+        });
+      } catch {
+        // Silencioso: si /me falla, los items gated quedan ocultos y el resto
+        // de la app va a mostrar el error real en su propia llamada.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, clerkOrgId]);
+
+  const navGroups = useMemo(() => buildNavGroups(planFlags), [planFlags]);
+
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try {
       const raw = localStorage.getItem(GROUP_STATE_KEY);
@@ -279,7 +333,9 @@ export function Sidebar({
     } catch {
       // no-op
     }
-    return Object.fromEntries(NAV_GROUPS.map((g) => [g.label, true]));
+    // Default: todos los grupos posibles abiertos (flags en true solo para
+    // enumerar las labels; el render usa navGroups con los flags reales).
+    return Object.fromEntries(buildNavGroups({ bots: true, agents: true }).map((g) => [g.label, true]));
   });
 
   useEffect(() => {
@@ -346,7 +402,7 @@ export function Sidebar({
       {/* Nav */}
       <Box sx={{ flex: 1, overflowY: 'auto', py: 1.5, px: collapsed ? 0.75 : 1.25 }}>
         <Stack spacing={collapsed ? 0.5 : 2}>
-          {NAV_GROUPS.map((group, idx) => {
+          {navGroups.map((group, idx) => {
             const isOpen = openGroups[group.label] ?? true;
             return (
               <Box key={group.label}>
