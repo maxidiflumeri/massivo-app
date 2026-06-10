@@ -23,7 +23,6 @@ import { useApi, ApiError } from '../../api/client';
 interface PlanDto {
   code: string;
   name: string;
-  priceMonthlyUsd: number;
   features: Record<string, unknown>;
   limits: Record<string, unknown>;
 }
@@ -38,8 +37,8 @@ interface MeContextLite {
 
 const FEATURE_LABELS: Array<{ key: string; label: string }> = [
   { key: 'multiTeam', label: 'Multi-team' },
-  { key: 'bot', label: 'Bots de WhatsApp' },
-  { key: 'ai', label: 'Asistente AI' },
+  { key: 'bot', label: 'Bots conversacionales' },
+  { key: 'ai', label: 'Agentes IA' },
   { key: 'ssoSaml', label: 'SSO SAML' },
 ];
 
@@ -49,17 +48,14 @@ const LIMIT_LABELS: Array<{ key: string; label: string; suffix?: string }> = [
   { key: 'teams', label: 'Teams' },
   { key: 'members', label: 'Miembros' },
   { key: 'dedicatedDomains', label: 'Dominios verificados' },
+  { key: 'bots', label: 'Bots conversacionales' },
+  { key: 'agents', label: 'Agentes IA' },
 ];
 
 function formatLimit(raw: unknown): string {
   if (typeof raw !== 'number') return '—';
   if (raw < 0) return 'Ilimitado';
   return raw.toLocaleString('es-AR');
-}
-
-function formatPrice(usd: number): string {
-  if (usd === 0) return 'Gratis';
-  return `US$ ${usd}/mes`;
 }
 
 export function PlanManagement() {
@@ -182,9 +178,6 @@ export function PlanManagement() {
                       <Chip label="Plan actual" size="small" color="primary" variant="filled" />
                     )}
                   </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                    {formatPrice(plan.priceMonthlyUsd)}
-                  </Typography>
                 </Box>
                 <Button
                   variant={isCurrent ? 'outlined' : 'contained'}
@@ -269,11 +262,6 @@ export function PlanManagement() {
         <DialogContent>
           <DialogContentText>
             ¿Confirmás el cambio? El nuevo plan y sus límites se aplican inmediatamente.
-            {targetPlan?.priceMonthlyUsd ? (
-              <>
-                {' '}Precio del nuevo plan: {formatPrice(targetPlan.priceMonthlyUsd)}.
-              </>
-            ) : null}
           </DialogContentText>
           {submitError && (
             <Alert severity="error" sx={{ mt: 2 }}>

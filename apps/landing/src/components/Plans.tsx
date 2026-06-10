@@ -12,6 +12,8 @@ type Plan = {
   cta: string;
 };
 
+// Mantener sincronizado con packages/prisma/prisma/seed.ts (features/limits de
+// cada plan) y con PlanManagement.tsx del frontend.
 const PLANS: Plan[] = [
   {
     code: 'FREE',
@@ -33,8 +35,8 @@ const PLANS: Plan[] = [
       '25.000 emails / mes',
       '5.000 mensajes WhatsApp / mes',
       '1 team · hasta 5 usuarios',
-      'Bots ilimitados',
-      'AI para respuestas sugeridas',
+      '1 bot conversacional',
+      '1 agente IA',
     ],
     highlight: true,
     cta: 'Probar Starter',
@@ -47,8 +49,22 @@ const PLANS: Plan[] = [
       '150.000 emails / mes',
       '30.000 mensajes WhatsApp / mes',
       '5 teams · hasta 20 usuarios',
+      '5 bots conversacionales · 5 agentes IA',
       'Multi-tenant para gestionar varios clientes',
       'Soporte prioritario',
+    ],
+    cta: 'Hablar con ventas',
+  },
+  {
+    code: 'ENTERPRISE',
+    name: 'Enterprise',
+    desc: 'Para operaciones grandes con necesidades a medida.',
+    features: [
+      'Emails y WhatsApp sin límite',
+      'Teams y usuarios sin límite',
+      '10 bots conversacionales · 10 agentes IA',
+      'SSO SAML',
+      'Soporte dedicado',
     ],
     cta: 'Hablar con ventas',
   },
@@ -67,13 +83,13 @@ export function Plans() {
             Todo incluido. Elegís según el volumen.
           </h2>
           <p className="mt-5 text-lg text-neutral-400">
-            Todos los planes incluyen WhatsApp Business API, email, bots e inbox. La diferencia
-            es cuánto mandás. Estamos definiendo precios — escribinos para conocer las
-            condiciones del programa beta.
+            Todos los planes incluyen WhatsApp Business API, email e inbox unificado. La
+            diferencia es el volumen y las automatizaciones (bots y agentes IA, desde Starter).
+            Escribinos para conocer las condiciones del programa beta.
           </p>
         </div>
 
-        <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="mt-16 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {PLANS.map((plan) => (
             <div
               key={plan.code}
