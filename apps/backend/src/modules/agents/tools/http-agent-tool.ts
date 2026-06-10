@@ -84,6 +84,10 @@ export class HttpAgentTool implements AgentTool {
       saveAs: 'result',
     };
 
+    HttpAgentTool.logger.log(
+      `HTTP → tool=${this.row.name}(${this.row.id}) ${this.row.method} ${this.row.url} conv=${ctx.conversationId}`,
+    );
+
     const result = await this.executor.execute(node, { args }, {
       mode: 'real',
       configId: 'agent-tool',
@@ -95,6 +99,19 @@ export class HttpAgentTool implements AgentTool {
 
     if (!result.ok) {
       const detail = result.error ?? `HTTP ${result.status}`;
+      // Preview del body: en 4xx/5xx el server suele explicar el motivo ahí.
+      let bodyPreview = '';
+      try {
+        const b = typeof result.body === 'string' ? result.body : JSON.stringify(result.body);
+        if (b && b !== 'null') bodyPreview = ` body=${b.slice(0, 200)}`;
+      } catch {
+        /* body no serializable: lo omitimos */
+      }
+      HttpAgentTool.logger.warn(
+        `HTTP ✗ tool=${this.row.name}(${this.row.id}) ${this.row.method} ` +
+          `status=${result.status} error=${result.error ?? '?'} durationMs=${result.durationMs} ` +
+          `conv=${ctx.conversationId}${bodyPreview}`,
+      );
       return {
         content:
           `La herramienta falló (${detail}). Avisale al usuario que no pudiste ` +
@@ -105,6 +122,12 @@ export class HttpAgentTool implements AgentTool {
     let content =
       typeof result.body === 'string' ? result.body : JSON.stringify(result.body ?? null);
     if (!content || content === 'null') content = '(respuesta vacía)';
+
+    HttpAgentTool.logger.log(
+      `HTTP ✓ tool=${this.row.name}(${this.row.id}) ${this.row.method} status=${result.status} ` +
+        `durationMs=${result.durationMs} conv=${ctx.conversationId} body=${content.slice(0, 220)}`,
+    );
+
     if (content.length > TOOL_RESULT_MAX_CHARS) {
       content = `${content.slice(0, TOOL_RESULT_MAX_CHARS)}… [truncado]`;
     }

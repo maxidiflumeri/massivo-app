@@ -255,7 +255,7 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
 - [x] `AgentToolRegistry.resolveForAgent()` + cambio en el runtime (foto consistente por turno)
 - [x] CRUD `/api/agent-tools` + `GET/PUT /api/agents/:id/tools` + validaciones (slug, built-ins, JSON Schema raíz, URL con placeholders, mask `••••` conserva secreto en updates; sin `includeBody` en el audit del create — traería secretos en plano)
 - [x] Specs: wrapper (mock executor), registry per-agent, validaciones CRUD (14 tests nuevos)
-- [ ] Smoke real: tool contra un endpoint público + conversación por webchat dev
+- [x] Smoke real: tool `consultar_clima` (postman-echo) invocada ok por webchat — pipeline end-to-end validado (modelo Llama/Groq rutea + extrae args → executor interpola → HTTP → respuesta al modelo)
 
 ### Slice 2 — UI
 - [x] `features/agents/tools/`: lista + form (builder de parámetros + acción HTTP) — `ToolsPage.tsx`, sección "Herramientas" (`/dashboard/agents/tools`) bajo el grupo Agentes
@@ -264,7 +264,8 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
 
 ### Slice 3 — operación
 - [ ] Botón "Probar" (endpoint `/test` + form de args)
-- [ ] Telemetría: log estructurado por invocación (tool, conv, status, durationMs)
+- [x] Telemetría: logs por invocación — en el runtime (`Tool → invoke`/`✓`/`✗ EXCEPCIÓN`/`DESCONOCIDA` con agent/tool/conv/args/durationMs) y en `HttpAgentTool` (`HTTP →`/`✓`/`✗` con status/error/durationMs + preview del body, clave para debuggear 4xx/5xx). Adelantado durante el smoke real. **Pendiente refinar**: nivel de log / PII de args+body para prod
+- [ ] Default `User-Agent: massivo-agent/1.0` en el executor (algunos WAF —p.ej. Open-Meteo— devuelven 403 sin él; ver bitácora 2026-06-10)
 - [ ] (opcional) transform de respuesta con JSONata para achicar lo que ve el LLM
 
 ### Futuro (fuera de alcance v0)
@@ -314,3 +315,14 @@ Naming UI: "Herramientas" (consistente con reservar "Agentes" para IA;
   no quede activo en la subruta. tsc + eslint limpios (el front no tiene unit
   tests). Pendientes: **smoke real** (sigue abierto) y **Slice 3** (botón "Probar"
   → falta el endpoint `POST /api/agent-tools/:id/test` + telemetría por invocación).
+- **2026-06-10 (smoke real)** — CERRADO end-to-end por webchat dev. Se agregó **telemetría
+  por invocación** (logs en runtime + `HttpAgentTool`, con preview del body en éxito y error) a
+  pedido de Maxi para diagnosticar en vivo — adelanta ese item de Slice 3. El debug fue didáctico:
+  (1) el modelo **sí** llamó la tool y extrajo bien los args; (2) `wttr.in` → 500 (rate-limit por IP,
+  endpoint inestable); (3) Open-Meteo con `lat/lon` number → Groq/Llama validó el tool-call y lo
+  rechazó (mandó los números como **string**); aprendizaje: para tools HTTP, declarar números como
+  `string` es lo más compatible con modelos open vía Groq; (4) Open-Meteo → **403** del WAF, pese a
+  que `curl` desde la misma máquina da 200 y la réplica exacta del IP-pinning del executor (misma IP
+  `188.40.99.226`, IPv4-only) también da 200 → la diferencia está en los **headers** que manda undici;
+  sospecha: falta `User-Agent` (Slice 3). (5) **postman-echo** (refleja args/headers) → ✓ 200, smoke
+  cerrado. Open-Meteo queda como caso para validar el fix del User-Agent.

@@ -172,14 +172,37 @@ export class AgentRuntimeService {
           let content: string;
           if (!tool) {
             content = `Tool desconocida: ${call.name}`;
+            this.logger.warn(
+              `Tool DESCONOCIDA agent=${agent.id} tool=${call.name} conv=${conversationId} ` +
+                `(disponibles: ${toolDefs.map((d) => d.name).join(', ')})`,
+            );
           } else {
+            let argsPreview: string;
+            try {
+              argsPreview = JSON.stringify(call.arguments) ?? 'undefined';
+              if (argsPreview.length > 300) argsPreview = `${argsPreview.slice(0, 300)}…`;
+            } catch {
+              argsPreview = '<unserializable>';
+            }
+            const startedAt = Date.now();
+            this.logger.log(
+              `Tool → invoke agent=${agent.id} tool=${call.name} conv=${conversationId} args=${argsPreview}`,
+            );
             try {
               const res = await tool.execute(call.arguments, toolCtx);
               content = res.content;
               if (res.stop) stop = true;
               if (call.name === 'escalate_to_operator') didEscalate = true;
+              this.logger.log(
+                `Tool ✓ agent=${agent.id} tool=${call.name} conv=${conversationId} ` +
+                  `stop=${!!res.stop} durationMs=${Date.now() - startedAt} contentLen=${res.content.length}`,
+              );
             } catch (err) {
               content = `La tool ${call.name} falló: ${err instanceof Error ? err.message : String(err)}`;
+              this.logger.warn(
+                `Tool ✗ EXCEPCIÓN agent=${agent.id} tool=${call.name} conv=${conversationId}: ` +
+                  `${err instanceof Error ? err.message : String(err)}`,
+              );
             }
           }
           messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content });
