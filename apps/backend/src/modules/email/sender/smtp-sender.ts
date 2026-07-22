@@ -43,6 +43,7 @@ export class SmtpSender implements EmailSender {
       html: input.html,
       headers: input.headers,
       ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     });
     this.logger.debug(`smtp send → ${input.to}: ${info.messageId}`);
     return { messageId: info.messageId, provider: 'smtp' };
