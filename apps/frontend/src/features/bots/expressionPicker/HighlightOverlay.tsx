@@ -41,10 +41,23 @@ function applyComputedStyles(
   overlay.style.padding = cs.padding;
   overlay.style.boxSizing = cs.boxSizing;
   overlay.style.borderWidth = '0px';
-  overlay.style.whiteSpace = 'pre-wrap';
-  overlay.style.wordBreak = 'break-word';
-  overlay.style.overflowWrap = 'break-word';
+  // Un `<input>` de una línea NO envuelve: scrollea en horizontal. Si el overlay
+  // usa `pre-wrap`, un valor largo (ej. la URL de un nodo HTTP) se parte en varias
+  // líneas y se desborda del campo, además de descalzar los clicks respecto del
+  // input real. Un `<textarea>` sí envuelve, así que ahí mantenemos `pre-wrap`.
+  const singleLine = textareaEl.tagName === 'INPUT';
+  overlay.style.whiteSpace = singleLine ? 'pre' : 'pre-wrap';
+  overlay.style.wordBreak = singleLine ? 'normal' : 'break-word';
+  overlay.style.overflowWrap = singleLine ? 'normal' : 'break-word';
 }
+
+/**
+ * Eventos tras los cuales el scroll del campo puede haber cambiado. En un
+ * `<input>` el scrollLeft se mueve solo al desplazarse el caret (tipear, flechas,
+ * click, Home/End) y el evento `scroll` no siempre acompaña, así que sincronizamos
+ * también con los eventos de edición/navegación.
+ */
+const SCROLL_SYNC_EVENTS = ['scroll', 'input', 'keyup', 'click', 'select', 'focus'] as const;
 
 function syncPosition(
   textareaEl: HTMLTextAreaElement | HTMLInputElement,
@@ -86,10 +99,12 @@ export function HighlightOverlay({ value, textareaEl, containerEl }: Props) {
     });
     ro.observe(textareaEl);
     ro.observe(containerEl);
-    textareaEl.addEventListener('scroll', onScroll, { passive: true });
+    for (const ev of SCROLL_SYNC_EVENTS) {
+      textareaEl.addEventListener(ev, onScroll, { passive: true });
+    }
     return () => {
       ro.disconnect();
-      textareaEl.removeEventListener('scroll', onScroll);
+      for (const ev of SCROLL_SYNC_EVENTS) textareaEl.removeEventListener(ev, onScroll);
     };
   }, [textareaEl, containerEl]);
 
