@@ -78,6 +78,23 @@ function newOptionId(taken: Set<string>): string {
   return `op${Date.now()}`;
 }
 
+/**
+ * Límite "blando" para los campos que llevan templates `{{= expr }}`.
+ *
+ * NO usamos `maxLength`: el browser **trunca el paste en silencio** y, si el
+ * valor ya viene más largo que el tope, tampoco deja tipear. Así se perdió el
+ * texto de un nodo MESSAGE de 1305 chars (quedó cortado en 1024 al pegarlo de
+ * vuelta). Un template largo es normal — lo que importa es el texto *renderizado*,
+ * no la plantilla — así que sólo mostramos el contador y marcamos en rojo.
+ */
+function softLimit(value: string, limit: number, hint: string) {
+  const over = value.length > limit;
+  return {
+    error: over,
+    helperText: `${value.length} / ${limit}${over ? ' — te pasaste del límite' : ''} · ${hint}`,
+  };
+}
+
 function newBranchId(taken: Set<string>): string {
   for (let i = 1; i < 1000; i++) {
     const c = `br${i}`;
@@ -185,8 +202,11 @@ export function NodeEditorDrawer({
                   minRows={3}
                   maxRows={8}
                   size="small"
-                  inputProps={{ maxLength: 1024 }}
-                  helperText={`${(node as { text: string }).text.length} / 1024 — {{var}} plano o {{= expr }} JSONata`}
+                  {...softLimit(
+                    (node as { text: string }).text,
+                    4096,
+                    '{{var}} plano o {{= expr }} JSONata',
+                  )}
                   variables={variables}
                   flow={flow}
                   currentNodeId={selectedId}
@@ -822,8 +842,7 @@ function MediaEditor({
           multiline
           minRows={2}
           maxRows={6}
-          inputProps={{ maxLength: 1024 }}
-          helperText="Soporta {{var}} y {{= expr }}"
+          {...softLimit(node.caption ?? '', 1024, 'Soporta {{var}} y {{= expr }}')}
           flow={flow}
           currentNodeId={currentNodeId}
           variables={variables}
@@ -1374,12 +1393,13 @@ function SetVarEditor({
           value={typeof node.value === 'string' ? node.value : String(node.value ?? '')}
           onChange={(next) => onPatch({ value: next } as Partial<BotSetVarNode>)}
           fullWidth
-          inputProps={{ maxLength: 1024 }}
-          helperText={
+          {...softLimit(
+            typeof node.value === 'string' ? node.value : String(node.value ?? ''),
+            4096,
             declared
               ? 'Soporta {{var}} y {{= expr }} JSONata.'
-              : 'Variable no declarada → se guarda como string. Soporta {{var}} y {{= expr }}.'
-          }
+              : 'Variable no declarada → se guarda como string. Soporta {{var}} y {{= expr }}.',
+          )}
           variables={variables}
           flow={flow}
           currentNodeId={currentNodeId}
@@ -1749,9 +1769,13 @@ function ForeachEditor({
         size="small"
         value={node.items}
         onChange={(v) => onPatch({ items: v } as Partial<BotForeachNode>)}
-        inputProps={{ maxLength: 1024, style: { fontFamily: 'monospace', fontSize: 12 } }}
+        inputProps={{ style: { fontFamily: 'monospace', fontSize: 12 } }}
         fullWidth
-        helperText="Tipeá un path (ej: respuesta.body.pedidos) o usá el picker para insertar variables y funciones."
+        {...softLimit(
+          node.items,
+          4096,
+          'Tipeá un path (ej: respuesta.body.pedidos) o usá el picker para insertar variables y funciones.',
+        )}
         variables={variables}
         flow={flow}
         currentNodeId={currentNodeId}
