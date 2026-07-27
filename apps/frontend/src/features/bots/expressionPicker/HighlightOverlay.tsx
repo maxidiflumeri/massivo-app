@@ -39,7 +39,13 @@ function applyComputedStyles(
   overlay.style.lineHeight = cs.lineHeight;
   overlay.style.letterSpacing = cs.letterSpacing;
   overlay.style.padding = cs.padding;
-  overlay.style.boxSizing = cs.boxSizing;
+  // `syncPosition` mide con getBoundingClientRect (border-box), así que el overlay
+  // tiene que interpretar ese alto/ancho igual. MUI le pone `content-box` al input,
+  // y copiarlo dejaba el overlay más grande que el campo por el padding (~28px de
+  // ancho): el `overflow: hidden` recortaba tarde y el texto llegaba a pintarse
+  // encima del botón `{ }`. El input no tiene borde propio (`border: 0`), así que
+  // con border-box las cajas de contenido coinciden exacto.
+  overlay.style.boxSizing = 'border-box';
   overlay.style.borderWidth = '0px';
   // Un `<input>` de una línea NO envuelve: scrollea en horizontal. Si el overlay
   // usa `pre-wrap`, un valor largo (ej. la URL de un nodo HTTP) se parte en varias
