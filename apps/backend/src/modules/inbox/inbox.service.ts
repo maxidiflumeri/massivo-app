@@ -924,14 +924,38 @@ function extractPreview(type: string, content: unknown): string {
     const text = (c.text as { body?: string } | undefined)?.body;
     return text ?? '';
   }
+  // Interactivos (menús del bot): `body` NO es un string sino `{ text }`, y en
+  // los replies el texto vive en `button_reply.title`. Sin este caso el preview
+  // devolvía el objeto crudo y React reventaba al renderizarlo ("Objects are not
+  // valid as a React child"). No se veía en el inbox porque oculta las
+  // conversaciones que atiende el bot; sí en Monitoreo, que las lista todas.
+  if (type === 'interactive') {
+    const inter = c.interactive as
+      | {
+          body?: { text?: string };
+          header?: { text?: string };
+          button_reply?: { title?: string };
+          list_reply?: { title?: string };
+        }
+      | undefined;
+    return (
+      inter?.body?.text ??
+      inter?.button_reply?.title ??
+      inter?.list_reply?.title ??
+      inter?.header?.text ??
+      labelFor(type)
+    );
+  }
   const sub = c[type] as Record<string, unknown> | undefined;
   if (sub) {
-    const caption = sub.caption as string | undefined;
-    if (caption) return caption;
-    const filename = sub.filename as string | undefined;
-    if (filename) return filename;
-    const body = sub.body as string | undefined;
-    if (body) return body;
+    const caption = sub.caption;
+    if (typeof caption === 'string' && caption) return caption;
+    const filename = sub.filename;
+    if (typeof filename === 'string' && filename) return filename;
+    // Solo strings: cualquier otra forma cae al label del tipo. El preview es
+    // texto plano y nunca debe filtrar un objeto al frontend.
+    const body = sub.body;
+    if (typeof body === 'string' && body) return body;
   }
   return labelFor(type);
 }

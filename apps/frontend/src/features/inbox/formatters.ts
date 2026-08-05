@@ -69,3 +69,32 @@ export function initials(name: string | null, phone: string): string {
   }
   return (parts[0] ?? '').slice(0, 2).toUpperCase();
 }
+
+/**
+ * Blindaje de render para el preview de la última conversación. El backend lo
+ * arma como texto plano, pero un shape inesperado (p.ej. el `body: { text }` de
+ * los interactivos, que devolvía el objeto crudo) llegaba al JSX y tiraba abajo
+ * toda la pantalla con "Objects are not valid as a React child". Acá degradamos
+ * a string en vez de romper.
+ *
+ * El origen está arreglado en `extractPreview` del backend; esto queda como red
+ * de seguridad para cualquier forma nueva de mensaje.
+ */
+export function coerceSubtitle(preview: unknown): string {
+  if (typeof preview === 'string') return preview;
+  if (preview == null) return '';
+  if (typeof preview === 'object') {
+    // eslint-disable-next-line no-console
+    console.warn('[inbox] preview con shape inesperado, descartando:', preview);
+    const body = (preview as { body?: unknown; text?: unknown }).body;
+    if (typeof body === 'string') return body;
+    const text = (preview as { text?: unknown }).text;
+    if (typeof text === 'string') return text;
+    if (text && typeof text === 'object') {
+      const inner = (text as { body?: unknown }).body;
+      if (typeof inner === 'string') return inner;
+    }
+    return '';
+  }
+  return String(preview);
+}

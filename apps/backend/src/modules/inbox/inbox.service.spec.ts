@@ -129,6 +129,52 @@ describe('InboxService', () => {
     ]);
   });
 
+  it('listConversations: el preview de un menú del bot es texto, nunca el objeto crudo', async () => {
+    // Regresión — `interactive.body` es `{ text }`, no un string. Devolverlo tal
+    // cual hacía que React tirara "Objects are not valid as a React child" y se
+    // fuera a blanco Monitoreo, que sí lista las conversaciones del bot.
+    prismaMock.conversation.findMany.mockResolvedValue([
+      {
+        id: 'c1',
+        channelId: 'cfg1',
+        channelKind: 'WHATSAPP',
+        externalUserId: '549110000',
+        name: null,
+        status: 'UNASSIGNED',
+        assignedUserId: null,
+        lastMessageAt: new Date(),
+        freeformWindowAt: null,
+        unreadCount: 0,
+        campaignName: null,
+        resolvedAt: null,
+        priority: false,
+        waitingUntil: null,
+        lastAssignedUserId: null,
+        escalated: false,
+        messages: [
+          {
+            fromMe: true,
+            type: 'interactive',
+            timestamp: new Date(),
+            content: {
+              interactive: {
+                type: 'button',
+                body: { text: '¿Cómo querés consultar tus infracciones?' },
+                action: { buttons: [{ reply: { id: 'bot:dni', title: 'Por DNI' } }] },
+              },
+            },
+          },
+        ],
+      },
+    ]);
+    const res = await TenantContext.run(ctx, () =>
+      service.listConversations({ includeBotHandled: true }),
+    );
+    expect(res.items[0]!.lastMessage!.preview).toBe('¿Cómo querés consultar tus infracciones?');
+    expect(typeof res.items[0]!.lastMessage!.preview).toBe('string');
+    expect(res.items[0]!.escalated).toBe(false);
+  });
+
   it('sendText falla si la ventana 24h está cerrada', async () => {
     prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c1',

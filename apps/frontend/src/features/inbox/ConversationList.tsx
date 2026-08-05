@@ -24,7 +24,7 @@ import DoneAllIcon from '@mui/icons-material/DoneAll';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import HourglassBottomIcon from '@mui/icons-material/HourglassBottom';
-import { formatPhone, formatRelative, initials } from './formatters';
+import { coerceSubtitle, formatPhone, formatRelative, initials } from './formatters';
 import { ChannelBadge } from './ChannelBadge';
 import { channelLabel } from './capabilities';
 import type { ChannelKind, InboxTab, ConversationListItem } from './types';
@@ -309,24 +309,6 @@ function ChannelSelectValue({
  * `Objects are not valid as a React child (found: object with keys {text})`
  * al rotar de tab con filtro activo). Si llega un objeto, log + descartar.
  */
-function coerceSubtitle(preview: unknown): string {
-  if (typeof preview === 'string') return preview;
-  if (preview == null) return '';
-  if (typeof preview === 'object') {
-    // eslint-disable-next-line no-console
-    console.warn('[inbox] preview con shape inesperado, descartando:', preview);
-    const body = (preview as { body?: unknown; text?: unknown }).body;
-    if (typeof body === 'string') return body;
-    const text = (preview as { text?: unknown }).text;
-    if (typeof text === 'string') return text;
-    if (text && typeof text === 'object') {
-      const inner = (text as { body?: unknown }).body;
-      if (typeof inner === 'string') return inner;
-    }
-    return '';
-  }
-  return String(preview);
-}
 
 function ConversationRow({
   item,

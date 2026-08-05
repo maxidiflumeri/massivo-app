@@ -12,7 +12,7 @@ import {
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import { ChannelBadge } from '../inbox/ChannelBadge';
-import { formatPhone, formatRelative } from '../inbox/formatters';
+import { coerceSubtitle, formatPhone, formatRelative } from '../inbox/formatters';
 import type { ConversationListItem } from '../inbox/types';
 
 interface Props {
@@ -96,7 +96,7 @@ export function LiveConversationList({
                   />
                 </Stack>
                 <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
-                  {c.lastMessage?.preview || '—'}
+                  {coerceSubtitle(c.lastMessage?.preview) || '—'}
                 </Typography>
               </Box>
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
