@@ -1,4 +1,6 @@
-export const INBOX_TABS = ['mine', 'unassigned', 'others', 'resolved', 'all'] as const;
+// `all` = todo lo abierto (sin RESOLVED). `any` = sin filtro de status, lo usa
+// Monitoreo; el inbox nunca lo manda.
+export const INBOX_TABS = ['mine', 'unassigned', 'others', 'resolved', 'all', 'any'] as const;
 export type InboxTab = (typeof INBOX_TABS)[number];
 
 export type ConversationStatus = 'UNASSIGNED' | 'ASSIGNED' | 'WAITING' | 'RESOLVED';

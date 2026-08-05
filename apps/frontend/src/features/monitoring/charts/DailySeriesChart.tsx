@@ -21,7 +21,7 @@ export function DailySeriesChart({ data }: { data: MonitoringOverview['days'] })
         xAxis={[{ scaleType: 'point', data: labels, tickLabelStyle: { fontSize: 11, fill: ink.textMuted } }]}
         yAxis={[{ width: 44, tickLabelStyle: { fontSize: 11, fill: ink.textMuted } }]}
         series={[
-          { data: data.map((d) => d.conversations), label: 'Conversaciones', curve: 'monotoneX' },
+          { data: data.map((d) => d.conversations), label: 'Conversaciones nuevas', curve: 'monotoneX' },
           { data: data.map((d) => d.messagesIn), label: 'Entrantes', curve: 'monotoneX' },
           { data: data.map((d) => d.messagesOut), label: 'Salientes', curve: 'monotoneX' },
         ]}

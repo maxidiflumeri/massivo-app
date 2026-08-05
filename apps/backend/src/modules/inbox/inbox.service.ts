@@ -159,6 +159,9 @@ export class InboxService {
       case 'resolved':
         where.status = 'RESOLVED';
         break;
+      case 'any':
+        // Monitoreo: sin filtro de status (incluye RESOLVED).
+        break;
       case 'all':
       default:
         where.status = { in: ['UNASSIGNED', 'ASSIGNED', 'WAITING'] };

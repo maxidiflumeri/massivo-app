@@ -22,7 +22,14 @@ export interface MonitoringOverview {
   from: string;
   to: string;
   totals: {
+    /** Conversaciones CREADAS en la ventana. */
     conversations: number;
+    /**
+     * Conversaciones con al menos un mensaje en la ventana, sin importar cuándo
+     * se crearon. Es lo que responde "cuánto se movió": una conversación vieja
+     * que vuelve a hablar hoy cuenta acá, no en `conversations`.
+     */
+    conversationsActive: number;
     messagesIn: number;
     messagesOut: number;
     handoffs: number;
@@ -88,7 +95,7 @@ export class MonitoringService {
     const to = new Date();
     const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
 
-    const [convRows, msgRows, hourRows, byChannel, handoffs, activeSessions, escalatedCount, totalConv] =
+    const [convRows, msgRows, hourRows, byChannel, handoffs, activeSessions, escalatedCount, totalConv, activeConvRows] =
       await Promise.all([
         this.prisma.$queryRaw<Array<{ day: Date; count: bigint }>>(Prisma.sql`
           SELECT date_trunc('day', ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${TZ}) AS day,
@@ -129,6 +136,14 @@ export class MonitoringService {
           where: { createdAt: { gte: from, lte: to }, escalated: true },
         }),
         this.prisma.scoped.conversation.count({ where: { createdAt: { gte: from, lte: to } } }),
+        // Conversaciones "que se movieron": distinct sobre Message, no sobre
+        // fecha de creación (una del mes pasado que escribe hoy cuenta acá).
+        this.prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+          SELECT count(DISTINCT "conversationId") AS count
+          FROM "Message"
+          WHERE "organizationId" = ${organizationId} AND "teamId" = ${teamId}
+            AND "timestamp" >= ${from} AND "timestamp" <= ${to}
+        `),
       ]);
 
     // Serie continua: incluimos los días sin tráfico para que el gráfico no
@@ -173,6 +188,7 @@ export class MonitoringService {
       to: to.toISOString(),
       totals: {
         conversations: totalConv,
+        conversationsActive: Number(activeConvRows[0]?.count ?? 0),
         messagesIn,
         messagesOut,
         handoffs,

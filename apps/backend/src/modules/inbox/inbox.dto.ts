@@ -12,7 +12,10 @@ import {
   MinLength,
 } from 'class-validator';
 
-export const INBOX_TABS = ['mine', 'unassigned', 'others', 'resolved', 'all'] as const;
+// `all` es "todo lo abierto" (sin RESOLVED) — es lo que quiere el inbox.
+// `any` no filtra por status: lo usa Monitoreo, que observa la operación entera,
+// incluidas las conversaciones ya resueltas.
+export const INBOX_TABS = ['mine', 'unassigned', 'others', 'resolved', 'all', 'any'] as const;
 export type InboxTab = (typeof INBOX_TABS)[number];
 
 export class ListConversationsQueryDto {

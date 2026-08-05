@@ -5,7 +5,10 @@ export interface MonitoringOverview {
   from: string;
   to: string;
   totals: {
+    /** Creadas en la ventana. */
     conversations: number;
+    /** Con al menos un mensaje en la ventana (aunque sean más viejas). */
+    conversationsActive: number;
     messagesIn: number;
     messagesOut: number;
     handoffs: number;

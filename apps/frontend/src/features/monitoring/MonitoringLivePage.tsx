@@ -66,6 +66,9 @@ export function MonitoringLivePage() {
     async (term: string) => {
       try {
         const res = await inboxApi.listConversations(api, {
+          // `any` incluye las RESOLVED y `includeBotHandled` las que atendió el
+          // bot: monitoreo mira la operación entera, no la bandeja de trabajo.
+          tab: 'any',
           includeBotHandled: true,
           limit: PAGE_LIMIT,
           ...(term ? { search: term } : {}),
@@ -93,6 +96,7 @@ export function MonitoringLivePage() {
     setLoadingMore(true);
     try {
       const res = await inboxApi.listConversations(api, {
+        tab: 'any',
         includeBotHandled: true,
         limit: PAGE_LIMIT,
         cursor,

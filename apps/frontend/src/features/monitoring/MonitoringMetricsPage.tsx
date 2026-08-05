@@ -126,7 +126,12 @@ export function MonitoringMetricsPage() {
         <Box sx={{ opacity: loading ? 0.6 : 1, transition: 'opacity .2s' }}>
           <Grid container spacing={2} sx={{ mb: 2 }}>
             <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-              <KpiCard icon={<ForumIcon />} label="Conversaciones" value={data.totals.conversations} />
+              <KpiCard
+                icon={<ForumIcon />}
+                label="Conversaciones activas"
+                value={data.totals.conversationsActive}
+                hint={`${data.totals.conversations.toLocaleString('es-AR')} nuevas`}
+              />
             </Grid>
             <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
               <KpiCard icon={<CallReceivedIcon />} label="Mensajes entrantes" value={data.totals.messagesIn} color="info" />
