@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ConversationEpisodeService } from '../../common/episodes/conversation-episode.service';
 import { EncryptionService } from '../../common/security/encryption.service';
 import { EventsService } from '../events/events.service';
 import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
@@ -95,6 +96,7 @@ export class AgentRuntimeService {
     private readonly encryption: EncryptionService,
     private readonly events: EventsService,
     private readonly retrieval: AgentRetrievalService,
+    private readonly episodes: ConversationEpisodeService,
   ) {}
 
   async handleInbound(input: AgentRunInput): Promise<void> {
@@ -283,6 +285,7 @@ export class AgentRuntimeService {
         content,
         status: 'sent',
         timestamp: now,
+        episodeId: await this.episodes.resolveFor(conversationId, now),
       },
       select: { id: true },
     });

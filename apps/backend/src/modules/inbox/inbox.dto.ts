@@ -70,6 +70,11 @@ export class ListMessagesQueryDto {
   @IsString()
   cursor?: string;
 
+  /** Monitoreo — acota el hilo a una visita (episodio). */
+  @IsOptional()
+  @IsString()
+  episodeId?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

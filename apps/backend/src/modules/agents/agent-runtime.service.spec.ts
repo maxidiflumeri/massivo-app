@@ -59,6 +59,8 @@ describe('AgentRuntimeService', () => {
       encryption as never,
       events as never,
       retrieval as never,
+      // Monitoreo — visitas: stub.
+      ({ resolveFor: async () => 'ep-test', newEpisodeId: () => 'ep-test' } as never),
     );
   });
 

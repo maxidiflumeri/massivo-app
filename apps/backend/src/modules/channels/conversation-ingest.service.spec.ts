@@ -56,7 +56,7 @@ describe('ConversationIngestService', () => {
       botFeature as never,
       botEngine as never,
       // Núcleo real con el mismo mock de prisma → la lógica de upsert sigue cubierta.
-      new ConversationCoreService({ scoped: prismaScoped } as never),
+      new ConversationCoreService({ scoped: prismaScoped } as never, { resolveFor: jest.fn().mockResolvedValue('ep-test'), newEpisodeId: () => 'ep-test' } as never),
       { notifyInbound: jest.fn(), notifyEscalation: jest.fn() } as never,
       { handleInbound: jest.fn() } as never,
     );

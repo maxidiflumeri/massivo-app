@@ -2,6 +2,7 @@ import type { ApiClient } from '../../api/client';
 import type { ListResult } from '../inbox/types';
 import type {
   BotEventItem,
+  EpisodeItem,
   BotSessionSnapshot,
   MonitoringOverview,
   MonitoringWindow,
@@ -25,6 +26,10 @@ export const monitoringApi = {
     return api.get<ListResult<BotEventItem>>(
       `/api/monitoring/conversations/${conversationId}/bot-events${suffix}`,
     );
+  },
+
+  episodes(api: ApiClient, conversationId: string) {
+    return api.get<EpisodeItem[]>(`/api/monitoring/conversations/${conversationId}/episodes`);
   },
 
   botSession(api: ApiClient, conversationId: string) {

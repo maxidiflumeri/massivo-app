@@ -22,6 +22,11 @@ import type { BotFlow } from './bot.types';
 const noopEventLogger = new Proxy({}, { get: () => () => undefined }) as never;
 // Monitoreo — el recorder de BotEvent es fire-and-forget; en tests no persiste nada.
 const noopBotEvents = new Proxy({}, { get: () => () => undefined }) as never;
+// Monitoreo — visitas: en tests devuelve siempre la misma, no persiste nada.
+const stubEpisodes = {
+  resolveFor: jest.fn().mockResolvedValue('ep-test'),
+  newEpisodeId: () => 'ep-test',
+} as never;
 
 // Fase 1b — el engine envía vía WhatsAppAdapter. Este helper crea un mock-adapter
 // que reenvía al `sender` mock, preservando las aserciones existentes sobre
@@ -194,6 +199,7 @@ describe('BotEngineService', () => {
       { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
       noopEventLogger,
       noopBotEvents,
+      stubEpisodes,
     );
   });
 
@@ -1018,6 +1024,7 @@ describe('BotEngineService', () => {
       { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
       noopEventLogger,
       noopBotEvents,
+      stubEpisodes,
     );
     const cfgMulti = {
       ...cfg,
@@ -1111,6 +1118,7 @@ describe('BotEngineService', () => {
       { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
       noopEventLogger,
       noopBotEvents,
+      stubEpisodes,
     );
     const out = await withTenant(() =>
       localSvc.handle(cfg, {

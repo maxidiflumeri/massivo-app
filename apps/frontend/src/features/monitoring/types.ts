@@ -54,6 +54,17 @@ export interface BotEventPayload {
   reason?: string;
 }
 
+/** Una "visita": tramo del hilo separado del anterior por más de 30 min de silencio. */
+export interface EpisodeItem {
+  episodeId: string;
+  startedAt: string;
+  endedAt: string;
+  messages: number;
+  messagesIn: number;
+  handedOff: boolean;
+  firstInbound: string | null;
+}
+
 export interface BotSessionSnapshot {
   currentNodeId: string;
   currentTopicId: string | null;

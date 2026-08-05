@@ -5,6 +5,7 @@ import { TenantContext } from '../../common/auth/tenant-context';
 import { EventLogger } from '../../common/observability/event-logger.service';
 import { ObservabilityContext } from '../../common/observability/observability-context';
 import { BotEventRecorder } from '../../common/bot-events/bot-event-recorder.service';
+import { ConversationEpisodeService } from '../../common/episodes/conversation-episode.service';
 import { EncryptionService } from '../../common/security/encryption.service';
 import { EventsService } from '../events/events.service';
 import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
@@ -109,6 +110,7 @@ export class BotEngineService {
     private readonly mediaFetch: BotMediaFetchService,
     private readonly eventLogger: EventLogger,
     private readonly botEvents: BotEventRecorder,
+    private readonly episodes: ConversationEpisodeService,
   ) {}
 
   isBotButtonId(buttonId: string | null | undefined): boolean {
@@ -946,6 +948,7 @@ export class BotEngineService {
               mediaLocalPath: node.mediaLocalPath ?? null,
             }
           : {};
+      const episodeId = await this.episodes.resolveFor(conversationId, ts);
       const message = await this.prismaMessage.create({
         data: {
           conversationId,
@@ -956,6 +959,7 @@ export class BotEngineService {
           content: content as Prisma.InputJsonValue,
           status: 'sent',
           timestamp: ts,
+          episodeId,
           ...mediaCols,
         } as never,
         select: { id: true, content: true },

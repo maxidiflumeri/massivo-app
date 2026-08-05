@@ -24,6 +24,9 @@ import type {
 } from '../inbox/types';
 import { LiveConversationList } from './LiveConversationList';
 import { BotTimelineDrawer } from './BotTimelineDrawer';
+import { EpisodeSelector } from './EpisodeSelector';
+import { monitoringApi } from './api';
+import type { EpisodeItem } from './types';
 
 const PAGE_LIMIT = 30;
 const MESSAGES_LIMIT = 50;
@@ -55,12 +58,17 @@ export function MonitoringLivePage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
 
+  const [episodes, setEpisodes] = useState<EpisodeItem[]>([]);
+  const [episodeId, setEpisodeId] = useState<string | null>(null);
+
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [timelineKey, setTimelineKey] = useState(0);
 
   const debounceRef = useRef<number | null>(null);
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selected?.id ?? null;
+  const viewingLatestRef = useRef<boolean>(true);
+  viewingLatestRef.current = !episodeId || episodeId === episodes[0]?.episodeId;
 
   const loadList = useCallback(
     async (term: string) => {
@@ -111,13 +119,16 @@ export function MonitoringLivePage() {
     }
   }, [api, cursor, notify, search]);
 
-  const openConversation = useCallback(
-    async (c: ConversationListItem) => {
-      setSelected(c);
+  /** Carga el hilo acotado a una visita (o el más reciente si no hay ninguna). */
+  const loadThread = useCallback(
+    async (conversationId: string, ep: string | null) => {
       setLoadingMessages(true);
       setMessages([]);
       try {
-        const res = await inboxApi.listMessages(api, c.id, { limit: MESSAGES_LIMIT });
+        const res = await inboxApi.listMessages(api, conversationId, {
+          limit: MESSAGES_LIMIT,
+          ...(ep ? { episodeId: ep } : {}),
+        });
         setMessages(res.items);
         setMessagesCursor(res.nextCursor);
       } catch (e) {
@@ -129,6 +140,27 @@ export function MonitoringLivePage() {
     [api, notify],
   );
 
+  const openConversation = useCallback(
+    async (c: ConversationListItem) => {
+      setSelected(c);
+      setEpisodes([]);
+      setEpisodeId(null);
+      // Una persona puede haber vuelto decenas de veces: arrancamos mostrando
+      // sólo la última visita, no los meses de historial juntos.
+      let firstEpisode: string | null = null;
+      try {
+        const eps = await monitoringApi.episodes(api, c.id);
+        setEpisodes(eps);
+        firstEpisode = eps[0]?.episodeId ?? null;
+        setEpisodeId(firstEpisode);
+      } catch {
+        // Sin visitas (mensajes previos al backfill): se muestra el hilo entero.
+      }
+      await loadThread(c.id, firstEpisode);
+    },
+    [api, loadThread],
+  );
+
   const loadMoreMessages = useCallback(async () => {
     if (!selected || !messagesCursor) return;
     setLoadingMoreMessages(true);
@@ -136,6 +168,7 @@ export function MonitoringLivePage() {
       const res = await inboxApi.listMessages(api, selected.id, {
         limit: MESSAGES_LIMIT,
         cursor: messagesCursor,
+        ...(episodeId ? { episodeId } : {}),
       });
       setMessages((prev) => [...prev, ...res.items]);
       setMessagesCursor(res.nextCursor);
@@ -144,7 +177,7 @@ export function MonitoringLivePage() {
     } finally {
       setLoadingMoreMessages(false);
     }
-  }, [api, messagesCursor, notify, selected]);
+  }, [api, messagesCursor, notify, selected, episodeId]);
 
   useEffect(() => {
     if (!socket) {
@@ -159,10 +192,16 @@ export function MonitoringLivePage() {
       // Hilo abierto: append inmediato (dedupe por id — el mensaje puede venir
       // también en un refetch).
       if (ev.conversationId === selectedRef.current) {
-        setMessages((prev) =>
-          prev.some((m) => m.id === ev.message.id) ? prev : [ev.message, ...prev],
-        );
+        // Sólo si estás mirando la visita más reciente: un mensaje nuevo nunca
+        // pertenece a una visita vieja.
+        if (viewingLatestRef.current) {
+          setMessages((prev) =>
+            prev.some((m) => m.id === ev.message.id) ? prev : [ev.message, ...prev],
+          );
+        }
         setTimelineKey((k) => k + 1);
+        // La visita puede haberse renovado (pasó el TTL) → refrescamos la lista.
+        void monitoringApi.episodes(api, ev.conversationId).then(setEpisodes).catch(() => undefined);
       }
       // Lista: re-consulta debounced para que suba la conversación con tráfico.
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
@@ -185,7 +224,7 @@ export function MonitoringLivePage() {
       socket.off('conversation.updated', onUpdated);
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
-  }, [socket, loadList, search]);
+  }, [socket, loadList, search, api]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -266,13 +305,23 @@ export function MonitoringLivePage() {
                     sx={{ height: 20, fontSize: 11 }}
                   />
                 </Stack>
-                <Button
-                  size="small"
-                  startIcon={<AccountTreeIcon />}
-                  onClick={() => setTimelineOpen(true)}
-                >
-                  Ver recorrido del bot
-                </Button>
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <EpisodeSelector
+                    episodes={episodes}
+                    value={episodeId}
+                    onChange={(ep) => {
+                      setEpisodeId(ep);
+                      if (selected) void loadThread(selected.id, ep);
+                    }}
+                  />
+                  <Button
+                    size="small"
+                    startIcon={<AccountTreeIcon />}
+                    onClick={() => setTimelineOpen(true)}
+                  >
+                    Ver recorrido del bot
+                  </Button>
+                </Stack>
               </Stack>
               <Divider />
               {/* A diferencia del inbox, NO filtramos los mensajes del bot:
@@ -294,6 +343,14 @@ export function MonitoringLivePage() {
         open={timelineOpen}
         conversationId={selected?.id ?? null}
         refreshKey={timelineKey}
+        range={
+          episodeId
+            ? (() => {
+                const ep = episodes.find((e) => e.episodeId === episodeId);
+                return ep ? { from: ep.startedAt, to: ep.endedAt } : null;
+              })()
+            : null
+        }
         onClose={() => setTimelineOpen(false)}
       />
     </Box>

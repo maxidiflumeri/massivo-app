@@ -12,6 +12,7 @@ import { ObservabilityMiddleware } from './common/observability/observability.mi
 import { AuthModule } from './common/auth/auth.module';
 import { AuditLogModule } from './common/audit/audit-log.module';
 import { BotEventsModule } from './common/bot-events/bot-events.module';
+import { EpisodesModule } from './common/episodes/episodes.module';
 import { SecurityModule } from './common/security/security.module';
 import { QuotaModule } from './common/quota/quota.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
@@ -46,6 +47,7 @@ import { DevModule } from './modules/dev/dev.module';
     AuthModule,
     AuditLogModule,
     BotEventsModule,
+    EpisodesModule,
     SecurityModule,
     QuotaModule,
     WebhooksModule,

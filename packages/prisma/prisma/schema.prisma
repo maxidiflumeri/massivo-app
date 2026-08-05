@@ -1051,6 +1051,9 @@ model Conversation {
   botSuspended       Boolean                @default(false)
   waitingUntil       DateTime?
   lastAssignedUserId String?
+  // Monitoreo — visita abierta. Se renueva cuando entra un mensaje tras más de
+  // EPISODE_TTL_MIN de silencio.
+  currentEpisodeId   String?
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 
@@ -1105,6 +1108,11 @@ model Message {
   mediaFilename  String?
   mediaCaption   String?
   mediaLocalPath String?
+  // Monitoreo — "visita": tramo separado del anterior por más de EPISODE_TTL_MIN
+  // de silencio (mismo criterio con el que el bot abre sesión nueva). El hilo
+  // (Conversation) es único por contacto y vive para siempre; esto permite ver y
+  // contar cada vez que la persona volvió. Lo asigna ConversationEpisodeService.
+  episodeId      String?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -1118,6 +1126,9 @@ model Message {
   @@index([teamId, mediaSha256])
   // Monitoreo — serie diaria de mensajes por equipo
   @@index([teamId, timestamp])
+  // Monitoreo — agrupar/filtrar por visita
+  @@index([conversationId, episodeId])
+  @@index([teamId, episodeId])
 }
 
 // Notificaciones del inbox (campanita del navbar). Dos baldes:

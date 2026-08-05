@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@massivo/prisma';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ConversationEpisodeService } from '../../common/episodes/conversation-episode.service';
 import { TenantContext } from '../../common/auth/tenant-context';
 import { EncryptionService } from '../../common/security/encryption.service';
 import { EventsService } from '../events/events.service';
@@ -87,6 +88,7 @@ export class InboxService {
     private readonly media: WapiMediaService,
     private readonly botEngine: BotEngineService,
     private readonly notifications: NotificationsService,
+    private readonly episodes: ConversationEpisodeService,
   ) {}
 
   /**
@@ -317,6 +319,7 @@ export class InboxService {
 
     const limit = query.limit ?? DEFAULT_MESSAGES_LIMIT;
     const where: Record<string, unknown> = { conversationId };
+    if (query.episodeId) where.episodeId = query.episodeId;
     if (query.cursor) where.id = { lt: query.cursor };
 
     const rows = await this.prisma.scoped.message.findMany({
@@ -429,6 +432,7 @@ export class InboxService {
         content: { text: { body: dto.body } } as Prisma.InputJsonValue,
         status: 'sent',
         timestamp: ts,
+        episodeId: await this.episodes.resolveFor(conv.id, ts),
       } as never,
     });
 
@@ -570,6 +574,7 @@ export class InboxService {
         content: { [type]: contentMedia } as Prisma.InputJsonValue,
         status: 'sent',
         timestamp: ts,
+        episodeId: await this.episodes.resolveFor(conv.id, ts),
         mediaId: upload.mediaId,
         mediaMime: file.mimetype,
         mediaSha256: upload.sha256,

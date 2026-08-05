@@ -118,6 +118,7 @@ export class ConversationIngestService {
           content: content as Prisma.InputJsonValue,
           status: 'received',
           timestamp: ts,
+          episodeId: conversation.episodeId,
         } as never,
         select: { id: true, content: true },
       });

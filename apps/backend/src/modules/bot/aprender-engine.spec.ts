@@ -242,6 +242,8 @@ describe('🤖 Engine del bot — recorrido paso a paso', () => {
       tracingEventLogger as never,
       // Monitoreo — recorder de BotEvent: no-op en este test de recorrido.
       (new Proxy({}, { get: () => () => undefined }) as never),
+      // Monitoreo — visitas: stub, este test sólo mira el recorrido.
+      ({ resolveFor: async () => 'ep-test', newEpisodeId: () => 'ep-test' } as never),
     );
   });
 

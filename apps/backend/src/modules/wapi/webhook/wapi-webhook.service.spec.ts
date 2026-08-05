@@ -99,8 +99,9 @@ describe('WapiWebhookService', () => {
       botRouter as never,
       noopEventLogger,
       // Núcleo real con el mismo mock de prisma → preserva la lógica de upsert.
-      new ConversationCoreService({ scoped: prismaScoped } as never),
+      new ConversationCoreService({ scoped: prismaScoped } as never, { resolveFor: jest.fn().mockResolvedValue('ep-test'), newEpisodeId: () => 'ep-test' } as never),
       { notifyInbound: jest.fn(), notifyEscalation: jest.fn() } as never,
+      { resolveFor: jest.fn().mockResolvedValue('ep-test'), newEpisodeId: () => 'ep-test' } as never,
     );
   });
 

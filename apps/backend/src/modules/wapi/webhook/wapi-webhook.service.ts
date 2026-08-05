@@ -5,6 +5,7 @@ import { TenantContext } from '../../../common/auth/tenant-context';
 import { EventLogger } from '../../../common/observability/event-logger.service';
 import { ObservabilityContext } from '../../../common/observability/observability-context';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { ConversationEpisodeService } from '../../../common/episodes/conversation-episode.service';
 import { EncryptionService } from '../../../common/security/encryption.service';
 import { EventsService } from '../../events/events.service';
 import { WapiMediaService } from '../media/wapi-media.service';
@@ -105,6 +106,7 @@ export class WapiWebhookService {
     private readonly eventLogger: EventLogger,
     private readonly core: ConversationCoreService,
     private readonly notifications: NotificationsService,
+    private readonly episodes: ConversationEpisodeService,
   ) {}
 
   async process(
@@ -327,6 +329,7 @@ export class WapiWebhookService {
           content: extractContent(msg) as Prisma.InputJsonValue,
           status: 'received',
           timestamp: ts,
+          episodeId: conversation.episodeId,
           ...(mediaPersisted ?? {}),
         },
         select: { id: true, content: true },
@@ -764,6 +767,7 @@ export class WapiWebhookService {
           content: { text: { body: input.body }, system: { kind: input.kind } } as Prisma.InputJsonValue,
           status: 'sent',
           timestamp: ts,
+          episodeId: await this.episodes.resolveFor(input.conversationId, ts),
         } as never,
         select: { id: true, content: true },
       });

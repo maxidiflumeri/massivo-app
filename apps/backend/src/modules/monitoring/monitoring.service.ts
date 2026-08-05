@@ -57,6 +57,18 @@ export interface BotEventItem {
   createdAt: string;
 }
 
+export interface EpisodeItem {
+  episodeId: string;
+  startedAt: string;
+  endedAt: string;
+  messages: number;
+  messagesIn: number;
+  /** La visita terminó con el bot derivando a un operador. */
+  handedOff: boolean;
+  /** Primer mensaje del usuario en la visita — sirve de título. */
+  firstInbound: string | null;
+}
+
 export interface BotSessionSnapshot {
   currentNodeId: string;
   currentTopicId: string | null;
@@ -97,12 +109,20 @@ export class MonitoringService {
 
     const [convRows, msgRows, hourRows, byChannel, handoffs, activeSessions, escalatedCount, totalConv, activeConvRows] =
       await Promise.all([
+        // Visitas iniciadas por día: se bucketea el PRIMER mensaje de cada
+        // episodio, no la creación del hilo (que es de la primera vez, hace meses).
         this.prisma.$queryRaw<Array<{ day: Date; count: bigint }>>(Prisma.sql`
-          SELECT date_trunc('day', ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${TZ}) AS day,
+          WITH visitas AS (
+            SELECT "episodeId", min("timestamp") AS inicio
+            FROM "Message"
+            WHERE "organizationId" = ${organizationId} AND "teamId" = ${teamId}
+              AND "episodeId" IS NOT NULL
+            GROUP BY "episodeId"
+          )
+          SELECT date_trunc('day', (inicio AT TIME ZONE 'UTC') AT TIME ZONE ${TZ}) AS day,
                  count(*) AS count
-          FROM "Conversation"
-          WHERE "organizationId" = ${organizationId} AND "teamId" = ${teamId}
-            AND "createdAt" >= ${from} AND "createdAt" <= ${to}
+          FROM visitas
+          WHERE inicio >= ${from} AND inicio <= ${to}
           GROUP BY 1 ORDER BY 1
         `),
         this.prisma.$queryRaw<Array<{ day: Date; from_me: boolean; count: bigint }>>(Prisma.sql`
@@ -121,25 +141,35 @@ export class MonitoringService {
             AND "timestamp" >= ${from} AND "timestamp" <= ${to} AND "fromMe" = false
           GROUP BY 1 ORDER BY 1
         `),
-        this.prisma.scoped.conversation.groupBy({
-          by: ['channelKind'],
-          where: { createdAt: { gte: from, lte: to } },
-          _count: { _all: true },
-        }),
+        this.prisma.$queryRaw<Array<{ channel_kind: string; count: bigint }>>(Prisma.sql`
+          SELECT c."channelKind" AS channel_kind, count(DISTINCT m."episodeId") AS count
+          FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+          WHERE m."organizationId" = ${organizationId} AND m."teamId" = ${teamId}
+            AND m."timestamp" >= ${from} AND m."timestamp" <= ${to}
+            AND m."episodeId" IS NOT NULL
+          GROUP BY 1 ORDER BY 2 DESC
+        `),
         this.prisma.scoped.botEvent.count({
           where: { kind: 'bot.handoff', createdAt: { gte: from, lte: to } },
         }),
         this.prisma.scoped.botSession.count({
           where: { endedAt: null, expiresAt: { gt: to } },
         }),
-        this.prisma.scoped.conversation.count({
-          where: { createdAt: { gte: from, lte: to }, escalated: true },
-        }),
+        // Derivadas: visitas donde el bot dejó un mensaje de HANDOFF. El engine
+        // siempre estampó `system.kind='bot-handoff'`, así que anda retroactivo.
+        this.prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+          SELECT count(DISTINCT "episodeId") AS count
+          FROM "Message"
+          WHERE "organizationId" = ${organizationId} AND "teamId" = ${teamId}
+            AND "timestamp" >= ${from} AND "timestamp" <= ${to}
+            AND "episodeId" IS NOT NULL
+            AND content -> 'system' ->> 'kind' = 'bot-handoff'
+        `),
         this.prisma.scoped.conversation.count({ where: { createdAt: { gte: from, lte: to } } }),
         // Conversaciones "que se movieron": distinct sobre Message, no sobre
         // fecha de creación (una del mes pasado que escribe hoy cuenta acá).
         this.prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
-          SELECT count(DISTINCT "conversationId") AS count
+          SELECT count(DISTINCT "episodeId") AS count
           FROM "Message"
           WHERE "organizationId" = ${organizationId} AND "teamId" = ${teamId}
             AND "timestamp" >= ${from} AND "timestamp" <= ${to}
@@ -176,6 +206,9 @@ export class MonitoringService {
       });
     }
 
+    const activas = Number(activeConvRows[0]?.count ?? 0);
+    const derivadas = Number(escalatedCount[0]?.count ?? 0);
+
     const hourMap = new Map(hourRows.map((r) => [Number(r.hour), Number(r.count)]));
     const hourly = Array.from({ length: 24 }, (_, hour) => ({
       hour,
@@ -188,7 +221,7 @@ export class MonitoringService {
       to: to.toISOString(),
       totals: {
         conversations: totalConv,
-        conversationsActive: Number(activeConvRows[0]?.count ?? 0),
+        conversationsActive: activas,
         messagesIn,
         messagesOut,
         handoffs,
@@ -197,10 +230,10 @@ export class MonitoringService {
       days: daysSeries,
       hourly,
       byChannel: byChannel.map((g) => ({
-        channelKind: String(g.channelKind),
-        conversations: g._count._all,
+        channelKind: String(g.channel_kind),
+        conversations: Number(g.count),
       })),
-      botVsEscalated: { bot: totalConv - escalatedCount, escalated: escalatedCount },
+      botVsEscalated: { bot: activas - derivadas, escalated: derivadas },
     };
   }
 
@@ -231,6 +264,49 @@ export class MonitoringService {
       createdAt: r.createdAt.toISOString(),
     }));
     return { items, nextCursor: hasMore ? (items[items.length - 1]?.id ?? null) : null };
+  }
+
+  /**
+   * "Visitas" de un hilo, de la más nueva a la más vieja. El hilo es único por
+   * contacto y acumula meses de charla; esto lo parte en las veces que la
+   * persona efectivamente volvió a escribir.
+   */
+  async listEpisodes(conversationId: string): Promise<EpisodeItem[]> {
+    await this.assertConversation(conversationId);
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        episode_id: string;
+        started_at: Date;
+        ended_at: Date;
+        messages: bigint;
+        messages_in: bigint;
+        handed_off: boolean;
+        first_inbound: string | null;
+      }>
+    >(Prisma.sql`
+      SELECT "episodeId" AS episode_id,
+             min("timestamp") AS started_at,
+             max("timestamp") AS ended_at,
+             count(*) AS messages,
+             count(*) FILTER (WHERE "fromMe" = false) AS messages_in,
+             bool_or(content -> 'system' ->> 'kind' = 'bot-handoff') AS handed_off,
+             (array_remove(array_agg(
+                content -> 'text' ->> 'body' ORDER BY "timestamp"
+              ) FILTER (WHERE "fromMe" = false), NULL))[1] AS first_inbound
+      FROM "Message"
+      WHERE "conversationId" = ${conversationId} AND "episodeId" IS NOT NULL
+      GROUP BY "episodeId"
+      ORDER BY started_at DESC
+    `);
+    return rows.map((r) => ({
+      episodeId: r.episode_id,
+      startedAt: r.started_at.toISOString(),
+      endedAt: r.ended_at.toISOString(),
+      messages: Number(r.messages),
+      messagesIn: Number(r.messages_in),
+      handedOff: !!r.handed_off,
+      firstInbound: r.first_inbound,
+    }));
   }
 
   /** Estado actual de la sesión del bot (nodo parado + variables capturadas). */

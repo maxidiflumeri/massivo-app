@@ -18,6 +18,7 @@ import {
   isValidWindow,
   type BotEventItem,
   type BotSessionSnapshot,
+  type EpisodeItem,
   type MonitoringOverview,
 } from './monitoring.service';
 
@@ -51,6 +52,12 @@ export class MonitoringController {
   ): Promise<{ items: BotEventItem[]; nextCursor: string | null }> {
     const limit = Math.min(Math.max(Number(limitRaw ?? 100) || 100, 1), MAX_EVENTS_PAGE);
     return this.monitoring.listBotEvents(id, cursor, limit);
+  }
+
+  @Get('conversations/:id/episodes')
+  @CheckPolicies((a: AppAbility) => a.can('read', 'Conversation'))
+  async episodes(@Param('id') id: string): Promise<EpisodeItem[]> {
+    return this.monitoring.listEpisodes(id);
   }
 
   @Get('conversations/:id/bot-session')

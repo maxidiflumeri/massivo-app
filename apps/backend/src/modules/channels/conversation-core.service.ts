@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ConversationEpisodeService } from '../../common/episodes/conversation-episode.service';
 
 const WINDOW_24H_MS = 24 * 60 * 60_000;
 
@@ -8,6 +9,8 @@ export interface UpsertedConversation {
   status: string;
   assignedUserId: string | null;
   unreadCount: number;
+  /** Monitoreo — visita a la que pertenece este inbound. */
+  episodeId: string | null;
 }
 
 /**
@@ -26,7 +29,10 @@ export interface UpsertedConversation {
  */
 @Injectable()
 export class ConversationCoreService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly episodes: ConversationEpisodeService,
+  ) {}
 
   /**
    * Upsert de la conversación. Devuelve la conversación y `isFirst` (true cuando no
@@ -52,14 +58,25 @@ export class ConversationCoreService {
       select: { id: true, status: true, assignedUserId: true, unreadCount: true },
     });
     const isFirst = !existing;
-    let conversation: UpsertedConversation;
+    // Fila cruda: `currentEpisodeId` es interno; afuera se expone como `episodeId`.
+    let row: {
+      id: string;
+      status: string;
+      assignedUserId: string | null;
+      unreadCount: number;
+      currentEpisodeId: string | null;
+    };
+
+    // Monitoreo — la visita se decide con el `lastMessageAt` VIEJO, así que va
+    // antes del update de abajo (que lo pisa con `ts`).
+    const episodeId = existing ? await this.episodes.resolveFor(existing.id, ts) : null;
 
     if (existing) {
       // El cliente respondió → si estaba en espera, sale de espera. NO auto-reopen de
       // RESOLVED (el bot decide si escalar).
       const waitingTransition =
         existing.status === 'WAITING' ? { status: 'UNASSIGNED', waitingUntil: null } : {};
-      conversation = await this.prisma.scoped.conversation.update({
+      row = await this.prisma.scoped.conversation.update({
         where: { id: existing.id },
         data: {
           lastMessageAt: ts,
@@ -68,11 +85,14 @@ export class ConversationCoreService {
           ...(profileName ? { name: profileName } : {}),
           ...waitingTransition,
         } as never,
-        select: { id: true, status: true, assignedUserId: true, unreadCount: true },
+        select: {
+          id: true, status: true, assignedUserId: true, unreadCount: true,
+          currentEpisodeId: true,
+        },
       });
     } else {
       try {
-        conversation = await this.prisma.scoped.conversation.create({
+        row = await this.prisma.scoped.conversation.create({
           data: {
             organizationId,
             teamId,
@@ -83,20 +103,35 @@ export class ConversationCoreService {
             lastMessageAt: ts,
             freeformWindowAt: new Date(ts.getTime() + WINDOW_24H_MS),
             unreadCount: 1,
+            currentEpisodeId: this.episodes.newEpisodeId(),
           } as never,
-          select: { id: true, status: true, assignedUserId: true, unreadCount: true },
+          select: {
+            id: true, status: true, assignedUserId: true, unreadCount: true,
+            currentEpisodeId: true,
+          },
         });
       } catch (err) {
         if ((err as { code?: string }).code !== 'P2002') throw err;
         const refetched = await this.prisma.scoped.conversation.findFirst({
           where: { channelId, externalUserId },
-          select: { id: true, status: true, assignedUserId: true, unreadCount: true },
+          select: {
+            id: true, status: true, assignedUserId: true, unreadCount: true,
+            currentEpisodeId: true,
+          },
         });
         if (!refetched) throw err;
-        conversation = refetched;
+        row = refetched;
       }
     }
 
+    // `episodeId` de la resolución (hilo existente) o el que abrió la conversación nueva.
+    const conversation: UpsertedConversation = {
+      id: row.id,
+      status: row.status,
+      assignedUserId: row.assignedUserId,
+      unreadCount: row.unreadCount,
+      episodeId: episodeId ?? row.currentEpisodeId ?? null,
+    };
     return { conversation, isFirst };
   }
 }

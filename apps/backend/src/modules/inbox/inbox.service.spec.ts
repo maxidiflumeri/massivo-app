@@ -10,6 +10,7 @@ import { WapiMediaService } from '../wapi/media/wapi-media.service';
 import { BotEngineService } from '../bot/bot-engine.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TenantContext } from '../../common/auth/tenant-context';
+import { ConversationEpisodeService } from '../../common/episodes/conversation-episode.service';
 
 describe('InboxService', () => {
   let service: InboxService;
@@ -108,6 +109,14 @@ describe('InboxService', () => {
             clearUnassignedForConversation: jest.fn().mockResolvedValue(undefined),
             clearForConversationUser: jest.fn().mockResolvedValue(undefined),
             clearAllForConversation: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          // Monitoreo — visitas: stub, no persiste.
+          provide: ConversationEpisodeService,
+          useValue: {
+            resolveFor: jest.fn().mockResolvedValue('ep-test'),
+            newEpisodeId: () => 'ep-test',
           },
         },
       ],

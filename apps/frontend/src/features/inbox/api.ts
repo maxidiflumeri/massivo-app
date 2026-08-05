@@ -48,7 +48,7 @@ export const inboxApi = {
   listMessages(
     api: ApiClient,
     id: string,
-    params: { cursor?: string; limit?: number } = {},
+    params: { cursor?: string; limit?: number; episodeId?: string } = {},
   ) {
     return api.get<ListResult<InboxMessage>>(
       `/api/inbox/conversations/${id}/messages${qs(params)}`,

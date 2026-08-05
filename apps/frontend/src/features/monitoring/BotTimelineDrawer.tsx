@@ -30,6 +30,8 @@ interface Props {
   conversationId: string | null;
   /** Se pasa para refrescar cuando llega un mensaje nuevo a esta conversación. */
   refreshKey?: number;
+  /** Acota el recorrido a la visita que se está mirando en el hilo. */
+  range?: { from: string; to: string } | null;
   onClose: () => void;
 }
 
@@ -38,7 +40,7 @@ interface Props {
  * capturó, qué llamadas HTTP hizo y cómo terminó. Complementa al hilo de
  * mensajes, que muestra lo que vio la persona.
  */
-export function BotTimelineDrawer({ open, conversationId, refreshKey, onClose }: Props) {
+export function BotTimelineDrawer({ open, conversationId, refreshKey, range, onClose }: Props) {
   const api = useApi();
   const notify = useNotify();
   const [events, setEvents] = useState<BotEventItem[]>([]);
@@ -69,6 +71,11 @@ export function BotTimelineDrawer({ open, conversationId, refreshKey, onClose }:
     void load(conversationId);
   }, [open, conversationId, refreshKey, load]);
 
+  // El hilo muestra una visita; el recorrido acompaña con el mismo recorte.
+  const visibles = range
+    ? events.filter((e) => e.createdAt >= range.from && e.createdAt <= range.to)
+    : events;
+
   return (
     <Drawer
       anchor="right"
@@ -82,8 +89,8 @@ export function BotTimelineDrawer({ open, conversationId, refreshKey, onClose }:
             Recorrido del bot
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            {events.length} paso{events.length === 1 ? '' : 's'} registrado
-            {events.length === 1 ? '' : 's'}
+            {visibles.length} paso{visibles.length === 1 ? '' : 's'} registrado
+            {visibles.length === 1 ? '' : 's'}
           </Typography>
         </Box>
         <IconButton size="small" onClick={onClose}>
@@ -136,7 +143,7 @@ export function BotTimelineDrawer({ open, conversationId, refreshKey, onClose }:
           <Box sx={{ textAlign: 'center', py: 6 }}>
             <CircularProgress size={24} />
           </Box>
-        ) : events.length === 0 ? (
+        ) : visibles.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
             No hay pasos registrados para esta conversación.
             <br />
@@ -144,7 +151,7 @@ export function BotTimelineDrawer({ open, conversationId, refreshKey, onClose }:
           </Typography>
         ) : (
           <Stack spacing={0}>
-            {events.map((ev) => (
+            {visibles.map((ev) => (
               <TimelineRow key={ev.id} event={ev} />
             ))}
           </Stack>
