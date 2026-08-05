@@ -135,6 +135,24 @@ const buildNavGroups = (flags: PlanNavFlags): NavGroupSpec[] => [
       },
     ],
   },
+  // Monitoreo: observabilidad de la operación (métricas + replay de
+  // conversaciones con el recorrido del bot). Sin gate de plan — el backend
+  // resuelve el permiso por CASL (read Analytics / read Conversation).
+  {
+    label: 'Monitoreo',
+    items: [
+      {
+        to: '/dashboard/monitoring',
+        label: 'Métricas',
+        icon: <InsightsIcon fontSize="small" />,
+      },
+      {
+        to: '/dashboard/monitoring/live',
+        label: 'En vivo',
+        icon: <MonitorHeartIcon fontSize="small" />,
+      },
+    ],
+  },
   // Canales: gestión omnicanal (alta/conexión de WhatsApp/Messenger/…) → sección propia.
   {
     label: 'Canales',

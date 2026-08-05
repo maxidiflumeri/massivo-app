@@ -25,9 +25,20 @@ interface Props {
   showTail: boolean;
   /** Si está seteado, los botones interactivos del bubble se vuelven clickeables. */
   onInteractiveButtonClick?: (buttonId: string, title: string) => void;
+  /**
+   * Monitoreo — marca con un chip "Bot" los mensajes que emitió el motor. Off
+   * por default: en el inbox el operador no necesita el detalle (y esos
+   * mensajes ni siquiera se listan).
+   */
+  showBotBadge?: boolean;
 }
 
-export function MessageBubble({ message, showTail, onInteractiveButtonClick }: Props) {
+export function MessageBubble({
+  message,
+  showTail,
+  onInteractiveButtonClick,
+  showBotBadge,
+}: Props) {
   const fromMe = message.fromMe;
   const failed = message.status === 'failed';
   const isReaction = message.type === 'reaction';
@@ -171,6 +182,24 @@ export function MessageBubble({ message, showTail, onInteractiveButtonClick }: P
           sx={{ mt: 0.25 }}
         >
           {failed && <ErrorOutlineIcon sx={{ fontSize: 12, color: 'error.main' }} />}
+          {showBotBadge && botSystemKind(message) && (
+            <Typography
+              component="span"
+              variant="caption"
+              sx={{
+                fontSize: 9.5,
+                fontWeight: 600,
+                letterSpacing: 0.3,
+                px: 0.5,
+                borderRadius: 0.5,
+                opacity: 0.8,
+                border: '1px solid currentColor',
+                mr: 0.25,
+              }}
+            >
+              BOT
+            </Typography>
+          )}
           <Typography variant="caption" sx={{ fontSize: 10.5, opacity: 0.7 }}>
             {formatTime(message.timestamp)}
           </Typography>
@@ -437,6 +466,17 @@ function MediaErrorBox({ icon, text }: { icon: React.ReactNode; text: string }) 
  * El handoff (`bot-handoff`) sí se muestra: le da contexto al operador de por qué
  * la conversación quedó en su inbox.
  */
+/**
+ * Monitoreo — devuelve el `system.kind` que estampa el motor del bot al
+ * persistir sus salidas ('bot-menu', 'bot-message', 'bot-media', …), o null si
+ * el mensaje no lo emitió el bot.
+ */
+export function botSystemKind(m: InboxMessage): string | null {
+  if (!m.fromMe || !m.content || typeof m.content !== 'object') return null;
+  const sys = (m.content as Record<string, unknown>).system as { kind?: string } | undefined;
+  return typeof sys?.kind === 'string' && sys.kind.startsWith('bot-') ? sys.kind : null;
+}
+
 export function isBotInteractionMessage(m: InboxMessage): boolean {
   if (!m.content || typeof m.content !== 'object') return false;
   const c = m.content as Record<string, unknown>;

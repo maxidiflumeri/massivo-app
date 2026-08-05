@@ -24,6 +24,7 @@
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^7.1.0",
     "@mui/material": "^7.1.0",
+    "@mui/x-charts": "^8",
     "@xyflow/react": "^12.10.2",
     "dagre": "^0.8.5",
     "jsonata": "^2.2.1",

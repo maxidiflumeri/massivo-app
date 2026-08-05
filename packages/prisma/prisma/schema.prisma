@@ -141,6 +141,7 @@ model Organization {
   wapiQuickReplies    WapiQuickReply[]
   wapiResolutionNotes WapiResolutionNote[]
   botSessions         BotSession[]
+  botEvents           BotEvent[]
   bots                Bot[]
   agents              Agent[]
   agentDocuments      AgentDocument[]
@@ -189,6 +190,7 @@ model Team {
   wapiQuickReplies    WapiQuickReply[]
   wapiResolutionNotes WapiResolutionNote[]
   botSessions         BotSession[]
+  botEvents           BotEvent[]
   bots                Bot[]
   agents              Agent[]
   agentDocuments      AgentDocument[]
@@ -1071,6 +1073,8 @@ model Conversation {
   // Fase 1d — el inbox omnicanal filtra por canal.
   @@index([teamId, channelKind, lastMessageAt])
   @@index([status, waitingUntil])
+  // Monitoreo — conversaciones nuevas por día
+  @@index([teamId, createdAt])
 }
 
 model Message {
@@ -1112,6 +1116,8 @@ model Message {
   @@index([teamId])
   @@index([conversationId, timestamp])
   @@index([teamId, mediaSha256])
+  // Monitoreo — serie diaria de mensajes por equipo
+  @@index([teamId, timestamp])
 }
 
 // Notificaciones del inbox (campanita del navbar). Dos baldes:
@@ -1247,6 +1253,38 @@ model BotSession {
   @@index([organizationId])
   @@index([teamId])
   @@index([expiresAt])
+}
+
+// Monitoreo — timeline técnico nodo-a-nodo del bot. Append-only, retención
+// ~BOT_EVENT_RETENTION_DAYS días (BotEventRetentionService). sessionId es String
+// plano SIN FK: las filas de BotSession se reusan/pisan por (channelId,
+// externalUserId), su id no sirve como referencia histórica. conversationId
+// tampoco lleva FK: tabla de telemetría, el insert no debe fallar si borran la
+// conversación. Lo escribe BotEventRecorder (buffer + createMany, fire-and-forget).
+model BotEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String
+  conversationId String?
+  channelId      String?
+  sessionId      String?
+  // Mismo nombre que el evento de log: 'bot.node.entered' | 'bot.capture' |
+  // 'bot.capture.invalid' | 'bot.setvar' | 'bot.http' | 'bot.media' |
+  // 'bot.goto' | 'bot.handoff' | 'bot.session.started' | 'bot.session.ended'
+  kind           String
+  nodeId         String?
+  nodeKind       String? // MENU | MESSAGE | CAPTURE | HTTP | ... (denormalizado)
+  topicId        String?
+  // Detalle por kind, valores truncados (≤120 chars). Nunca bodies HTTP.
+  payload        Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt]) // replay timeline
+  @@index([teamId, createdAt])         // métricas por equipo
+  @@index([createdAt])                 // retención cross-tenant
 }
 
 // ============================================================

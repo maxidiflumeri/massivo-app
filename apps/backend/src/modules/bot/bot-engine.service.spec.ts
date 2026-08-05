@@ -20,6 +20,8 @@ import type { BotFlow } from './bot.types';
 // 4.R — EventLogger no se asserta en estos tests; Proxy noop para autocompletar
 // cualquier método llamado por el engine (botNodeEntered, botSetVar, etc).
 const noopEventLogger = new Proxy({}, { get: () => () => undefined }) as never;
+// Monitoreo — el recorder de BotEvent es fire-and-forget; en tests no persiste nada.
+const noopBotEvents = new Proxy({}, { get: () => () => undefined }) as never;
 
 // Fase 1b — el engine envía vía WhatsAppAdapter. Este helper crea un mock-adapter
 // que reenvía al `sender` mock, preservando las aserciones existentes sobre
@@ -191,6 +193,7 @@ describe('BotEngineService', () => {
       httpExecutor as never,
       { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
       noopEventLogger,
+      noopBotEvents,
     );
   });
 
@@ -1014,6 +1017,7 @@ describe('BotEngineService', () => {
       } as never,
       { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
       noopEventLogger,
+      noopBotEvents,
     );
     const cfgMulti = {
       ...cfg,
@@ -1106,6 +1110,7 @@ describe('BotEngineService', () => {
       } as never,
       { execute: jest.fn().mockResolvedValue({ ok: false, error: 'mock-undefined', durationMs: 0 }) } as never,
       noopEventLogger,
+      noopBotEvents,
     );
     const out = await withTenant(() =>
       localSvc.handle(cfg, {

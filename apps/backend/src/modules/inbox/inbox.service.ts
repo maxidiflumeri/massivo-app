@@ -51,6 +51,8 @@ export interface ConversationListItem {
   // 4.O.6 — bot suspension + WAITING.
   waitingUntil: Date | null;
   lastAssignedUserId: string | null;
+  /** Monitoreo — distingue "la atendió el bot" de "se escaló a un operador". */
+  escalated: boolean;
   lastMessage: {
     fromMe: boolean;
     type: string;
@@ -231,6 +233,7 @@ export class InboxService {
         priority: row.priority,
         waitingUntil: r.waitingUntil,
         lastAssignedUserId: r.lastAssignedUserId,
+        escalated: row.escalated,
         lastMessage: last
           ? {
               fromMe: last.fromMe,
@@ -284,6 +287,7 @@ export class InboxService {
       priority: row.priority,
       waitingUntil: r.waitingUntil,
       lastAssignedUserId: r.lastAssignedUserId,
+      escalated: row.escalated,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       lastMessage: last

@@ -22,6 +22,9 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'WapiQuickReply',
   'WapiResolutionNote',
   'BotSession',
+  // Monitoreo — timeline técnico del bot (append-only, lo escribe BotEventRecorder
+  // con el cliente root; el scoping acá cubre las lecturas del panel).
+  'BotEvent',
   // Bot como entidad propia (Phase 0a — multi-canal)
   'Bot',
   // Plataforma agéntica (v0) — Agente IA de primera clase.

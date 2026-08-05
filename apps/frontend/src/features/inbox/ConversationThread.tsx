@@ -12,6 +12,8 @@ interface Props {
   loadingMore: boolean;
   /** Si está seteado, los botones interactivos del bot se vuelven clickeables. */
   onInteractiveButtonClick?: (buttonId: string, title: string) => void;
+  /** Monitoreo — marca con un chip "BOT" los mensajes emitidos por el motor. */
+  showBotBadge?: boolean;
 }
 
 export function ConversationThread({
@@ -21,6 +23,7 @@ export function ConversationThread({
   onLoadMore,
   loadingMore,
   onInteractiveButtonClick,
+  showBotBadge,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastIdRef = useRef<string | null>(null);
@@ -98,6 +101,7 @@ export function ConversationThread({
                 message={m}
                 showTail={showTail}
                 onInteractiveButtonClick={onInteractiveButtonClick}
+                showBotBadge={showBotBadge}
               />
             </Box>
           );

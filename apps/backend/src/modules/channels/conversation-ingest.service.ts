@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@massivo/prisma';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
+import { ObservabilityContext } from '../../common/observability/observability-context';
 import { EventsService } from '../events/events.service';
 import { BotEngineService } from '../bot/bot-engine.service';
 import { BotFeatureService } from '../bot/bot-feature.service';
@@ -219,7 +220,13 @@ export class ConversationIngestService {
           : null;
     if (!botInbound) return;
 
-    const result = await this.botEngine.handle(
+    // Monitoreo — abrimos el scope de correlación antes de entrar al engine: el
+    // webhook de WhatsApp ya lo hace, pero este path (Messenger/IG/Webchat) no,
+    // y sin `conversationId` los BotEvent quedarían huérfanos del replay.
+    // Usamos `run` (no `augment`) porque acá puede no haber scope padre.
+    const result = await ObservabilityContext.run(
+      { conversationId, phone: externalUserId, configId: channel.id },
+      () => this.botEngine.handle(
       {
         id: channel.id,
         kind: channel.kind,
@@ -235,6 +242,7 @@ export class ConversationIngestService {
         botVariables: bot.variables,
       },
       { configId: channel.id, conversationId, phone: externalUserId, inbound: botInbound },
+      ),
     );
 
     // HANDOFF: el motor ya marcó escalated=true; acá marcamos priority + empujamos

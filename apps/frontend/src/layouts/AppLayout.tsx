@@ -35,6 +35,8 @@ export function AppLayout() {
     location.pathname.startsWith('/dashboard/inbox') ||
     location.pathname.startsWith('/dashboard/bots') ||
     location.pathname.startsWith('/dashboard/dev/wapi/chat') ||
+    // Monitoreo en vivo: lista + hilo con scroll interno (la de métricas no).
+    location.pathname.startsWith('/dashboard/monitoring/live') ||
     // Chats de prueba de canales (Messenger/IG/Webchat): alto fijo, scroll interno.
     location.pathname.startsWith('/dashboard/dev/channels/');
 

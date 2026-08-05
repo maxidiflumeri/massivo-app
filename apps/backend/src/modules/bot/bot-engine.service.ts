@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
 import { EventLogger } from '../../common/observability/event-logger.service';
 import { ObservabilityContext } from '../../common/observability/observability-context';
+import { BotEventRecorder } from '../../common/bot-events/bot-event-recorder.service';
 import { EncryptionService } from '../../common/security/encryption.service';
 import { EventsService } from '../events/events.service';
 import { ChannelAdapterRegistry } from '../channels/channel-adapter.registry';
@@ -107,6 +108,7 @@ export class BotEngineService {
     private readonly httpExecutor: BotHttpExecutor,
     private readonly mediaFetch: BotMediaFetchService,
     private readonly eventLogger: EventLogger,
+    private readonly botEvents: BotEventRecorder,
   ) {}
 
   isBotButtonId(buttonId: string | null | undefined): boolean {
@@ -230,6 +232,13 @@ export class BotEngineService {
               varName: node.saveAs,
               value: data[node.saveAs],
             });
+            this.botEvents.record({
+              kind: 'bot.capture',
+              nodeId: session.currentNodeId,
+              nodeKind: 'CAPTURE',
+              topicId: currentTopicId,
+              payload: { varName: node.saveAs, value: data[node.saveAs] },
+            });
             const target = this.followGoto(node.gotoTopic, node.nextNodeId, currentTopicId, resolved);
             if (!target) return { handled: true };
             nextNodeId = target.nodeId;
@@ -240,6 +249,13 @@ export class BotEngineService {
               nodeId: session.currentNodeId,
               varName: node.saveAs,
               input: input.inbound.body,
+            });
+            this.botEvents.record({
+              kind: 'bot.capture.invalid',
+              nodeId: session.currentNodeId,
+              nodeKind: 'CAPTURE',
+              topicId: currentTopicId,
+              payload: { varName: node.saveAs, input: input.inbound.body },
             });
             nextNodeId = node.retryNodeId;
           } else {
@@ -385,6 +401,15 @@ export class BotEngineService {
       }
       // 4.R — trazabilidad: cada paso visible en logs.
       this.eventLogger.botNodeEntered({ nodeId: currentId, nodeKind: node.kind, topicId });
+      // Monitoreo — el replay muestra `textPreview` porque los nodos no tienen
+      // label humano; guardarlo acá lo hace inmune a ediciones del flow.
+      this.botEvents.record({
+        kind: 'bot.node.entered',
+        nodeId: currentId,
+        nodeKind: node.kind,
+        topicId,
+        payload: { textPreview: nodeTextPreview(node) },
+      });
       if (node.kind === 'CONDITION') {
         const target = pickConditionBranch(node, data);
         if (target?.gotoTopic) {
@@ -404,6 +429,13 @@ export class BotEngineService {
           nodeId: currentId,
           varName: node.varName,
           value: data[node.varName],
+        });
+        this.botEvents.record({
+          kind: 'bot.setvar',
+          nodeId: currentId,
+          nodeKind: 'SET_VAR',
+          topicId,
+          payload: { varName: node.varName, value: data[node.varName] },
         });
         if (node.gotoTopic) {
           const next = resolved.topics.get(node.gotoTopic);
@@ -447,6 +479,20 @@ export class BotEngineService {
           durationMs: result.durationMs,
           error: result.ok ? undefined : result.error,
           mode: 'real',
+        });
+        this.botEvents.record({
+          kind: 'bot.http',
+          nodeId: currentId,
+          nodeKind: 'HTTP',
+          topicId,
+          // Sin bodies: sólo el resultado de la llamada.
+          payload: {
+            method: node.method,
+            url: node.url,
+            status: result.status,
+            durationMs: result.durationMs,
+            error: result.ok ? undefined : result.error,
+          },
         });
         data = applyHttpResult(node, data, result);
         if (result.ok) {
@@ -494,6 +540,19 @@ export class BotEngineService {
           status: fetchResult.status,
           durationMs: fetchResult.durationMs,
           error: fetchResult.ok ? undefined : fetchResult.error,
+        });
+        this.botEvents.record({
+          kind: 'bot.media',
+          nodeId: currentId,
+          nodeKind: 'MEDIA_FROM_URL',
+          topicId,
+          payload: {
+            url: node.url,
+            mediaType: node.mediaType,
+            status: fetchResult.status,
+            durationMs: fetchResult.durationMs,
+            error: fetchResult.ok ? undefined : fetchResult.error,
+          },
         });
         if (!fetchResult.ok) {
           this.logger.warn(
@@ -600,6 +659,12 @@ export class BotEngineService {
 
     if (finalNode.kind === 'HANDOFF') {
       this.eventLogger.botHandoff({ nodeId: finalId, escalate: !!finalNode.escalate });
+      this.botEvents.record({
+        kind: 'bot.handoff',
+        nodeId: finalId,
+        nodeKind: 'HANDOFF',
+        payload: { escalate: !!finalNode.escalate },
+      });
       if (session) await this.endSession(session.id, 'handoff');
       // 4.O.6 — escalar al inbox y suspender el bot. El operador toma la
       // conversación (UNASSIGNED → ASSIGNED) y al resolver/expirar el bot
@@ -755,6 +820,12 @@ export class BotEngineService {
     const lastInboundAt = result.lastInboundAt;
     if (startedAt && lastInboundAt && startedAt.getTime() === lastInboundAt.getTime()) {
       this.eventLogger.botSessionStarted({ sessionId: result.id, topicId, phone });
+      this.botEvents.record({
+        kind: 'bot.session.started',
+        topicId,
+        sessionId: result.id,
+        channelId: cfg.id,
+      });
     }
   }
 
@@ -771,6 +842,7 @@ export class BotEngineService {
       data: { endedAt: new Date(), endedReason: reason.slice(0, 80) },
     });
     this.eventLogger.botSessionEnded({ sessionId: id, reason });
+    this.botEvents.record({ kind: 'bot.session.ended', sessionId: id, payload: { reason } });
   }
 
   /**
@@ -965,6 +1037,20 @@ async function buildPersistedContent(
     };
   }
   return {};
+}
+
+/**
+ * Monitoreo — resumen legible del nodo para el timeline del replay. Los nodos
+ * no tienen label humano (sólo id + kind), así que mostramos el arranque de su
+ * texto SIN interpolar: es el template tal cual está en el flow, sin datos del
+ * usuario (evita filtrar variables capturadas a la tabla de eventos).
+ */
+function nodeTextPreview(node: BotNode): string | undefined {
+  const raw = (node as { text?: unknown; caption?: unknown }).text
+    ?? (node as { caption?: unknown }).caption;
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  const flat = raw.replace(/\s+/g, ' ').trim();
+  return flat.length > 60 ? `${flat.slice(0, 60)}…` : flat;
 }
 
 async function buildMediaContent(

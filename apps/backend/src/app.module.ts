@@ -11,6 +11,7 @@ import { ObservabilityModule } from './common/observability/observability.module
 import { ObservabilityMiddleware } from './common/observability/observability.middleware';
 import { AuthModule } from './common/auth/auth.module';
 import { AuditLogModule } from './common/audit/audit-log.module';
+import { BotEventsModule } from './common/bot-events/bot-events.module';
 import { SecurityModule } from './common/security/security.module';
 import { QuotaModule } from './common/quota/quota.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
@@ -22,6 +23,7 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { EmailModule } from './modules/email/email.module';
 import { WapiModule } from './modules/wapi/wapi.module';
 import { InboxModule } from './modules/inbox/inbox.module';
+import { MonitoringModule } from './modules/monitoring/monitoring.module';
 import { ChannelsModule } from './modules/channels/channels.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AgentsModule } from './modules/agents/agents.module';
@@ -43,6 +45,7 @@ import { DevModule } from './modules/dev/dev.module';
     ClerkModule,
     AuthModule,
     AuditLogModule,
+    BotEventsModule,
     SecurityModule,
     QuotaModule,
     WebhooksModule,
@@ -54,6 +57,7 @@ import { DevModule } from './modules/dev/dev.module';
     EmailModule,
     WapiModule,
     InboxModule,
+    MonitoringModule,
     ChannelsModule,
     NotificationsModule,
     AgentsModule,

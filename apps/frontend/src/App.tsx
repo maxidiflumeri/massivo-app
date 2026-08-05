@@ -33,6 +33,8 @@ import { MessengerSimulatorChatPage } from './features/dev/MessengerSimulatorCha
 import { InstagramSimulatorChatPage } from './features/dev/InstagramSimulatorChatPage';
 import { WebchatWidgetPage } from './features/dev/WebchatWidgetPage';
 import { AuditLogPage } from './features/audit/AuditLogPage';
+import { MonitoringMetricsPage } from './features/monitoring/MonitoringMetricsPage';
+import { MonitoringLivePage } from './features/monitoring/MonitoringLivePage';
 import { ContactsListPage } from './features/contacts/ContactsListPage';
 import { ContactDetailPage } from './features/contacts/ContactDetailPage';
 import { MergeSuggestionsPage } from './features/contacts/MergeSuggestionsPage';
@@ -83,6 +85,8 @@ export function App() {
             WhatsApp (throttle/opt-out/welcome) están en el editor de cada canal. */}
         <Route path="wapi/configs" element={<Navigate to="/dashboard/channels" replace />} />
         <Route path="inbox" element={<InboxPage />} />
+        <Route path="monitoring" element={<MonitoringMetricsPage />} />
+        <Route path="monitoring/live" element={<MonitoringLivePage />} />
         {/* El inbox dejó de ser sub-feature de WhatsApp (es omnicanal) →
             /dashboard/inbox. Redirect del path viejo por compat. */}
         <Route path="wapi/inbox" element={<Navigate to="/dashboard/inbox" replace />} />

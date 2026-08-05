@@ -23,6 +23,8 @@ export interface ConversationListItem {
   campaignName: string | null;
   resolvedAt: string | null;
   priority: boolean;
+  /** Monitoreo — false = la atendió el bot, true = se escaló a un operador. */
+  escalated: boolean;
   lastMessage: {
     fromMe: boolean;
     type: string;
