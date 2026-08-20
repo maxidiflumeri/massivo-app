@@ -69,6 +69,13 @@ COPY --from=builder /app /app
 # Usuario no-root
 RUN groupadd -r massivo && useradd -r -g massivo -d /app -s /sbin/nologin massivo && \
     chown -R massivo:massivo /app
+
+# Directorio de media, creado en la imagen y con dueño `massivo` A PROPÓSITO:
+# el compose monta acá un volumen nombrado, y Docker sólo hereda el dueño del
+# path si éste ya existe en la imagen. Si no existiera, montaría un directorio
+# de root y el proceso (uid de massivo) no podría escribir ni un archivo.
+RUN mkdir -p /app/apps/backend/uploads && chown massivo:massivo /app/apps/backend/uploads
+
 USER massivo
 
 EXPOSE 3001

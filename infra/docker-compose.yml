@@ -25,6 +25,11 @@ services:
       PORT: "3001"
     ports:
       - "127.0.0.1:3001:3001"
+    # Media (adjuntos del inbox, assets del diseñador de bots). Sin este volumen
+    # vivía en la capa de escritura del container y cada deploy la borraba. El
+    # crecimiento lo acota MediaRetentionService.
+    volumes:
+      - uploads:/app/apps/backend/uploads
     depends_on:
       redis:
         condition: service_healthy
@@ -87,6 +92,8 @@ services:
 volumes:
   redis-data:
     name: ${PROJECT_NAME:-massivo}-redis-data
+  uploads:
+    name: ${PROJECT_NAME:-massivo}-uploads
 
 networks:
   internal:
