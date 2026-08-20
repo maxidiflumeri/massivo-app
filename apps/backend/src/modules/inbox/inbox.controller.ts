@@ -6,6 +6,7 @@ import {
   Header,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -105,7 +106,12 @@ export class InboxController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     const meta = await this.service.getMessageMediaMeta(id);
-    const opened = await this.mediaService.openLocal(meta.localPath);
+    // El archivo puede haberse purgado (MediaRetentionService) o no haberse
+    // guardado nunca: los binarios de paso del bot ya no se persisten. En ambos
+    // casos la fila del mensaje sigue existiendo → 404, no error de servidor.
+    const opened = await this.mediaService.openLocal(meta.localPath).catch(() => {
+      throw new NotFoundException(`El archivo del mensaje ${id} ya no está disponible`);
+    });
     res.setHeader('Content-Type', meta.mime);
     res.setHeader('Content-Length', String(opened.size));
     // Inline para imágenes/videos/audio (los renderiza el browser); attachment

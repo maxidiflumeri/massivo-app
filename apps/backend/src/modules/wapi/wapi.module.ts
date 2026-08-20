@@ -15,6 +15,7 @@ import { WapiWebhookController } from './webhook/wapi-webhook.controller';
 import { WapiWebhookService } from './webhook/wapi-webhook.service';
 import { WhatsAppWebhookHandler } from './webhook/whatsapp-webhook.handler';
 import { WapiMediaService } from './media/wapi-media.service';
+import { MediaRetentionService } from './media/media-retention.service';
 import { WapiQuickRepliesController } from './quick-replies/wapi-quick-replies.controller';
 import { WapiQuickRepliesService } from './quick-replies/wapi-quick-replies.service';
 import { WapiOptOutService } from './opt-out/wapi-opt-out.service';
@@ -69,6 +70,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     WapiTemplatesSyncService,
     WapiTemplatesPostingService,
     WapiMediaService,
+    MediaRetentionService,
     WapiQuickRepliesService,
     WapiOptOutService,
     WapiButtonActionService,

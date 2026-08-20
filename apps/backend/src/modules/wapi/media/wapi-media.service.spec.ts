@@ -106,9 +106,9 @@ describe('WapiMediaService', () => {
     expect(out.mediaId).toBe('meta-id-123');
     expect(out.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(out.size).toBe(buffer.length);
-    expect(out.localPath).toMatch(/^org1\/team1\/[0-9a-f]{64}\.jpg$/);
+    expect(out.localPath!).toMatch(/^org1\/team1\/[0-9a-f]{64}\.jpg$/);
 
-    const persisted = await fs.readFile(path.join(tmpDir, out.localPath));
+    const persisted = await fs.readFile(path.join(tmpDir, out.localPath!));
     expect(persisted.equals(buffer)).toBe(true);
   });
 
@@ -146,8 +146,8 @@ describe('WapiMediaService', () => {
     );
     expect(out.mime).toBe('image/png');
     expect(out.size).toBe(buffer.length);
-    expect(out.localPath).toMatch(/\.png$/);
-    const persisted = await fs.readFile(path.join(tmpDir, out.localPath));
+    expect(out.localPath!).toMatch(/\.png$/);
+    const persisted = await fs.readFile(path.join(tmpDir, out.localPath!));
     expect(persisted.equals(buffer)).toBe(true);
   });
 
@@ -165,7 +165,7 @@ describe('WapiMediaService', () => {
         filename: 'a.jpg',
       }),
     );
-    const stat1 = await fs.stat(path.join(tmpDir, r1.localPath));
+    const stat1 = await fs.stat(path.join(tmpDir, r1.localPath!));
     // Pequeño delay para detectar si se re-escribe (mtime cambia).
     await new Promise((r) => setTimeout(r, 10));
     const r2 = await TenantContext.run(ctx, () =>
@@ -177,9 +177,53 @@ describe('WapiMediaService', () => {
         filename: 'b.jpg',
       }),
     );
-    const stat2 = await fs.stat(path.join(tmpDir, r2.localPath));
+    const stat2 = await fs.stat(path.join(tmpDir, r2.localPath!));
     expect(r1.sha256).toBe(r2.sha256);
     expect(r1.localPath).toBe(r2.localPath);
     expect(stat1.mtimeMs).toBe(stat2.mtimeMs);
+  });  it('persist:false no escribe en disco y no devuelve localPath', async () => {
+    // Los PDFs que el bot baja para reenviar son binarios de paso: quedaban en
+    // disco para siempre y lo llenaron dos veces, rompiendo el envío de cupones.
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'media-xyz' }),
+    });
+    const antes = await fs.readdir(tmpDir);
+    const res = await TenantContext.run(ctx, () =>
+      svc.uploadToMeta({
+        configId: 'cfg1',
+        type: 'document',
+        buffer: Buffer.from('%PDF-1.4 cupon'),
+        mime: 'application/pdf',
+        filename: 'cupon.pdf',
+        persist: false,
+      }),
+    );
+    expect(res.mediaId).toBe('media-xyz');
+    expect(res.localPath).toBeUndefined();
+    // El directorio quedó igual que antes: no se creó ningún archivo.
+    await expect(fs.readdir(tmpDir)).resolves.toEqual(antes);
   });
+
+  it('sin persist (default) sigue guardando la copia local', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'media-abc' }),
+    });
+    const res = await TenantContext.run(ctx, () =>
+      svc.uploadToMeta({
+        configId: 'cfg1',
+        type: 'image',
+        buffer: Buffer.from('binario'),
+        mime: 'image/jpeg',
+        filename: 'foto.jpg',
+      }),
+    );
+    expect(res.localPath).toBeDefined();
+    await expect(fs.stat(path.join(tmpDir, res.localPath!))).resolves.toBeDefined();
+  });
+
+
 });

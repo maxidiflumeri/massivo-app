@@ -282,6 +282,9 @@ export class BotMediaFetchService {
           buffer,
           mime,
           filename: finalFilename,
+          // Binario de paso: se sube a Meta y no se guarda copia local. Ver el
+          // comentario de `persist` en WapiMediaUploadInput.
+          persist: false,
           ...(captionInterp ? { caption: captionInterp } : {}),
         });
       } catch (err) {

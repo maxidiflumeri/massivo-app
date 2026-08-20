@@ -576,7 +576,9 @@ export class BotService {
       mediaType: type,
       size: result.size,
       mime: file.mimetype,
-      localPath: result.localPath,
+      // Este upload sí persiste (es un asset de la biblioteca del bot, no un
+      // binario de paso), así que `localPath` siempre viene.
+      localPath: result.localPath ?? '',
       sha256: result.sha256,
     };
   }

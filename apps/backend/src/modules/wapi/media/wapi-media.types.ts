@@ -21,13 +21,24 @@ export interface WapiMediaUploadInput {
   mime: string;
   filename: string;
   caption?: string;
+  /**
+   * Guardar una copia del binario en disco (default true).
+   *
+   * `false` para binarios de PASO: los que el bot baja de una URL externa sólo
+   * para subirlos a Meta (cupones, actas). Una vez enviados, el archivo local no
+   * lo usa nadie — el ciudadano ya lo tiene y el PDF se regenera contra el SACIT
+   * — pero quedaba en disco para siempre: 18 GB y dos caídas por disco lleno en
+   * una semana, que rompen justamente el envío de cupones.
+   */
+  persist?: boolean;
 }
 
 export interface WapiMediaUploadResult {
   mediaId: string;
   sha256: string;
   size: number;
-  localPath: string;
+  /** Undefined cuando se subió con `persist: false`. */
+  localPath?: string;
 }
 
 export interface WapiMediaDownloadResult {

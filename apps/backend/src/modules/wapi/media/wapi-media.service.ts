@@ -139,13 +139,10 @@ export class WapiMediaService {
     const cfg = await this.resolveConfig(input.configId);
     const sha256 = createHash('sha256').update(input.buffer).digest('hex');
     const ext = EXTENSION_BY_MIME[input.mime] ?? 'bin';
-    const localPath = await this.persistLocal(
-      cfg.organizationId,
-      cfg.teamId,
-      sha256,
-      ext,
-      input.buffer,
-    );
+    const localPath =
+      input.persist === false
+        ? undefined
+        : await this.persistLocal(cfg.organizationId, cfg.teamId, sha256, ext, input.buffer);
 
     // 4.P.3 — En test mode no pegamos a Meta. Devolvemos un mediaId `SIM_<sha-prefix>`
     // (mismo prefijo que usa el sender en test mode) y persistimos solo el archivo
@@ -158,7 +155,7 @@ export class WapiMediaService {
         mediaId: simId,
         sha256,
         size: input.buffer.length,
-        localPath: this.toRelative(localPath),
+        ...(localPath ? { localPath: this.toRelative(localPath) } : {}),
       };
     }
 
@@ -196,7 +193,7 @@ export class WapiMediaService {
       mediaId: ok.id,
       sha256,
       size: input.buffer.length,
-      localPath: this.toRelative(localPath),
+      ...(localPath ? { localPath: this.toRelative(localPath) } : {}),
     };
   }
 
