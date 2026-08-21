@@ -1,7 +1,8 @@
 /**
  * Tipos del bot guiado por número (4.N + 4.N.2). El flow se persiste como JSON
  * en `WapiConfig.botFlow`. Tipos de nodos:
- *  - **MENU**: muestra un mensaje + hasta 3 opciones (botones interactive).
+ *  - **MENU**: muestra un mensaje + opciones. Por default hasta 3 (botones
+ *    interactive); con `display: 'list'`, hasta 10 en una lista desplegable.
  *    Cada opción tiene un `nextNodeId` que define a dónde ir cuando el cliente
  *    la elige.
  *  - **MESSAGE**: envía un texto plano (sin botones). Si tiene `nextNodeId`,
@@ -84,6 +85,8 @@ export interface BotMenuOption {
   nextNodeId?: string;
   /** 4.O.1 — alternativo a nextNodeId. Si está, salta al startNodeId del tema. */
   gotoTopic?: string;
+  /** Sólo en modo lista: renglón secundario debajo del título (Meta corta a 72). */
+  description?: string;
 }
 
 export interface BotMenuNode {
@@ -92,6 +95,17 @@ export interface BotMenuNode {
   options: BotMenuOption[];
   header?: string;
   footer?: string;
+  /**
+   * Cómo se muestran las opciones en WhatsApp:
+   *  - `buttons` (default): botones de respuesta rápida. Máximo 3 — por eso los
+   *    menús largos había que partirlos en cadenas de "➡️ Más".
+   *  - `list`: lista desplegable. Entran 10 opciones y cada una admite una
+   *    descripción, así que un menú largo entra en una sola pantalla.
+   * En canales que no soportan listas, el motor cae a botones solo.
+   */
+  display?: 'buttons' | 'list';
+  /** Modo lista: texto del botón que abre el desplegable (Meta corta a 20). */
+  listButtonText?: string;
   position?: BotNodePosition;
 }
 
@@ -550,7 +564,8 @@ function validateGotoTopic(
 /**
  * Valida la estructura del flow. Garantiza:
  *  - startNodeId existe en nodes.
- *  - Cada MENU tiene 1..3 opciones, todas con label/nextNodeId no vacíos.
+ *  - Cada MENU tiene 1..3 opciones (1..10 si `display: 'list'`), todas con
+ *    label/nextNodeId no vacíos.
  *  - Todo nextNodeId apunta a un node existente.
  *  - Cada nodo tiene los campos requeridos por su kind.
  *  - IDs de opciones únicos dentro del nodo.
@@ -629,7 +644,20 @@ export function validateBotFlow(input: unknown): {
     if (node.kind === 'MENU') {
       const opts = Array.isArray(node.options) ? node.options : [];
       if (opts.length < 1) errors.push({ path: `nodes.${id}.options`, message: 'al menos 1 opción' });
-      if (opts.length > 3) errors.push({ path: `nodes.${id}.options`, message: 'máximo 3 (límite Meta)' });
+      // El tope depende de cómo se muestre: 3 botones de respuesta rápida, o 10
+      // filas si es lista desplegable. Ambos son límites de Meta.
+      const modoLista = (node as { display?: unknown }).display === 'list';
+      const maxOpciones = modoLista ? 10 : 3;
+      if (opts.length > maxOpciones) {
+        errors.push({
+          path: `nodes.${id}.options`,
+          message: modoLista ? 'máximo 10 (límite Meta para listas)' : 'máximo 3 (límite Meta)',
+        });
+      }
+      const display = (node as { display?: unknown }).display;
+      if (display !== undefined && display !== 'buttons' && display !== 'list') {
+        errors.push({ path: `nodes.${id}.display`, message: "esperado 'buttons' | 'list'" });
+      }
       const seen = new Set<string>();
       for (let i = 0; i < opts.length; i++) {
         const o = opts[i] as Record<string, unknown>;

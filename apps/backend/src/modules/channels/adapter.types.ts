@@ -55,6 +55,20 @@ export type OutboundMessage =
       buttons: Array<{ id: string; title: string }>;
     }
   | {
+      /**
+       * Lista desplegable (WhatsApp interactive list). Hasta 10 filas en total,
+       * con descripción opcional por fila. `buttonText` es el rótulo del botón
+       * que despliega la lista.
+       */
+      kind: 'list';
+      to: string;
+      text: string;
+      header?: string;
+      footer?: string;
+      buttonText: string;
+      rows: Array<{ id: string; title: string; description?: string }>;
+    }
+  | {
       kind: 'media';
       to: string;
       mediaType: string;
@@ -72,6 +86,8 @@ export interface SendResult {
 /** Qué sabe hacer cada canal — el motor/inbox lo consultan antes de enviar. */
 export interface ChannelCapabilities {
   interactiveButtons: { supported: boolean; max: number };
+  /** Lista desplegable. Sólo WhatsApp por ahora; el resto cae a botones. */
+  interactiveList: { supported: boolean; maxRows: number };
   mediaTypes: string[];
   /** Ventana de "freeform" del canal (WA/IG/Messenger: 24h; webchat: sin ventana). */
   freeformWindow: { enforced: boolean; hours?: number };

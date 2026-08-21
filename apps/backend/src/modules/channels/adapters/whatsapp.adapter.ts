@@ -31,6 +31,7 @@ export class WhatsAppAdapter implements ChannelAdapter<WhatsAppConnection> {
 
   readonly capabilities: ChannelCapabilities = {
     interactiveButtons: { supported: true, max: 3 }, // Meta: máx 3 botones reply
+    interactiveList: { supported: true, maxRows: 10 }, // Meta: 10 filas en total
     mediaTypes: ['image', 'video', 'audio', 'document'],
     freeformWindow: { enforced: true, hours: 24 },
     templates: true,
@@ -54,6 +55,18 @@ export class WhatsAppAdapter implements ChannelAdapter<WhatsAppConnection> {
       return { externalMessageId: r.metaMessageId };
     }
 
+    if (msg.kind === 'list') {
+      const rows = msg.rows.slice(0, this.capabilities.interactiveList.maxRows);
+      const r = await this.sender.sendInteractiveList(cfg, {
+        to: msg.to,
+        body: msg.text,
+        header: msg.header,
+        footer: msg.footer,
+        buttonText: msg.buttonText,
+        rows,
+      });
+      return { externalMessageId: r.metaMessageId };
+    }
     if (msg.kind === 'buttons') {
       // Capability clamp: Meta sólo soporta hasta `max` botones reply.
       const buttons = msg.buttons.slice(0, this.capabilities.interactiveButtons.max);

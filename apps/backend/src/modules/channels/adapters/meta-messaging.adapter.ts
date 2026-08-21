@@ -73,6 +73,8 @@ export abstract class MetaMessagingAdapter implements ChannelAdapter<MetaMessagi
   readonly capabilities: ChannelCapabilities = {
     // Messenger/IG: quick replies, hasta 13.
     interactiveButtons: { supported: true, max: 13 },
+    // Messenger/IG no tienen lista desplegable: el motor cae a quick replies.
+    interactiveList: { supported: false, maxRows: 0 },
     mediaTypes: ['image', 'audio', 'video', 'file'],
     // Ventana de mensajería estándar de 24h (igual concepto que WhatsApp).
     freeformWindow: { enforced: true, hours: 24 },
@@ -137,6 +139,11 @@ export abstract class MetaMessagingAdapter implements ChannelAdapter<MetaMessagi
         messaging_type: 'RESPONSE',
         message: { text: msg.text, quick_replies: quickReplies },
       };
+    }
+    if (msg.kind === 'list') {
+      // Este canal no tiene lista desplegable: `interactiveList.supported` es
+      // false y el motor cae a botones antes de llegar acá. Defensivo.
+      throw new Error('Messenger/Instagram no soporta listas desplegables (usar botones)');
     }
     // media — Messenger requiere una URL pública (no soporta el media_id de WhatsApp).
     if (!msg.url) {

@@ -32,14 +32,19 @@ const stubEpisodes = {
 // que reenvía al `sender` mock, preservando las aserciones existentes sobre
 // `sender.sendText/sendInteractiveButtons/sendMediaById`. La traducción
 // OutboundMessage→Meta la cubre whatsapp.adapter.spec.ts aparte.
-function makeForwardingAdapter(sender: {
-  sendInteractiveButtons: jest.Mock;
-  sendText: jest.Mock;
-  sendMediaById: jest.Mock;
-}) {
+function makeForwardingAdapter(
+  sender: {
+    sendInteractiveButtons: jest.Mock;
+    sendText: jest.Mock;
+    sendMediaById: jest.Mock;
+    sendInteractiveList?: jest.Mock;
+  },
+  listSupported = true,
+) {
   return {
     capabilities: {
       interactiveButtons: { supported: true, max: 3 },
+      interactiveList: { supported: listSupported, maxRows: 10 },
       mediaTypes: ['image', 'video', 'audio', 'document'],
       freeformWindow: { enforced: true, hours: 24 },
       templates: true,
@@ -55,7 +60,14 @@ function makeForwardingAdapter(sender: {
           isTestMode: conn.isTestMode,
         };
         let r: { metaMessageId: string };
-        if (msg.kind === 'buttons') {
+        if (msg.kind === 'list') {
+          r = await sender.sendInteractiveList!(cfg, {
+            to: msg.to,
+            body: msg.text,
+            buttonText: msg.buttonText,
+            rows: msg.rows,
+          });
+        } else if (msg.kind === 'buttons') {
           r = await sender.sendInteractiveButtons(cfg, {
             to: msg.to,
             body: msg.text,
@@ -86,12 +98,16 @@ function makeForwardingAdapter(sender: {
 
 // Fase 2 — el engine resuelve el adapter por kind vía ChannelAdapterRegistry.
 // Este mock-registry devuelve siempre el forwarding-adapter de WhatsApp.
-function makeRegistry(sender: {
-  sendInteractiveButtons: jest.Mock;
-  sendText: jest.Mock;
-  sendMediaById: jest.Mock;
-}) {
-  const adapter = makeForwardingAdapter(sender);
+function makeRegistry(
+  sender: {
+    sendInteractiveButtons: jest.Mock;
+    sendText: jest.Mock;
+    sendMediaById: jest.Mock;
+    sendInteractiveList?: jest.Mock;
+  },
+  listSupported = true,
+) {
+  const adapter = makeForwardingAdapter(sender, listSupported);
   return { get: () => adapter };
 }
 
@@ -138,7 +154,12 @@ describe('BotEngineService', () => {
     conversation: { findUnique: jest.Mock; update: jest.Mock };
   };
   let events: { emitToTeam: jest.Mock };
-  let sender: { sendInteractiveButtons: jest.Mock; sendText: jest.Mock; sendMediaById: jest.Mock };
+  let sender: {
+    sendInteractiveButtons: jest.Mock;
+    sendText: jest.Mock;
+    sendMediaById: jest.Mock;
+    sendInteractiveList: jest.Mock;
+  };
   let encryption: { decrypt: jest.Mock };
   let svc: BotEngineService;
 
@@ -171,6 +192,7 @@ describe('BotEngineService', () => {
       sendInteractiveButtons: jest.fn().mockResolvedValue({ metaMessageId: 'wamid.OUT', raw: {} }),
       sendText: jest.fn().mockResolvedValue({ metaMessageId: 'wamid.OUT', raw: {} }),
       sendMediaById: jest.fn().mockResolvedValue({ metaMessageId: 'wamid.OUT', raw: {} }),
+      sendInteractiveList: jest.fn().mockResolvedValue({ metaMessageId: 'wamid.OUT', raw: {} }),
     };
     encryption = { decrypt: jest.fn((v: string) => `dec(${v})`) };
     const feature = {
@@ -1153,4 +1175,93 @@ describe('BotEngineService', () => {
       }),
     );
   });
+  it('MENU con display=list se manda como lista desplegable', async () => {
+    // 10 opciones en una pantalla, contra las 3 de los botones.
+    const flowLista = {
+      startNodeId: 'menu1',
+      nodes: {
+        menu1: {
+          kind: 'MENU',
+          display: 'list',
+          listButtonText: 'Ver documentos',
+          text: 'Elegí el documento',
+          options: [
+            { id: 'a', label: 'Instructivo de descargos', description: 'Cómo presentarlo', nextNodeId: 'menu1' },
+            { id: 'b', label: 'Formulario de venta', nextNodeId: 'menu1' },
+            { id: 'c', label: 'Plan de pago', nextNodeId: 'menu1' },
+            { id: 'd', label: 'Cuarta', nextNodeId: 'menu1' },
+          ],
+        },
+      },
+    } as unknown as BotFlow;
+
+    await withTenant(() =>
+      svc.handle(
+        { ...cfg, botFlow: flowLista },
+        { configId: 'cfg-1', conversationId: 'conv-1', phone: '5491100', inbound: { kind: 'text', body: 'hola' } },
+      ),
+    );
+
+    expect(sender.sendInteractiveList).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        to: '5491100',
+        body: 'Elegí el documento',
+        buttonText: 'Ver documentos',
+        rows: [
+          { id: 'bot:a', title: 'Instructivo de descargos', description: 'Cómo presentarlo' },
+          { id: 'bot:b', title: 'Formulario de venta' },
+          { id: 'bot:c', title: 'Plan de pago' },
+          { id: 'bot:d', title: 'Cuarta' },
+        ],
+      }),
+    );
+    // Las 4 opciones viajan enteras: no se recortó a 3 como con botones.
+    expect(sender.sendInteractiveButtons).not.toHaveBeenCalled();
+  });
+
+  it('en un canal sin listas, el MENU display=list cae a botones', async () => {
+    // Messenger/IG/webchat: mejor entregar recortado que fallar el envío.
+    svc = new BotEngineService(
+      { scoped: prismaScoped } as never,
+      events as never,
+      makeRegistry(sender, false) as never,
+      encryption as never,
+      { isEnabled: jest.fn().mockResolvedValue(true) } as never,
+      { resolve: jest.fn().mockReturnValue(null) } as never,
+      { execute: jest.fn() } as never,
+      { execute: jest.fn() } as never,
+      noopEventLogger,
+      noopBotEvents,
+      stubEpisodes,
+    );
+    const flowLista = {
+      startNodeId: 'menu1',
+      nodes: {
+        menu1: {
+          kind: 'MENU',
+          display: 'list',
+          text: 'Elegí',
+          options: [
+            { id: 'a', label: 'Uno', nextNodeId: 'menu1' },
+            { id: 'b', label: 'Dos', nextNodeId: 'menu1' },
+            { id: 'c', label: 'Tres', nextNodeId: 'menu1' },
+            { id: 'd', label: 'Cuatro', nextNodeId: 'menu1' },
+          ],
+        },
+      },
+    } as unknown as BotFlow;
+
+    await withTenant(() =>
+      svc.handle(
+        { ...cfg, botFlow: flowLista },
+        { configId: 'cfg-1', conversationId: 'conv-1', phone: '5491100', inbound: { kind: 'text', body: 'hola' } },
+      ),
+    );
+
+    expect(sender.sendInteractiveList).not.toHaveBeenCalled();
+    const [, payload] = sender.sendInteractiveButtons.mock.calls[0];
+    expect(payload.buttons).toHaveLength(3); // recortado al máximo del canal
+  });
+
 });

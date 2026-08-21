@@ -6,6 +6,7 @@ import {
   META_RATE_LIMIT_CODES,
   WapiSendException,
   type SendInteractiveButtonsInput,
+  SendInteractiveListInput,
   type SendMediaByIdInput,
   type SendMediaInput,
   type SendResult,
@@ -137,6 +138,44 @@ export class WapiSenderService {
     };
     if (input.header) interactive.header = { type: 'text', text: input.header };
     if (input.footer) interactive.footer = { text: input.footer };
+    return this.post(cfg, {
+      messaging_product: 'whatsapp',
+      to: input.to,
+      type: 'interactive',
+      interactive,
+    });
+  }
+
+  /**
+   * Lista desplegable (interactive list). Permite 10 opciones contra las 3 de
+   * los botones, con una descripción por fila.
+   *
+   * Meta rechaza el mensaje entero si algún campo excede su límite, así que se
+   * recorta acá en vez de fallar el envío: en un bot, mandar el título cortado
+   * es mejor que no mandar nada.
+   */
+  async sendInteractiveList(
+    cfg: WapiSenderConfig,
+    input: SendInteractiveListInput,
+  ): Promise<SendResult> {
+    if (!input.rows || input.rows.length === 0) {
+      throw new Error('sendInteractiveList requires at least 1 row');
+    }
+    const rows = input.rows.slice(0, 10).map((r) => ({
+      id: r.id.slice(0, 200),
+      title: r.title.slice(0, 24),
+      ...(r.description ? { description: r.description.slice(0, 72) } : {}),
+    }));
+    const interactive: Record<string, unknown> = {
+      type: 'list',
+      body: { text: input.body },
+      action: {
+        button: input.buttonText.slice(0, 20),
+        sections: [{ title: (input.sectionTitle ?? 'Opciones').slice(0, 24), rows }],
+      },
+    };
+    if (input.header) interactive.header = { type: 'text', text: input.header.slice(0, 60) };
+    if (input.footer) interactive.footer = { text: input.footer.slice(0, 60) };
     return this.post(cfg, {
       messaging_product: 'whatsapp',
       to: input.to,

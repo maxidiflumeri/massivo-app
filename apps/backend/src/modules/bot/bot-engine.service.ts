@@ -896,17 +896,41 @@ export class BotEngineService {
       let wapiType: string;
       if (node.kind === 'MENU') {
         wapiType = 'interactive';
-        result = await adapter.send(conn, {
-          kind: 'buttons',
-          to: phone,
-          text: await interpolateAsync(node.text, data),
-          header: node.header ? await interpolateAsync(node.header, data) : undefined,
-          footer: node.footer ? await interpolateAsync(node.footer, data) : undefined,
-          buttons: node.options.slice(0, maxButtons).map((o) => ({
-            id: `${BOT_OPTION_PREFIX}${o.id}`,
-            title: o.label,
-          })),
-        });
+        const texto = await interpolateAsync(node.text, data);
+        const header = node.header ? await interpolateAsync(node.header, data) : undefined;
+        const footer = node.footer ? await interpolateAsync(node.footer, data) : undefined;
+        // Lista desplegable si el nodo la pide Y el canal la soporta. Si no
+        // (Messenger, IG, webchat), se cae a botones: se entrega igual aunque
+        // recortado, en vez de fallar el envío.
+        if (node.display === 'list' && adapter.capabilities.interactiveList.supported) {
+          result = await adapter.send(conn, {
+            kind: 'list',
+            to: phone,
+            text: texto,
+            header,
+            footer,
+            buttonText: node.listButtonText?.trim() || 'Ver opciones',
+            rows: node.options
+              .slice(0, adapter.capabilities.interactiveList.maxRows)
+              .map((o) => ({
+                id: `${BOT_OPTION_PREFIX}${o.id}`,
+                title: o.label,
+                ...(o.description ? { description: o.description } : {}),
+              })),
+          });
+        } else {
+          result = await adapter.send(conn, {
+            kind: 'buttons',
+            to: phone,
+            text: texto,
+            header,
+            footer,
+            buttons: node.options.slice(0, maxButtons).map((o) => ({
+              id: `${BOT_OPTION_PREFIX}${o.id}`,
+              title: o.label,
+            })),
+          });
+        }
       } else if (node.kind === 'MEDIA') {
         wapiType = node.mediaType;
         result = await adapter.send(conn, {
@@ -1005,10 +1029,32 @@ async function buildPersistedContent(
   data: BotData,
 ): Promise<Record<string, unknown>> {
   if (node.kind === 'MENU') {
+    const body = { text: await interpolateAsync(node.text, data) };
+    if (node.display === 'list') {
+      return {
+        interactive: {
+          type: 'list',
+          body,
+          action: {
+            button: node.listButtonText?.trim() || 'Ver opciones',
+            sections: [
+              {
+                rows: node.options.map((o) => ({
+                  id: `${BOT_OPTION_PREFIX}${o.id}`,
+                  title: o.label,
+                  ...(o.description ? { description: o.description } : {}),
+                })),
+              },
+            ],
+          },
+        },
+        system: { kind: 'bot-menu' },
+      };
+    }
     return {
       interactive: {
         type: 'button',
-        body: { text: await interpolateAsync(node.text, data) },
+        body,
         action: {
           buttons: node.options.map((o) => ({
             type: 'reply',

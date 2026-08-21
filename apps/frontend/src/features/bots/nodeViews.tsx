@@ -74,6 +74,13 @@ export const MenuNodeView = memo(function MenuNodeView(
       <Box sx={{ ...headerSx, bgcolor: 'primary.main', color: 'common.white' }}>
         <SmartToyIcon fontSize="small" />
         <Typography variant="caption" fontWeight={700}>MENU</Typography>
+        {node.display === 'list' && (
+          <Chip
+            size="small"
+            label="lista"
+            sx={{ height: 18, bgcolor: 'rgba(255,255,255,.25)', color: 'common.white', fontSize: 10 }}
+          />
+        )}
         <Box sx={{ flex: 1 }} />
         {data.isStart && <Chip size="small" label="START" sx={{ height: 18, bgcolor: 'success.main', color: 'common.white', fontSize: 10 }} />}
       </Box>

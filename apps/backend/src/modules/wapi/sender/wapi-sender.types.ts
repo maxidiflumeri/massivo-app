@@ -75,6 +75,22 @@ export interface SendInteractiveButtonsInput {
   buttons: Array<{ id: string; title: string }>;
 }
 
+/**
+ * Lista desplegable de WhatsApp. Límites de Meta que el sender recorta:
+ * 10 filas en total, título 24, descripción 72, botón 20, header/footer 60.
+ */
+export interface SendInteractiveListInput {
+  to: string;
+  body: string;
+  header?: string;
+  footer?: string;
+  /** Rótulo del botón que abre la lista. */
+  buttonText: string;
+  rows: Array<{ id: string; title: string; description?: string }>;
+  /** Título de la sección (Meta exige al menos una sección). */
+  sectionTitle?: string;
+}
+
 export interface SendResult {
   metaMessageId: string;
   raw: unknown;

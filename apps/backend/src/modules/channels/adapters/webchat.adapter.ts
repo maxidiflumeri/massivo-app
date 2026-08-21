@@ -27,6 +27,8 @@ export class WebchatAdapter implements ChannelAdapter<WebchatConnection> {
   readonly capabilities: ChannelCapabilities = {
     // El widget es nuestro → renderizamos botones (quick replies) sin límite real de Meta.
     interactiveButtons: { supported: true, max: 10 },
+    // El widget aún no renderiza listas: el motor cae a botones.
+    interactiveList: { supported: false, maxRows: 0 },
     mediaTypes: ['image', 'file'],
     // Webchat no tiene ventana de 24h: el visitante está conectado en vivo.
     freeformWindow: { enforced: false },
@@ -56,6 +58,11 @@ function toVisitorPayload(msg: OutboundMessage, id: string): Record<string, unkn
       text: msg.text,
       buttons: msg.buttons.map((b) => ({ id: b.id, title: b.title })),
     };
+  }
+  if (msg.kind === 'list') {
+    // El widget aún no renderiza listas: `interactiveList.supported` es false y
+    // el motor cae a botones antes de llegar acá. Defensivo.
+    throw new Error('Webchat no soporta listas desplegables (usar botones)');
   }
   return {
     ...base,

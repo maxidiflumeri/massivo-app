@@ -15,6 +15,8 @@ import {
   Stack,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -538,8 +540,12 @@ function MenuOptionsEditor({
   function removeOption(idx: number) {
     onPatch({ options: node.options.filter((_, i) => i !== idx) } as Partial<BotMenuNode>);
   }
+  const esLista = node.display === 'list';
+  // Límites de Meta: 3 botones de respuesta rápida, 10 filas en una lista.
+  const maxOpciones = esLista ? 10 : 3;
+
   function addOption() {
-    if (node.options.length >= 3) return;
+    if (node.options.length >= maxOpciones) return;
     const taken = new Set(node.options.map((o) => o.id));
     const id = newOptionId(taken);
     const opt: BotMenuOption = { id, label: 'Nueva opción', nextNodeId: '' };
@@ -547,9 +553,36 @@ function MenuOptionsEditor({
   }
   return (
     <>
+      <ToggleButtonGroup
+        size="small"
+        exclusive
+        fullWidth
+        value={node.display ?? 'buttons'}
+        onChange={(_, v) => {
+          if (!v) return;
+          // Al volver a botones, Meta sólo admite 3: recortamos para no dejar
+          // el flow inválido y que el nodo deje de entregarse.
+          const options = v === 'buttons' ? node.options.slice(0, 3) : node.options;
+          onPatch({ display: v, options } as Partial<BotMenuNode>);
+        }}
+      >
+        <ToggleButton value="buttons">Botones (3)</ToggleButton>
+        <ToggleButton value="list">Lista desplegable (10)</ToggleButton>
+      </ToggleButtonGroup>
+      {esLista && (
+        <TextField
+          label="Texto del botón que abre la lista"
+          size="small"
+          value={node.listButtonText ?? ''}
+          onChange={(e) => onPatch({ listButtonText: e.target.value } as Partial<BotMenuNode>)}
+          placeholder="Ver opciones"
+          inputProps={{ maxLength: 20 }}
+          helperText={`${(node.listButtonText ?? '').length} / 20 — si lo dejás vacío dice "Ver opciones"`}
+        />
+      )}
       <Divider>
         <Typography variant="caption" color="text.secondary">
-          Opciones (máx. 3)
+          Opciones (máx. {maxOpciones})
         </Typography>
       </Divider>
       <Stack gap={1.5}>
@@ -578,13 +611,25 @@ function MenuOptionsEditor({
                   value={opt.label}
                   onChange={(e) => patchOption(idx, { label: e.target.value })}
                   sx={{ flex: 1 }}
-                  inputProps={{ maxLength: 20 }}
-                  helperText={`${opt.label.length} / 20`}
+                  inputProps={{ maxLength: esLista ? 24 : 20 }}
+                  helperText={`${opt.label.length} / ${esLista ? 24 : 20}`}
                 />
                 <IconButton size="small" color="error" onClick={() => removeOption(idx)}>
                   <DeleteIcon fontSize="small" />
                 </IconButton>
               </Stack>
+              {esLista && (
+                <TextField
+                  label="Descripción (opcional)"
+                  size="small"
+                  fullWidth
+                  value={opt.description ?? ''}
+                  onChange={(e) => patchOption(idx, { description: e.target.value })}
+                  sx={{ mb: 1 }}
+                  inputProps={{ maxLength: 72 }}
+                  helperText={`${(opt.description ?? '').length} / 72`}
+                />
+              )}
               <NextOrTopicSelect
                 nextNodeId={opt.nextNodeId}
                 gotoTopic={opt.gotoTopic}
@@ -602,7 +647,7 @@ function MenuOptionsEditor({
           size="small"
           startIcon={<AddIcon />}
           onClick={addOption}
-          disabled={node.options.length >= 3}
+          disabled={node.options.length >= maxOpciones}
         >
           Agregar opción
         </Button>

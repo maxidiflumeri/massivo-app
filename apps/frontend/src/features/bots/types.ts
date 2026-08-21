@@ -28,6 +28,8 @@ export interface BotMenuOption {
   nextNodeId: string;
   /** 4.O.1 — alternativa a nextNodeId: salta al startNodeId del topic destino. */
   gotoTopic?: string;
+  /** Sólo en modo lista: segunda línea debajo de la etiqueta. */
+  description?: string;
 }
 
 export interface BotMenuNode {
@@ -36,6 +38,13 @@ export interface BotMenuNode {
   options: BotMenuOption[];
   header?: string;
   footer?: string;
+  /**
+   * `buttons` (default): hasta 3 botones. `list`: lista desplegable de hasta 10
+   * opciones, cada una con descripción. En canales sin listas cae a botones.
+   */
+  display?: 'buttons' | 'list';
+  /** Modo lista: rótulo del botón que despliega las opciones. */
+  listButtonText?: string;
   position?: BotNodePosition;
 }
 
