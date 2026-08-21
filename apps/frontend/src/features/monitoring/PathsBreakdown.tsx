@@ -31,14 +31,14 @@ const nf = new Intl.NumberFormat('es-AR');
  */
 export function PathsBreakdown({ data }: { data: PathsOverview }) {
   const [abierto, setAbierto] = useState<string | null>(data.topics[0]?.topicId ?? null);
-  const totalPersonas = Math.max(...data.topics.map((t) => t.personas), 1);
+  const totalRecorridos = Math.max(...data.topics.map((t) => t.recorridos), 1);
 
   return (
     <Stack spacing={1}>
       {data.topics.map((t) => {
         const expandido = abierto === t.topicId;
         // Dentro del tema, el 100% es el nodo más transitado (su entrada).
-        const tope = Math.max(...t.nodes.map((n) => n.personas), 1);
+        const tope = Math.max(...t.nodes.map((n) => n.recorridos), 1);
         return (
           <Paper key={t.topicId} variant="outlined" sx={{ overflow: 'hidden' }}>
             <Stack
@@ -57,16 +57,16 @@ export function PathsBreakdown({ data }: { data: PathsOverview }) {
                 </Typography>
                 <LinearProgress
                   variant="determinate"
-                  value={(t.personas / totalPersonas) * 100}
+                  value={(t.recorridos / totalRecorridos) * 100}
                   sx={{ mt: 0.5, height: 6, borderRadius: 3 }}
                 />
               </Box>
               <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
                 <Typography variant="body2" fontWeight={600} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                  {nf.format(t.personas)}
+                  {nf.format(t.recorridos)}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  personas
+                  recorridos
                 </Typography>
               </Box>
             </Stack>
@@ -80,7 +80,7 @@ export function PathsBreakdown({ data }: { data: PathsOverview }) {
                 ) : (
                   <Stack spacing={0.75}>
                     {t.nodes.map((n) => {
-                      const pct = (n.personas / tope) * 100;
+                      const pct = (n.recorridos / tope) * 100;
                       return (
                         <Stack key={n.nodeId} direction="row" alignItems="center" gap={1}>
                           <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -115,13 +115,15 @@ export function PathsBreakdown({ data }: { data: PathsOverview }) {
                               sx={{ mt: 0.25, height: 4, borderRadius: 2 }}
                             />
                           </Box>
-                          <Tooltip title={`${nf.format(n.pasadas)} pasadas en total`}>
+                          <Tooltip
+                            title={`${nf.format(n.recorridos)} personas · ${nf.format(n.pasadas)} pasadas en total`}
+                          >
                             <Box sx={{ textAlign: 'right', flexShrink: 0, minWidth: 76 }}>
                               <Typography
                                 variant="caption"
                                 sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}
                               >
-                                {nf.format(n.personas)}
+                                {nf.format(n.recorridos)}
                               </Typography>
                               <Typography variant="caption" color="text.secondary">
                                 {' '}

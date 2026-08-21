@@ -75,15 +75,15 @@ export function FunnelSummary({ data }: { data: PathsOverview }) {
   const embudos = EMBUDOS.map((e) => {
     const tema = porTema.get(e.topicId);
     if (!tema) return null;
-    const cuenta = new Map(tema.nodes.map((n) => [n.nodeId, n.personas]));
+    const cuenta = new Map(tema.nodes.map((n) => [n.nodeId, n.recorridos]));
     // Se muestran TODOS los pasos configurados, incluso en cero: que un
     // documento no lo pidiera nadie es justamente un dato. Si un nodo se
     // renombra en el flow, queda clavado en cero y se nota.
-    const pasos = e.pasos.map((p) => ({ ...p, personas: cuenta.get(p.nodeId) ?? 0 }));
-    const base = pasos.find((p) => p.base)?.personas ?? 0;
+    const pasos = e.pasos.map((p) => ({ ...p, recorridos: cuenta.get(p.nodeId) ?? 0 }));
+    const base = pasos.find((p) => p.base)?.recorridos ?? 0;
     if (base === 0) return null;
     return { ...e, pasos, base };
-  }).filter(Boolean) as Array<{ topicId: string; titulo: string; pasos: Array<Paso & { personas: number }>; base: number }>;
+  }).filter(Boolean) as Array<{ topicId: string; titulo: string; pasos: Array<Paso & { recorridos: number }>; base: number }>;
 
   if (embudos.length === 0) return null;
 
@@ -96,7 +96,7 @@ export function FunnelSummary({ data }: { data: PathsOverview }) {
           </Typography>
           <Stack spacing={0.5}>
             {e.pasos.map((p) => {
-              const pct = (p.personas / e.base) * 100;
+              const pct = (p.recorridos / e.base) * 100;
               return (
                 <Stack key={p.nodeId} direction="row" alignItems="center" gap={1.5}>
                   <Typography
@@ -130,7 +130,7 @@ export function FunnelSummary({ data }: { data: PathsOverview }) {
                       fontWeight: p.base ? 600 : 400,
                     }}
                   >
-                    {nf.format(p.personas)}
+                    {nf.format(p.recorridos)}
                     <Typography component="span" variant="caption" color="text.secondary">
                       {' '}
                       · {Math.round(pct)}%
@@ -141,7 +141,7 @@ export function FunnelSummary({ data }: { data: PathsOverview }) {
             })}
           </Stack>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            Porcentajes sobre «{e.pasos.find((p) => p.base)?.label}» ({nf.format(e.base)} personas).
+            Porcentajes sobre «{e.pasos.find((p) => p.base)?.label}» ({nf.format(e.base)} recorridos).
           </Typography>
         </Paper>
       ))}

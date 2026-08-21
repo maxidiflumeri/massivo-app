@@ -81,6 +81,8 @@ export interface PathNode {
   nodeId: string;
   nodeKind: string | null;
   preview: string | null;
+  /** Recorridos (pasadas por el flujo de punta a punta). Unidad del embudo. */
+  recorridos: number;
   personas: number;
   pasadas: number;
 }
@@ -89,6 +91,7 @@ export interface PathsOverview {
   windowDays: MonitoringWindow;
   topics: Array<{
     topicId: string;
+    recorridos: number;
     personas: number;
     pasadas: number;
     nodes: PathNode[];

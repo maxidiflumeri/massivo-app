@@ -1279,6 +1279,13 @@ model BotEvent {
   conversationId String?
   channelId      String?
   sessionId      String?
+  // Recorrido: una pasada por el flujo, de punta a punta. `sessionId` NO sirve
+  // para esto — la fila de BotSession se reusa por (canal, usuario), así que
+  // tiene la misma cardinalidad que la conversación. Acá va `sessionId:startedAt`,
+  // que sí cambia en cada arranque. Es la unidad correcta para los embudos:
+  // contando personas, quien consulta una vez por patente y otra por DNI suma en
+  // las dos ramas y los hijos terminan sumando más que el padre.
+  runId          String?
   // Mismo nombre que el evento de log: 'bot.node.entered' | 'bot.capture' |
   // 'bot.capture.invalid' | 'bot.setvar' | 'bot.http' | 'bot.media' |
   // 'bot.goto' | 'bot.handoff' | 'bot.session.started' | 'bot.session.ended'
@@ -1299,6 +1306,7 @@ model BotEvent {
   // Desglose de recorridos: filtra kind='bot.node.entered' sobre la ventana.
   // Sin él, agrupar 7 días (≈400k filas de 1,4M) tardaba más de un segundo.
   @@index([teamId, kind, createdAt])
+  @@index([runId])
 }
 
 // ============================================================

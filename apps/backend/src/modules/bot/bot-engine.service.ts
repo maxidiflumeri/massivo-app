@@ -72,8 +72,15 @@ interface CfgForEngine {
   botVariables?: unknown;
 }
 
+/** Id del recorrido: cambia en cada arranque de sesión, a diferencia del id de
+ *  la fila de BotSession, que se reusa por (canal, usuario). */
+function runIdOf(sessionId: string, startedAt: Date | null | undefined): string {
+  return `${sessionId}:${startedAt ? startedAt.getTime() : 0}`;
+}
+
 interface SessionRow {
   id: string;
+  startedAt?: Date;
   currentNodeId: string;
   /** 4.O.1 — null en sesiones legacy. El motor lo trata como 'default'. */
   currentTopicId: string | null;
@@ -150,7 +157,12 @@ export class BotEngineService {
     if (!resolved) return { handled: false };
 
     let session = await this.findActiveSession(cfg.id, input.phone);
-    if (session) ObservabilityContext.augment({ sessionId: session.id });
+    if (session) {
+      ObservabilityContext.augment({
+        sessionId: session.id,
+        runId: runIdOf(session.id, session.startedAt),
+      });
+    }
     let data: BotData = sessionData(session);
     let currentTopicId: string = session?.currentTopicId ?? DEFAULT_TOPIC_ID;
     let currentTopic = resolved.topics.get(currentTopicId);
@@ -762,6 +774,7 @@ export class BotEngineService {
       where: { channelId: configId, externalUserId: phone, endedAt: null },
       select: {
         id: true,
+        startedAt: true,
         currentNodeId: true,
         currentTopicId: true,
         expiresAt: true,
@@ -817,8 +830,11 @@ export class BotEngineService {
     });
     // 4.R — augmentamos el sessionId al scope. Si era una sesión nueva
     // (startedAt = lastInboundAt instante mismo), también emitimos session.started.
-    ObservabilityContext.augment({ sessionId: result.id });
     const startedAt = result.startedAt;
+    ObservabilityContext.augment({
+      sessionId: result.id,
+      runId: runIdOf(result.id, startedAt),
+    });
     const lastInboundAt = result.lastInboundAt;
     if (startedAt && lastInboundAt && startedAt.getTime() === lastInboundAt.getTime()) {
       this.eventLogger.botSessionStarted({ sessionId: result.id, topicId, phone });

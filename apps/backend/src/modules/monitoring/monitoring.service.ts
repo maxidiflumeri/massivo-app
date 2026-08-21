@@ -63,6 +63,9 @@ export interface PathNode {
   nodeKind: string | null;
   /** Primeros caracteres del texto del nodo, para reconocerlo sin abrir el flow. */
   preview: string | null;
+  /** Recorridos que pasaron por el nodo. Es la unidad del embudo. */
+  recorridos: number;
+  /** Personas distintas. Menor que `recorridos`: una persona vuelve varias veces. */
   personas: number;
   pasadas: number;
 }
@@ -71,6 +74,7 @@ export interface PathsOverview {
   windowDays: MonitoringWindow;
   topics: Array<{
     topicId: string;
+    recorridos: number;
     personas: number;
     pasadas: number;
     nodes: PathNode[];
@@ -291,10 +295,11 @@ export class MonitoringService {
    * hasta qué nodo llega. Responde "cuántos consultaron por DNI vs patente" o
    * "cuántos pidieron el cupón por mail" sin tocar el código del flow.
    *
-   * La unidad es **personas** (conversaciones distintas que pasaron por el
-   * nodo), no visitas: `BotEvent` no lleva `episodeId`. `pasadas` cuenta los
-   * pases totales, que incluyen los rebotes de un mismo recorrido (un menú al
-   * que se vuelve suma varias).
+   * La unidad es **recorridos** (`runId`): una pasada por el flujo de punta a
+   * punta. Contando personas los hijos sumaban más que el padre — quien consulta
+   * una vez por patente y otra por DNI aparece en las dos ramas. También se
+   * devuelven `personas` (conversaciones distintas) y `pasadas` (entradas
+   * totales, que incluyen los rebotes dentro de un mismo recorrido).
    */
   async getPaths(days: MonitoringWindow): Promise<PathsOverview> {
     const { organizationId, teamId } = this.tenant();
@@ -310,6 +315,7 @@ export class MonitoringService {
         node_id: string | null;
         node_kind: string | null;
         preview: string | null;
+        recorridos: bigint;
         personas: bigint;
         pasadas: bigint;
       }>
@@ -317,6 +323,7 @@ export class MonitoringService {
       SELECT "topicId" AS topic_id, "nodeId" AS node_id,
              min("nodeKind") AS node_kind,
              min(payload ->> 'textPreview') AS preview,
+             count(DISTINCT "runId") AS recorridos,
              count(DISTINCT "conversationId") AS personas,
              count(*) AS pasadas
       FROM "BotEvent"
@@ -327,13 +334,13 @@ export class MonitoringService {
 
     const porTema = new Map<
       string,
-      { topicId: string; personas: number; pasadas: number; nodes: PathNode[] }
+      { topicId: string; recorridos: number; personas: number; pasadas: number; nodes: PathNode[] }
     >();
     const tema = (id: string | null) => {
       const key = id ?? '(sin tema)';
       let t = porTema.get(key);
       if (!t) {
-        t = { topicId: key, personas: 0, pasadas: 0, nodes: [] };
+        t = { topicId: key, recorridos: 0, personas: 0, pasadas: 0, nodes: [] };
         porTema.set(key, t);
       }
       return t;
@@ -342,6 +349,7 @@ export class MonitoringService {
     for (const f of filas) {
       const t = tema(f.topic_id);
       if (f.node_id === null) {
+        t.recorridos = Number(f.recorridos);
         t.personas = Number(f.personas);
         t.pasadas = Number(f.pasadas);
       } else {
@@ -349,6 +357,7 @@ export class MonitoringService {
           nodeId: f.node_id,
           nodeKind: f.node_kind,
           preview: f.preview,
+          recorridos: Number(f.recorridos),
           personas: Number(f.personas),
           pasadas: Number(f.pasadas),
         });
@@ -356,8 +365,8 @@ export class MonitoringService {
     }
 
     const topics = [...porTema.values()]
-      .map((t) => ({ ...t, nodes: t.nodes.sort((a, b) => b.personas - a.personas) }))
-      .sort((a, b) => b.personas - a.personas);
+      .map((t) => ({ ...t, nodes: t.nodes.sort((a, b) => b.recorridos - a.recorridos) }))
+      .sort((a, b) => b.recorridos - a.recorridos);
 
     return { windowDays: days, topics };
   }

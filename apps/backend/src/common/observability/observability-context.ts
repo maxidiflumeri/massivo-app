@@ -16,6 +16,8 @@ export interface ObsFields {
   traceId?: string;
   phone?: string;
   sessionId?: string;
+  /** Recorrido: una pasada por el flujo. Ver `BotEvent.runId`. */
+  runId?: string;
   conversationId?: string;
   configId?: string;
   // Email-specific — campaña y report individual. Permiten buscar todos los

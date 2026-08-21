@@ -104,6 +104,9 @@ export class BotEventRecorder implements OnModuleInit, OnModuleDestroy {
       conversationId: input.conversationId ?? obs.conversationId ?? null,
       channelId: input.channelId ?? obs.configId ?? null,
       sessionId: input.sessionId ?? obs.sessionId ?? null,
+      // Recorrido: lo pone el motor al abrir/retomar la sesión. Es la unidad de
+      // los embudos — ver el comentario de `BotEvent.runId`.
+      runId: obs.runId ?? null,
       kind: input.kind,
       nodeId: input.nodeId ?? null,
       nodeKind: input.nodeKind ?? null,

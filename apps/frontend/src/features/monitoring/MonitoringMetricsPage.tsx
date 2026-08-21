@@ -169,14 +169,14 @@ export function MonitoringMetricsPage() {
                 Resumen de recorridos
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                Personas distintas que llegaron a cada paso, en la ventana elegida.
+                Cuántos recorridos del bot llegaron a cada paso. Un recorrido es una pasada por el flujo: la misma persona que vuelve al otro día suma dos.
               </Typography>
               <FunnelSummary data={paths} />
 
               <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
                 <Typography variant="subtitle2">Detalle por nodo</Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                  Todo el recorrido, paso por paso. Tocá un tema para desplegarlo.
+                  Todo el flujo, paso por paso. Tocá un tema para desplegarlo; en cada nodo el tooltip muestra también personas y pasadas.
                 </Typography>
                 <PathsBreakdown data={paths} />
               </Paper>
