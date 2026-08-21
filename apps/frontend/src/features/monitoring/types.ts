@@ -75,3 +75,22 @@ export interface BotSessionSnapshot {
   endedReason: string | null;
   data: Record<string, unknown> | null;
 }
+
+/** Un nodo del bot con cuánta gente pasó por él. */
+export interface PathNode {
+  nodeId: string;
+  nodeKind: string | null;
+  preview: string | null;
+  personas: number;
+  pasadas: number;
+}
+
+export interface PathsOverview {
+  windowDays: MonitoringWindow;
+  topics: Array<{
+    topicId: string;
+    personas: number;
+    pasadas: number;
+    nodes: PathNode[];
+  }>;
+}

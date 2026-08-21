@@ -57,6 +57,26 @@ export interface BotEventItem {
   createdAt: string;
 }
 
+/** Un nodo del bot con cuánta gente pasó por él. */
+export interface PathNode {
+  nodeId: string;
+  nodeKind: string | null;
+  /** Primeros caracteres del texto del nodo, para reconocerlo sin abrir el flow. */
+  preview: string | null;
+  personas: number;
+  pasadas: number;
+}
+
+export interface PathsOverview {
+  windowDays: MonitoringWindow;
+  topics: Array<{
+    topicId: string;
+    personas: number;
+    pasadas: number;
+    nodes: PathNode[];
+  }>;
+}
+
 export interface EpisodeItem {
   episodeId: string;
   startedAt: string;
@@ -264,6 +284,83 @@ export class MonitoringService {
       createdAt: r.createdAt.toISOString(),
     }));
     return { items, nextCursor: hasMore ? (items[items.length - 1]?.id ?? null) : null };
+  }
+
+  /**
+   * Desglose de recorridos: por qué tema entra la gente y, dentro de cada uno,
+   * hasta qué nodo llega. Responde "cuántos consultaron por DNI vs patente" o
+   * "cuántos pidieron el cupón por mail" sin tocar el código del flow.
+   *
+   * La unidad es **personas** (conversaciones distintas que pasaron por el
+   * nodo), no visitas: `BotEvent` no lleva `episodeId`. `pasadas` cuenta los
+   * pases totales, que incluyen los rebotes de un mismo recorrido (un menú al
+   * que se vuelve suma varias).
+   */
+  async getPaths(days: MonitoringWindow): Promise<PathsOverview> {
+    const { organizationId, teamId } = this.tenant();
+    const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const [porTema, porNodo] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ topic_id: string | null; personas: bigint; pasadas: bigint }>>(
+        Prisma.sql`
+          SELECT "topicId" AS topic_id,
+                 count(DISTINCT "conversationId") AS personas,
+                 count(*) AS pasadas
+          FROM "BotEvent"
+          WHERE "organizationId" = ${organizationId} AND "teamId" = ${teamId}
+            AND kind = 'bot.node.entered' AND "createdAt" >= ${from}
+          GROUP BY 1
+        `,
+      ),
+      this.prisma.$queryRaw<
+        Array<{
+          topic_id: string | null;
+          node_id: string | null;
+          node_kind: string | null;
+          preview: string | null;
+          personas: bigint;
+          pasadas: bigint;
+        }>
+      >(Prisma.sql`
+        SELECT "topicId" AS topic_id, "nodeId" AS node_id, min("nodeKind") AS node_kind,
+               min(payload ->> 'textPreview') AS preview,
+               count(DISTINCT "conversationId") AS personas,
+               count(*) AS pasadas
+        FROM "BotEvent"
+        WHERE "organizationId" = ${organizationId} AND "teamId" = ${teamId}
+          AND kind = 'bot.node.entered' AND "createdAt" >= ${from}
+          AND "nodeId" IS NOT NULL
+        GROUP BY 1, 2
+      `),
+    ]);
+
+    const nodosPorTema = new Map<string, PathNode[]>();
+    for (const r of porNodo) {
+      const key = r.topic_id ?? '(sin tema)';
+      const lista = nodosPorTema.get(key) ?? [];
+      lista.push({
+        nodeId: r.node_id!,
+        nodeKind: r.node_kind,
+        preview: r.preview,
+        personas: Number(r.personas),
+        pasadas: Number(r.pasadas),
+      });
+      nodosPorTema.set(key, lista);
+    }
+
+    const topics = porTema
+      .map((t) => {
+        const key = t.topic_id ?? '(sin tema)';
+        return {
+          topicId: key,
+          personas: Number(t.personas),
+          pasadas: Number(t.pasadas),
+          nodes: (nodosPorTema.get(key) ?? []).sort((a, b) => b.personas - a.personas),
+        };
+      })
+      .sort((a, b) => b.personas - a.personas);
+
+    return { windowDays: days, topics };
   }
 
   /**

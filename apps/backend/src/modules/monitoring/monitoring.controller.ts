@@ -20,6 +20,7 @@ import {
   type BotSessionSnapshot,
   type EpisodeItem,
   type MonitoringOverview,
+  type PathsOverview,
 } from './monitoring.service';
 
 const MAX_EVENTS_PAGE = 200;
@@ -41,6 +42,14 @@ export class MonitoringController {
     const days = Number(daysRaw ?? 7);
     if (!isValidWindow(days)) throw new BadRequestException('days debe ser 7 o 30');
     return this.monitoring.getOverview(days);
+  }
+
+  @Get('metrics/paths')
+  @CheckPolicies((a: AppAbility) => a.can('read', 'Analytics'))
+  async paths(@Query('days') daysRaw?: string): Promise<PathsOverview> {
+    const days = Number(daysRaw ?? 7);
+    if (!isValidWindow(days)) throw new BadRequestException('days debe ser 7 o 30');
+    return this.monitoring.getPaths(days);
   }
 
   @Get('conversations/:id/bot-events')

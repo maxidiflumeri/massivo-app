@@ -6,6 +6,7 @@ import type {
   BotSessionSnapshot,
   MonitoringOverview,
   MonitoringWindow,
+  PathsOverview,
 } from './types';
 
 /**
@@ -26,6 +27,10 @@ export const monitoringApi = {
     return api.get<ListResult<BotEventItem>>(
       `/api/monitoring/conversations/${conversationId}/bot-events${suffix}`,
     );
+  },
+
+  paths(api: ApiClient, days: MonitoringWindow) {
+    return api.get<PathsOverview>(`/api/monitoring/metrics/paths?days=${days}`);
   },
 
   episodes(api: ApiClient, conversationId: string) {

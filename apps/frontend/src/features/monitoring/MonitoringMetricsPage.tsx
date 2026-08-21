@@ -34,7 +34,8 @@ import { DailySeriesChart } from './charts/DailySeriesChart';
 import { HourlyChart } from './charts/HourlyChart';
 import { ChannelSplitChart } from './charts/ChannelSplitChart';
 import { ShareBar } from './charts/ShareBar';
-import type { MonitoringOverview, MonitoringWindow } from './types';
+import { PathsBreakdown } from './PathsBreakdown';
+import type { MonitoringOverview, MonitoringWindow, PathsOverview } from './types';
 
 /** Los mensajes entran de a ráfagas: no re-consultamos en cada uno. */
 const REFETCH_DEBOUNCE_MS = 5000;
@@ -45,6 +46,7 @@ export function MonitoringMetricsPage() {
   const socket = useTeamSocket();
   const [days, setDays] = useState<MonitoringWindow>(7);
   const [data, setData] = useState<MonitoringOverview | null>(null);
+  const [paths, setPaths] = useState<PathsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [asTable, setAsTable] = useState(false);
   const debounceRef = useRef<number | null>(null);
@@ -52,8 +54,14 @@ export function MonitoringMetricsPage() {
   const load = useCallback(
     async (window: MonitoringWindow) => {
       try {
-        const res = await monitoringApi.overview(api, window);
+        // El desglose de recorridos es independiente: si falla, las métricas
+        // igual se muestran.
+        const [res, rutas] = await Promise.all([
+          monitoringApi.overview(api, window),
+          monitoringApi.paths(api, window).catch(() => null),
+        ]);
         setData(res);
+        setPaths(rutas);
       } catch (e) {
         notify.error(e instanceof Error ? e.message : 'No se pudieron cargar las métricas');
       } finally {
@@ -153,6 +161,16 @@ export function MonitoringMetricsPage() {
             </Typography>
             {asTable ? <DailyTable data={data.days} /> : <DailySeriesChart data={data.days} />}
           </Paper>
+
+          {paths && paths.topics.length > 0 && (
+            <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+              <Typography variant="subtitle2">Por dónde pasa la gente</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                Personas distintas que llegaron a cada paso. Tocá un tema para ver el detalle.
+              </Typography>
+              <PathsBreakdown data={paths} />
+            </Paper>
+          )}
 
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 7 }}>

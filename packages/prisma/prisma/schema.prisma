@@ -1296,6 +1296,9 @@ model BotEvent {
   @@index([conversationId, createdAt]) // replay timeline
   @@index([teamId, createdAt])         // métricas por equipo
   @@index([createdAt])                 // retención cross-tenant
+  // Desglose de recorridos: filtra kind='bot.node.entered' sobre la ventana.
+  // Sin él, agrupar 7 días (≈400k filas de 1,4M) tardaba más de un segundo.
+  @@index([teamId, kind, createdAt])
 }
 
 // ============================================================
