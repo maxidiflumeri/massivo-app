@@ -35,6 +35,7 @@ import { HourlyChart } from './charts/HourlyChart';
 import { ChannelSplitChart } from './charts/ChannelSplitChart';
 import { ShareBar } from './charts/ShareBar';
 import { PathsBreakdown } from './PathsBreakdown';
+import { FunnelSummary } from './FunnelSummary';
 import type { MonitoringOverview, MonitoringWindow, PathsOverview } from './types';
 
 /** Los mensajes entran de a ráfagas: no re-consultamos en cada uno. */
@@ -163,13 +164,23 @@ export function MonitoringMetricsPage() {
           </Paper>
 
           {paths && paths.topics.length > 0 && (
-            <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-              <Typography variant="subtitle2">Por dónde pasa la gente</Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                Personas distintas que llegaron a cada paso. Tocá un tema para ver el detalle.
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Resumen de recorridos
               </Typography>
-              <PathsBreakdown data={paths} />
-            </Paper>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                Personas distintas que llegaron a cada paso, en la ventana elegida.
+              </Typography>
+              <FunnelSummary data={paths} />
+
+              <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
+                <Typography variant="subtitle2">Detalle por nodo</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                  Todo el recorrido, paso por paso. Tocá un tema para desplegarlo.
+                </Typography>
+                <PathsBreakdown data={paths} />
+              </Paper>
+            </Box>
           )}
 
           <Grid container spacing={2}>
