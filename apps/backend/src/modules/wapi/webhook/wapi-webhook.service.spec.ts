@@ -483,6 +483,32 @@ describe('WapiWebhookService', () => {
       });
     });
 
+    it('interactive list_reply llega al motor como botón (regresión)', async () => {
+      // Elegir una fila de una lista desplegable tiene que llegar al motor como
+      // buttonId. Sin este caso llegaba como TEXTO (el título de la fila): el
+      // router matcheaba alguna palabra del título, reiniciaba el tema y el bot
+      // volvía a mostrar el menú en loop — el PDF nunca se enviaba.
+      botEngine.handle.mockResolvedValue({ handled: true });
+      await svc.process(
+        inboundPayload({
+          id: 'wamid.LIST', from: '5491100', timestamp: '1714780000', type: 'interactive',
+          interactive: { type: 'list_reply', list_reply: { id: 'bot:manual', title: '📘 Manual de la web' } },
+          context: { id: 'wamid.OUT' },
+        }),
+        mapA,
+      );
+      expect(botEngine.handle).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'cfg-1' }),
+        expect.objectContaining({
+          inbound: {
+            kind: 'button',
+            buttonId: 'bot:manual',
+            contextMetaMessageId: 'wamid.OUT',
+          },
+        }),
+      );
+    });
+
     it('bot maneja texto inbound → no se dispara welcome ni button actions', async () => {
       botEngine.handle.mockResolvedValue({ handled: true });
       await svc.process(

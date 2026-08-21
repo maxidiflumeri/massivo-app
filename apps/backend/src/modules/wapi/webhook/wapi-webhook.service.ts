@@ -798,16 +798,31 @@ export class WapiWebhookService {
 }
 
 /**
- * Extrae info de un button reply en cualquiera de las dos shapes que Meta usa:
- *  - `interactive.button_reply` — templates modernos con quick_reply buttons.
+ * Extrae info de una respuesta a algo interactivo, en cualquiera de las shapes
+ * que Meta usa:
+ *  - `interactive.button_reply` — botones de respuesta rápida.
+ *  - `interactive.list_reply` — filas de una lista desplegable.
  *  - `button.payload` — templates aprobados con call-to-action legacy.
- * Devuelve null si el msg no es un button reply.
+ * Devuelve null si el msg no es una respuesta a un interactivo.
+ *
+ * Los tres se normalizan a un `buttonId`: para el motor del bot elegir una fila
+ * de la lista es lo mismo que tocar un botón. Sin el caso `list_reply` la
+ * elección llegaba como TEXTO (el título de la fila) y el bot volvía a mostrar
+ * el menú en loop, porque el router matcheaba alguna palabra del título.
  */
 function extractButtonInfo(msg: WapiWebhookMessage): ExtractedButtonInfo | null {
   if (msg.type === 'interactive' && msg.interactive?.button_reply) {
     return {
       buttonId: msg.interactive.button_reply.id,
       buttonText: msg.interactive.button_reply.title ?? null,
+      contextMetaMessageId: msg.context?.id ?? null,
+      shape: 'interactive',
+    };
+  }
+  if (msg.type === 'interactive' && msg.interactive?.list_reply) {
+    return {
+      buttonId: msg.interactive.list_reply.id,
+      buttonText: msg.interactive.list_reply.title ?? null,
       contextMetaMessageId: msg.context?.id ?? null,
       shape: 'interactive',
     };
