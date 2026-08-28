@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MonitoringController } from './monitoring.controller';
 import { MonitoringService } from './monitoring.service';
 import { BotEventRetentionService } from './bot-event-retention.service';
+import { MonitoringReportService } from './monitoring-report.service';
 
 /**
  * Monitoreo — sección de observabilidad del panel: agregados diarios y
@@ -10,7 +11,7 @@ import { BotEventRetentionService } from './bot-event-retention.service';
  */
 @Module({
   controllers: [MonitoringController],
-  providers: [MonitoringService, BotEventRetentionService],
+  providers: [MonitoringService, MonitoringReportService, BotEventRetentionService],
   exports: [MonitoringService],
 })
 export class MonitoringModule {}

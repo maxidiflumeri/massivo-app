@@ -36,7 +36,9 @@ import { ChannelSplitChart } from './charts/ChannelSplitChart';
 import { ShareBar } from './charts/ShareBar';
 import { PathsBreakdown } from './PathsBreakdown';
 import { FunnelSummary } from './FunnelSummary';
-import type { MonitoringOverview, MonitoringWindow, PathsOverview } from './types';
+import { RangePicker, lastDays } from './RangePicker';
+import { DownloadReportButton } from './report/DownloadReportButton';
+import type { DayRange, MonitoringOverview, MonitoringWindow, PathsOverview } from './types';
 
 /** Los mensajes entran de a ráfagas: no re-consultamos en cada uno. */
 const REFETCH_DEBOUNCE_MS = 5000;
@@ -45,7 +47,8 @@ export function MonitoringMetricsPage() {
   const api = useApi();
   const notify = useNotify();
   const socket = useTeamSocket();
-  const [days, setDays] = useState<MonitoringWindow>(7);
+  const [range, setRange] = useState<DayRange>(() => lastDays(7));
+  const [preset, setPreset] = useState<MonitoringWindow>(7);
   const [data, setData] = useState<MonitoringOverview | null>(null);
   const [paths, setPaths] = useState<PathsOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,7 +56,7 @@ export function MonitoringMetricsPage() {
   const debounceRef = useRef<number | null>(null);
 
   const load = useCallback(
-    async (window: MonitoringWindow) => {
+    async (window: DayRange) => {
       try {
         // El desglose de recorridos es independiente: si falla, las métricas
         // igual se muestran.
@@ -74,22 +77,22 @@ export function MonitoringMetricsPage() {
 
   useEffect(() => {
     setLoading(true);
-    void load(days);
-  }, [days, load]);
+    void load(range);
+  }, [range, load]);
 
   // Refetch debounced ante tráfico nuevo (mismo patrón que el dashboard live).
   useEffect(() => {
     if (!socket) return;
     const bump = () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
-      debounceRef.current = window.setTimeout(() => void load(days), REFETCH_DEBOUNCE_MS);
+      debounceRef.current = window.setTimeout(() => void load(range), REFETCH_DEBOUNCE_MS);
     };
     socket.on('conversation.message.new', bump);
     return () => {
       socket.off('conversation.message.new', bump);
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
-  }, [socket, days, load]);
+  }, [socket, range, load]);
 
   return (
     <Box>
@@ -102,24 +105,26 @@ export function MonitoringMetricsPage() {
             Actividad del bot y de las conversaciones. Horario de Buenos Aires.
           </Typography>
         </Box>
-        {/* Una sola fila de filtros arriba, que aplica a todo lo de abajo. */}
-        <Stack direction="row" alignItems="center" gap={1}>
-          <ToggleButtonGroup
-            size="small"
-            exclusive
-            value={days}
-            onChange={(_, v) => v && setDays(v as MonitoringWindow)}
-          >
-            <ToggleButton value={7}>7 días</ToggleButton>
-            <ToggleButton value={30}>30 días</ToggleButton>
-          </ToggleButtonGroup>
+        {/* Una sola fila de filtros arriba, que aplica a todo lo de abajo
+            —incluido el informe descargable, que usa el mismo rango. */}
+        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" justifyContent="flex-end">
+          <RangePicker
+            value={range}
+            preset={preset}
+            disabled={loading}
+            onChange={(r, p) => {
+              setRange(r);
+              setPreset(p);
+            }}
+          />
+          <DownloadReportButton range={range} disabled={loading} />
           <Tooltip title={asTable ? 'Ver gráficos' : 'Ver como tabla'}>
             <IconButton size="small" onClick={() => setAsTable((v) => !v)}>
               {asTable ? <InsertChartOutlinedIcon /> : <TableChartIcon />}
             </IconButton>
           </Tooltip>
           <Tooltip title="Actualizar">
-            <IconButton size="small" onClick={() => void load(days)}>
+            <IconButton size="small" onClick={() => void load(range)}>
               <RefreshIcon />
             </IconButton>
           </Tooltip>

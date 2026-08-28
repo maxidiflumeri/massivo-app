@@ -2,23 +2,24 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@massivo/prisma';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/auth/tenant-context';
+import { TZ, eachDay, type DateRange } from './monitoring-range';
 
-const VALID_WINDOWS = [7, 30] as const;
-export type MonitoringWindow = (typeof VALID_WINDOWS)[number];
-
-export function isValidWindow(n: number): n is MonitoringWindow {
-  return (VALID_WINDOWS as readonly number[]).includes(n);
+/** Rango del que habla una respuesta, para que el front lo muestre tal cual. */
+export interface RangeInfo {
+  /** Primer día local incluido, YYYY-MM-DD. */
+  fromDay: string;
+  /** Último día local incluido, YYYY-MM-DD. */
+  toDay: string;
+  /** Días locales que cubre, ambos extremos incluidos. */
+  days: number;
 }
 
-/**
- * Zona horaria de los buckets diarios/horarios. El bot atiende a la Provincia
- * de Buenos Aires: un mensaje de las 22:00 ART debe caer en ese día local, no
- * en el siguiente UTC.
- */
-const TZ = 'America/Argentina/Buenos_Aires';
+export function rangeInfo(range: DateRange): RangeInfo {
+  return { fromDay: range.fromDay, toDay: range.toDay, days: range.days };
+}
 
 export interface MonitoringOverview {
-  windowDays: MonitoringWindow;
+  range: RangeInfo;
   from: string;
   to: string;
   totals: {
@@ -71,7 +72,7 @@ export interface PathNode {
 }
 
 export interface PathsOverview {
-  windowDays: MonitoringWindow;
+  range: RangeInfo;
   topics: Array<{
     topicId: string;
     recorridos: number;
@@ -126,10 +127,9 @@ export class MonitoringService {
     return { organizationId: ctx.organizationId, teamId: ctx.teamId };
   }
 
-  async getOverview(days: MonitoringWindow): Promise<MonitoringOverview> {
+  async getOverview(range: DateRange): Promise<MonitoringOverview> {
     const { organizationId, teamId } = this.tenant();
-    const to = new Date();
-    const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+    const { from, to } = range;
 
     const [convRows, msgRows, hourRows, byChannel, handoffs, activeSessions, escalatedCount, totalConv, activeConvRows] =
       await Promise.all([
@@ -176,8 +176,10 @@ export class MonitoringService {
         this.prisma.scoped.botEvent.count({
           where: { kind: 'bot.handoff', createdAt: { gte: from, lte: to } },
         }),
+        // "Sesiones activas" es siempre AHORA: un rango cerrado en el pasado no
+        // tiene sesiones vivas, y preguntar por `to` devolvía 0 sin motivo.
         this.prisma.scoped.botSession.count({
-          where: { endedAt: null, expiresAt: { gt: to } },
+          where: { endedAt: null, expiresAt: { gt: new Date() } },
         }),
         // Derivadas: visitas donde el bot dejó un mensaje de HANDOFF. El engine
         // siempre estampó `system.kind='bot-handoff'`, así que anda retroactivo.
@@ -219,16 +221,12 @@ export class MonitoringService {
       }
     }
 
-    const daysSeries: MonitoringOverview['days'] = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const key = dayKey(new Date(to.getTime() - i * 24 * 60 * 60 * 1000), TZ);
-      daysSeries.push({
-        day: key,
-        conversations: convByDay.get(key) ?? 0,
-        messagesIn: inByDay.get(key) ?? 0,
-        messagesOut: outByDay.get(key) ?? 0,
-      });
-    }
+    const daysSeries: MonitoringOverview['days'] = eachDay(range).map((key) => ({
+      day: key,
+      conversations: convByDay.get(key) ?? 0,
+      messagesIn: inByDay.get(key) ?? 0,
+      messagesOut: outByDay.get(key) ?? 0,
+    }));
 
     const activas = Number(activeConvRows[0]?.count ?? 0);
     const derivadas = Number(escalatedCount[0]?.count ?? 0);
@@ -240,7 +238,7 @@ export class MonitoringService {
     }));
 
     return {
-      windowDays: days,
+      range: rangeInfo(range),
       from: from.toISOString(),
       to: to.toISOString(),
       totals: {
@@ -301,9 +299,9 @@ export class MonitoringService {
    * devuelven `personas` (conversaciones distintas) y `pasadas` (entradas
    * totales, que incluyen los rebotes dentro de un mismo recorrido).
    */
-  async getPaths(days: MonitoringWindow): Promise<PathsOverview> {
+  async getPaths(range: DateRange): Promise<PathsOverview> {
     const { organizationId, teamId } = this.tenant();
-    const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const { from, to } = range;
 
     // GROUPING SETS trae los dos niveles (tema y tema+nodo) en UNA pasada. Con
     // dos queries separadas eran 4,2s + 0,6s sobre 30 días, porque cada
@@ -328,7 +326,8 @@ export class MonitoringService {
              count(*) AS pasadas
       FROM "BotEvent"
       WHERE "organizationId" = ${organizationId} AND "teamId" = ${teamId}
-        AND kind = 'bot.node.entered' AND "createdAt" >= ${from}
+        AND kind = 'bot.node.entered'
+        AND "createdAt" >= ${from} AND "createdAt" < ${to}
       GROUP BY GROUPING SETS (("topicId"), ("topicId", "nodeId"))
     `);
 
@@ -368,7 +367,7 @@ export class MonitoringService {
       .map((t) => ({ ...t, nodes: t.nodes.sort((a, b) => b.recorridos - a.recorridos) }))
       .sort((a, b) => b.recorridos - a.recorridos);
 
-    return { windowDays: days, topics };
+    return { range: rangeInfo(range), topics };
   }
 
   /**
@@ -447,18 +446,9 @@ export class MonitoringService {
 /**
  * `date_trunc(... AT TIME ZONE tz)` devuelve un timestamp sin tz que el driver
  * interpreta como UTC; sus componentes YA son la hora local, así que la clave
- * se arma con los getters UTC. Cuando la fecha viene de `new Date()` (serie
- * continua) sí hay que convertirla a la zona con `tz`.
+ * se arma con los getters UTC. Para pasar de un instante a su día local está
+ * `zonedDayKey` en `monitoring-range`.
  */
-function dayKey(d: Date, tz?: string): string {
-  if (tz) {
-    // en-CA da YYYY-MM-DD directo.
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(d);
-  }
+function dayKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
