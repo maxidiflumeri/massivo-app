@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useOrganization } from '@clerk/clerk-react';
 import {
   Box,
   Button,
@@ -36,13 +37,15 @@ import { EditChannelDialog } from './EditChannelDialog';
 import type { ChannelListItem } from './types';
 
 interface MeContextSlice {
-  organizations: Array<{ webhookSlug: string; role: string }>;
+  organizations: Array<{ clerkOrgId: string; webhookSlug: string; role: string }>;
 }
 
 export function ChannelsPage() {
   const api = useApi();
   const notify = useNotify();
   const confirm = useConfirm();
+  const { organization } = useOrganization();
+  const clerkOrgId = organization?.id ?? null;
 
   const [items, setItems] = useState<ChannelListItem[] | null>(null);
   const [bots, setBots] = useState<BotListItem[]>([]);
@@ -69,11 +72,29 @@ export function ChannelsPage() {
       .list(api)
       .then(setAgents)
       .catch(() => undefined);
+  }, [api, load]);
+
+  // El slug del webhook es org-scoped: hay que tomar el de la organización
+  // **activa**, no el primero de la lista de membresías (un usuario multi-org
+  // copiaría la URL de otra org y Meta fallaría el verify contra una org sin
+  // canales). Mismo criterio que el Sidebar para resolver la org activa.
+  useEffect(() => {
+    let cancelled = false;
+    setWebhookSlug(null);
     void api
       .get<MeContextSlice>('/api/me/context')
-      .then((me) => setWebhookSlug(me.organizations[0]?.webhookSlug ?? null))
+      .then((me) => {
+        if (cancelled) return;
+        const org = clerkOrgId
+          ? me.organizations.find((o) => o.clerkOrgId === clerkOrgId)
+          : me.organizations[0];
+        setWebhookSlug(org?.webhookSlug ?? null);
+      })
       .catch(() => undefined);
-  }, [api, load]);
+    return () => {
+      cancelled = true;
+    };
+  }, [api, clerkOrgId]);
 
   async function handleSetAutomation(
     channel: ChannelListItem,
