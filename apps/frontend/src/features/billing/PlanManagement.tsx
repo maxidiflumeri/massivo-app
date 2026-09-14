@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useOrganization } from '@clerk/clerk-react';
 import {
   Alert,
   Box,
@@ -60,9 +61,10 @@ function formatLimit(raw: unknown): string {
 
 export function PlanManagement() {
   const api = useApi();
+  const { organization } = useOrganization();
+  const clerkOrgId = organization?.id ?? null;
   const [plans, setPlans] = useState<PlanDto[] | null>(null);
   const [currentCode, setCurrentCode] = useState<string | null>(null);
-  const [activeClerkOrgId, setActiveClerkOrgId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,13 +80,17 @@ export function PlanManagement() {
         api.get<PlanDto[]>('/api/plans'),
         api.get<MeContextLite>('/api/me/context'),
       ]);
-      const org = meRes.organizations[0];
+      // Plan y rol de la organización **activa**, no de la primera membresía:
+      // el PATCH a /api/orgs/me/plan aplica sobre la org activa, así que
+      // mostrar otra haría cambiar un plan distinto del que se está viendo.
+      const org = clerkOrgId
+        ? meRes.organizations.find((o) => o.clerkOrgId === clerkOrgId)
+        : meRes.organizations[0];
       setPlans(plansRes);
       setCurrentCode(org?.plan.code ?? null);
-      setActiveClerkOrgId(org?.clerkOrgId ?? null);
       setRole(org?.role ?? null);
     },
-    [api],
+    [api, clerkOrgId],
   );
 
   useEffect(() => {
