@@ -61,6 +61,8 @@ export interface ResolutionNoteItem {
   id: string;
   note: string;
   authorUserId: string | null;
+  /** null = nota del sistema (ej. cierre por inactividad). */
+  authorName: string | null;
   createdAt: string;
 }
 

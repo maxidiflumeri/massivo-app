@@ -23,6 +23,7 @@ import type {
   InboxMessage,
   ConversationMessageNewEvent,
   ConversationMessageStatusEvent,
+  ResolutionNoteItem,
   QuickReply,
 } from './types';
 
@@ -50,6 +51,7 @@ export function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<InboxMessage[]>([]);
+  const [notes, setNotes] = useState<ResolutionNoteItem[]>([]);
   const [thLoading, setThLoading] = useState(false);
   const [msgCursor, setMsgCursor] = useState<string | null>(null);
   const [msgMore, setMsgMore] = useState(false);
@@ -237,22 +239,27 @@ export function InboxPage() {
     if (!selectedId) {
       setConversation(null);
       setMessages([]);
+      setNotes([]);
       return;
     }
     let cancelled = false;
     setThLoading(true);
     setMessages([]);
+    setNotes([]);
     setMsgCursor(null);
     setMsgMore(false);
     void (async () => {
       try {
-        const [detail, msgs] = await Promise.all([
+        const [detail, msgs, convNotes] = await Promise.all([
           inboxApi.getConversation(api, selectedId),
           inboxApi.listMessages(api, selectedId, { limit: 30 }),
+          // Las notas son contexto: si fallan, el hilo se muestra igual.
+          inboxApi.listNotes(api, selectedId).catch(() => [] as ResolutionNoteItem[]),
         ]);
         if (cancelled) return;
         setConversation(detail);
         setMessages(msgs.items);
+        setNotes(convNotes);
         setMsgCursor(msgs.nextCursor);
         setMsgMore(!!msgs.nextCursor);
         // Auto-mark como leído si tenía no leídos
@@ -372,6 +379,16 @@ export function InboxPage() {
         ),
       );
       if (ev.id === selectedRef.current) {
+        // Al resolverse (a mano o por inactividad) puede haber una nota nueva.
+        if (ev.status === 'RESOLVED') {
+          const convId = ev.id;
+          void inboxApi
+            .listNotes(api, convId)
+            .then((n) => {
+              if (selectedRef.current === convId) setNotes(n);
+            })
+            .catch(() => undefined);
+        }
         setConversation((c) =>
           c
             ? {
@@ -576,6 +593,7 @@ export function InboxPage() {
                 que el operador sepa qué eligió el cliente antes de la derivación. */}
             <ConversationThread
               messages={messages}
+              notes={notes}
               showBotBadge
               loading={thLoading}
               hasMore={msgMore}

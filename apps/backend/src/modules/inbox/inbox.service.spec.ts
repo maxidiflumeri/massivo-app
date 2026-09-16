@@ -18,6 +18,7 @@ describe('InboxService', () => {
   let senderMock: { sendText: jest.Mock; sendMediaById: jest.Mock };
   let eventsMock: { emitToTeam: jest.Mock };
   let mediaMock: { uploadToMeta: jest.Mock };
+  let userMock: { findMany: jest.Mock };
 
   const ctx: RequestContext = {
     userId: 'u1',
@@ -78,12 +79,13 @@ describe('InboxService', () => {
       }),
     };
     eventsMock = { emitToTeam: jest.fn() };
+    userMock = { findMany: jest.fn().mockResolvedValue([]) };
     mediaMock = { uploadToMeta: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         InboxService,
-        { provide: PrismaService, useValue: { scoped: prismaMock } },
+        { provide: PrismaService, useValue: { scoped: prismaMock, user: userMock } },
         {
           provide: ChannelAdapterRegistry,
           useValue: { get: () => adapterMock, capabilities: () => adapterMock.capabilities, has: () => true },
@@ -485,6 +487,24 @@ describe('InboxService', () => {
       TenantContext.run(ctx, () => service.putOnHold('c1')),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+  it('listResolutionNotes resuelve el nombre del autor (null = sistema)', async () => {
+    prismaMock.conversation.findFirst.mockResolvedValue({ id: 'c1' });
+    prismaMock.wapiResolutionNote.findMany.mockResolvedValue([
+      { id: 'n2', note: 'auto', authorUserId: null, createdAt: new Date() },
+      { id: 'n1', note: 'listo', authorUserId: 'u1', createdAt: new Date() },
+      { id: 'n0', note: 'otra', authorUserId: 'u2', createdAt: new Date() },
+    ]);
+    userMock.findMany.mockResolvedValue([
+      { id: 'u1', name: 'Maxi', email: 'maxi@x.com' },
+      { id: 'u2', name: null, email: 'ana@x.com' },
+    ]);
+    const res = await TenantContext.run(ctx, () => service.listResolutionNotes('c1'));
+    expect(userMock.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['u1', 'u2'] } } }),
+    );
+    expect(res.map((n) => n.authorName)).toEqual([null, 'Maxi', 'ana@x.com']);
+  });
+
   describe('closeIdleBotSession (inactividad del lado del bot)', () => {
     const conv = {
       id: 'c1',

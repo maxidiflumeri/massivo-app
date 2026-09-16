@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { Box, Chip, CircularProgress, Stack } from '@mui/material';
-import { formatDateHeader } from './formatters';
+import { Box, Chip, CircularProgress, Stack, Typography } from '@mui/material';
+import { formatDateHeader, formatTime } from './formatters';
 import { MessageBubble } from './MessageBubble';
-import type { InboxMessage } from './types';
+import type { InboxMessage, ResolutionNoteItem } from './types';
 
 interface Props {
   messages: InboxMessage[];
@@ -14,7 +14,13 @@ interface Props {
   onInteractiveButtonClick?: (buttonId: string, title: string) => void;
   /** Marca con chips "BOT" los mensajes del motor y "OPCIÓN" lo que eligió el cliente. */
   showBotBadge?: boolean;
+  /** Notas de cierre, intercaladas en el hilo por fecha. */
+  notes?: ResolutionNoteItem[];
 }
+
+type ThreadItem =
+  | { kind: 'message'; ts: number; message: InboxMessage }
+  | { kind: 'note'; ts: number; note: ResolutionNoteItem };
 
 export function ConversationThread({
   messages,
@@ -24,29 +30,40 @@ export function ConversationThread({
   loadingMore,
   onInteractiveButtonClick,
   showBotBadge,
+  notes,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastIdRef = useRef<string | null>(null);
 
-  // El backend devuelve mensajes desc — los renderizamos asc.
-  const ordered = useMemo(() => {
-    return [...messages].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-    );
-  }, [messages]);
+  // El backend devuelve mensajes desc — los renderizamos asc, con las notas
+  // intercaladas. Con historial paginado, las notas anteriores al mensaje más
+  // viejo cargado se muestran recién al traer esa página.
+  const items = useMemo<ThreadItem[]>(() => {
+    const msgs: ThreadItem[] = messages.map((m) => ({
+      kind: 'message',
+      ts: new Date(m.timestamp).getTime(),
+      message: m,
+    }));
+    const oldest = msgs.reduce((min, it) => Math.min(min, it.ts), Infinity);
+    const noteItems: ThreadItem[] = (notes ?? [])
+      .map((n) => ({ kind: 'note' as const, ts: new Date(n.createdAt).getTime(), note: n }))
+      .filter((n) => !hasMore || n.ts >= oldest);
+    return [...msgs, ...noteItems].sort((a, b) => a.ts - b.ts);
+  }, [messages, notes, hasMore]);
 
   useEffect(() => {
-    const last = ordered[ordered.length - 1];
+    const last = items[items.length - 1];
     if (!last) return;
-    if (last.id !== lastIdRef.current) {
-      lastIdRef.current = last.id;
+    const lastId = last.kind === 'message' ? last.message.id : `note:${last.note.id}`;
+    if (lastId !== lastIdRef.current) {
+      lastIdRef.current = lastId;
       requestAnimationFrame(() => {
         if (scrollRef.current) {
           scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
       });
     }
-  }, [ordered]);
+  }, [items]);
 
   if (loading && messages.length === 0) {
     return (
@@ -84,16 +101,24 @@ export function ConversationThread({
         </Box>
       )}
       <Stack spacing={0.5}>
-        {ordered.map((m, idx) => {
-          const prev = ordered[idx - 1];
-          const showDate =
-            !prev || dayKey(prev.timestamp) !== dayKey(m.timestamp);
+        {items.map((it, idx) => {
+          const prev = items[idx - 1];
+          const showDate = !prev || dayKey(prev.ts) !== dayKey(it.ts);
+          if (it.kind === 'note') {
+            return (
+              <Box key={`note:${it.note.id}`}>
+                {showDate && <DateDivider iso={it.note.createdAt} />}
+                <NoteCard note={it.note} />
+              </Box>
+            );
+          }
+          const m = it.message;
+          const next = items[idx + 1];
           const showTail =
-            !ordered[idx + 1] ||
-            ordered[idx + 1]?.fromMe !== m.fromMe ||
-            new Date(ordered[idx + 1]!.timestamp).getTime() -
-              new Date(m.timestamp).getTime() >
-              60_000;
+            !next ||
+            next.kind !== 'message' ||
+            next.message.fromMe !== m.fromMe ||
+            next.ts - it.ts > 60_000;
           return (
             <Box key={m.id}>
               {showDate && <DateDivider iso={m.timestamp} />}
@@ -129,7 +154,32 @@ function DateDivider({ iso }: { iso: string }) {
   );
 }
 
-function dayKey(iso: string): string {
-  const d = new Date(iso);
+function NoteCard({ note }: { note: ResolutionNoteItem }) {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', my: 1 }}>
+      <Box
+        sx={{
+          maxWidth: '80%',
+          px: 1.5,
+          py: 0.75,
+          borderRadius: 1.5,
+          border: 1,
+          borderColor: (t) => (t.palette.mode === 'dark' ? 'rgba(255,213,79,0.35)' : 'rgba(180,130,0,0.3)'),
+          bgcolor: (t) => (t.palette.mode === 'dark' ? 'rgba(255,213,79,0.08)' : 'rgba(255,213,79,0.18)'),
+        }}
+      >
+        <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, color: 'text.secondary' }}>
+          📝 Nota de cierre · {note.authorName ?? 'Sistema'} · {formatTime(note.createdAt)}
+        </Typography>
+        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {note.note}
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
+function dayKey(ts: number): string {
+  const d = new Date(ts);
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }

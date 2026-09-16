@@ -1098,7 +1098,14 @@ export class InboxService {
   }
 
   async listResolutionNotes(conversationId: string): Promise<
-    Array<{ id: string; note: string; authorUserId: string | null; createdAt: Date }>
+    Array<{
+      id: string;
+      note: string;
+      authorUserId: string | null;
+      /** Nombre (o email) del autor; null = nota del sistema (ej. cierre por inactividad). */
+      authorName: string | null;
+      createdAt: Date;
+    }>
   > {
     this.requireContext();
     const conv = await this.prisma.scoped.conversation.findFirst({
@@ -1111,7 +1118,18 @@ export class InboxService {
       orderBy: { createdAt: 'desc' },
       select: { id: true, note: true, authorUserId: true, createdAt: true },
     });
-    return rows;
+    const authorIds = [...new Set(rows.map((r) => r.authorUserId).filter((id): id is string => !!id))];
+    const authors = authorIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: authorIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+    const nameOf = new Map(authors.map((u) => [u.id, u.name?.trim() || u.email]));
+    return rows.map((r) => ({
+      ...r,
+      authorName: r.authorUserId ? (nameOf.get(r.authorUserId) ?? null) : null,
+    }));
   }
 
   async assignDto(
