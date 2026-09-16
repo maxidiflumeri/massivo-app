@@ -12,7 +12,7 @@ interface Props {
   loadingMore: boolean;
   /** Si está seteado, los botones interactivos del bot se vuelven clickeables. */
   onInteractiveButtonClick?: (buttonId: string, title: string) => void;
-  /** Monitoreo — marca con un chip "BOT" los mensajes emitidos por el motor. */
+  /** Marca con chips "BOT" los mensajes del motor y "OPCIÓN" lo que eligió el cliente. */
   showBotBadge?: boolean;
 }
 

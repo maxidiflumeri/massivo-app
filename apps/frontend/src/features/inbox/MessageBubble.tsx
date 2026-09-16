@@ -26,9 +26,9 @@ interface Props {
   /** Si está seteado, los botones interactivos del bubble se vuelven clickeables. */
   onInteractiveButtonClick?: (buttonId: string, title: string) => void;
   /**
-   * Monitoreo — marca con un chip "Bot" los mensajes que emitió el motor. Off
-   * por default: en el inbox el operador no necesita el detalle (y esos
-   * mensajes ni siquiera se listan).
+   * Marca con un chip "BOT" los mensajes que emitió el motor y con "OPCIÓN" los
+   * botones/ítems de lista que eligió el cliente. Lo usan el inbox y Monitoreo;
+   * los simuladores no (ya filtran ese ida y vuelta).
    */
   showBotBadge?: boolean;
 }
@@ -169,6 +169,15 @@ export function MessageBubble({
                   }}
                 >
                   {b.title}
+                  {b.description && (
+                    <Typography
+                      component="div"
+                      variant="caption"
+                      sx={{ fontSize: 11, fontWeight: 400, color: 'text.secondary' }}
+                    >
+                      {b.description}
+                    </Typography>
+                  )}
                 </Box>
               );
             })}
@@ -182,24 +191,8 @@ export function MessageBubble({
           sx={{ mt: 0.25 }}
         >
           {failed && <ErrorOutlineIcon sx={{ fontSize: 12, color: 'error.main' }} />}
-          {showBotBadge && botSystemKind(message) && (
-            <Typography
-              component="span"
-              variant="caption"
-              sx={{
-                fontSize: 9.5,
-                fontWeight: 600,
-                letterSpacing: 0.3,
-                px: 0.5,
-                borderRadius: 0.5,
-                opacity: 0.8,
-                border: '1px solid currentColor',
-                mr: 0.25,
-              }}
-            >
-              BOT
-            </Typography>
-          )}
+          {showBotBadge && botSystemKind(message) && <BubbleChip label="BOT" />}
+          {showBotBadge && isBotOptionReply(message) && <BubbleChip label="OPCIÓN" />}
           <Typography variant="caption" sx={{ fontSize: 10.5, opacity: 0.7 }}>
             {formatTime(message.timestamp)}
           </Typography>
@@ -207,6 +200,27 @@ export function MessageBubble({
         </Stack>
       </Box>
     </Box>
+  );
+}
+
+function BubbleChip({ label }: { label: string }) {
+  return (
+    <Typography
+      component="span"
+      variant="caption"
+      sx={{
+        fontSize: 9.5,
+        fontWeight: 600,
+        letterSpacing: 0.3,
+        px: 0.5,
+        borderRadius: 0.5,
+        opacity: 0.8,
+        border: '1px solid currentColor',
+        mr: 0.25,
+      }}
+    >
+      {label}
+    </Typography>
   );
 }
 
@@ -477,6 +491,22 @@ export function botSystemKind(m: InboxMessage): string | null {
   return typeof sys?.kind === 'string' && sys.kind.startsWith('bot-') ? sys.kind : null;
 }
 
+/** Reply del cliente a un botón o ítem de lista del bot (ids `bot:*`). */
+export function isBotOptionReply(m: InboxMessage): boolean {
+  if (m.fromMe || m.type !== 'interactive') return false;
+  const id = interactiveReply(m)?.id;
+  return typeof id === 'string' && id.startsWith('bot:');
+}
+
+/** `button_reply` o `list_reply` de un interactive entrante. */
+function interactiveReply(m: InboxMessage): { id?: string; title?: string } | undefined {
+  if (!m.content || typeof m.content !== 'object') return undefined;
+  const inter = (m.content as Record<string, unknown>).interactive as
+    | { button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } }
+    | undefined;
+  return inter?.button_reply ?? inter?.list_reply;
+}
+
 export function isBotInteractionMessage(m: InboxMessage): boolean {
   if (!m.content || typeof m.content !== 'object') return false;
   const c = m.content as Record<string, unknown>;
@@ -503,7 +533,9 @@ function extractText(m: InboxMessage): string | null {
   }
   if (m.type === 'interactive') {
     const inter = c.interactive as { body?: { text?: string }; header?: { text?: string } } | undefined;
-    return inter?.body?.text ?? inter?.header?.text ?? null;
+    // Entrante: lo que eligió el cliente (botón o ítem de lista).
+    const reply = interactiveReply(m)?.title;
+    return inter?.body?.text ?? inter?.header?.text ?? (typeof reply === 'string' ? reply : null);
   }
   const sub = c[m.type] as Record<string, unknown> | undefined;
   if (sub) {
@@ -518,18 +550,29 @@ function extractText(m: InboxMessage): string | null {
 interface InteractiveButton {
   id: string;
   title: string;
+  description?: string;
 }
 
+/** Opciones de un menú saliente: botones de respuesta rápida o filas de una lista. */
 function extractInteractiveButtons(m: InboxMessage): InteractiveButton[] {
   if (m.type !== 'interactive' || !m.content || typeof m.content !== 'object') return [];
   const c = m.content as Record<string, unknown>;
   const inter = c.interactive as
-    | { action?: { buttons?: Array<{ reply?: { id?: string; title?: string } }> } }
+    | {
+        action?: {
+          buttons?: Array<{ reply?: { id?: string; title?: string } }>;
+          sections?: Array<{ rows?: Array<{ id?: string; title?: string; description?: string }> }>;
+        };
+      }
     | undefined;
-  const btns = inter?.action?.buttons ?? [];
-  return btns
-    .map((b) => ({ id: b.reply?.id ?? '', title: b.reply?.title ?? '' }))
-    .filter((b) => b.title);
+  const btns = (inter?.action?.buttons ?? []).map((b) => ({
+    id: b.reply?.id ?? '',
+    title: b.reply?.title ?? '',
+  }));
+  const rows = (inter?.action?.sections ?? []).flatMap((sec) =>
+    (sec.rows ?? []).map((r) => ({ id: r.id ?? '', title: r.title ?? '', description: r.description })),
+  );
+  return [...btns, ...rows].filter((b) => b.title);
 }
 
 function extractReactionEmoji(m: InboxMessage): string | null {

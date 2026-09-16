@@ -9,7 +9,6 @@ import { inboxApi, quickRepliesApi } from './api';
 import { ConversationList, type InboxChannelOption } from './ConversationList';
 import { ConversationHeader } from './ConversationHeader';
 import { ConversationThread } from './ConversationThread';
-import { isBotInteractionMessage } from './MessageBubble';
 import { MessageComposer } from './MessageComposer';
 import { AssignDialog } from './AssignDialog';
 import { ResolveDialog } from './ResolveDialog';
@@ -563,8 +562,11 @@ export function InboxPage() {
               onHold={handleHold}
               onToggleRead={handleToggleRead}
             />
+            {/* El recorrido del bot queda visible (con chips BOT / OPCIÓN) para
+                que el operador sepa qué eligió el cliente antes de la derivación. */}
             <ConversationThread
-              messages={messages.filter((m) => !isBotInteractionMessage(m))}
+              messages={messages}
+              showBotBadge
               loading={thLoading}
               hasMore={msgMore}
               onLoadMore={loadOlderMessages}
