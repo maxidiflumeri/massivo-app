@@ -22,6 +22,7 @@ import type {
   InboxMediaType,
   InboxMessage,
   ConversationMessageNewEvent,
+  ConversationMessageStatusEvent,
   QuickReply,
 } from './types';
 
@@ -393,10 +394,19 @@ export function InboxPage() {
       }
     };
 
+    const onStatus = (ev: ConversationMessageStatusEvent) => {
+      if (ev.conversationId !== selectedRef.current) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === ev.messageId ? { ...m, status: ev.status } : m)),
+      );
+    };
+
     socket.on('conversation.message.new', onNew);
+    socket.on('conversation.message.status', onStatus);
     socket.on('conversation.updated', onUpdated);
     return () => {
       socket.off('conversation.message.new', onNew);
+      socket.off('conversation.message.status', onStatus);
       socket.off('conversation.updated', onUpdated);
     };
   }, [socket, api, reloadList]);

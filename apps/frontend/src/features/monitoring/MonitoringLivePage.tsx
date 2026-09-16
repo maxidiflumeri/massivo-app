@@ -20,6 +20,7 @@ import { formatPhone } from '../inbox/formatters';
 import type {
   ConversationListItem,
   ConversationMessageNewEvent,
+  ConversationMessageStatusEvent,
   InboxMessage,
 } from '../inbox/types';
 import { LiveConversationList } from './LiveConversationList';
@@ -215,12 +216,21 @@ export function MonitoringLivePage() {
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    const onStatus = (ev: ConversationMessageStatusEvent) => {
+      if (ev.conversationId !== selectedRef.current) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === ev.messageId ? { ...m, status: ev.status } : m)),
+      );
+    };
+
     socket.on('conversation.message.new', onNewMessage);
+    socket.on('conversation.message.status', onStatus);
     socket.on('conversation.updated', onUpdated);
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('conversation.message.new', onNewMessage);
+      socket.off('conversation.message.status', onStatus);
       socket.off('conversation.updated', onUpdated);
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };

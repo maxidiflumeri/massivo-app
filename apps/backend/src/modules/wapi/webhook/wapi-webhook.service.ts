@@ -88,6 +88,9 @@ export interface InboundMediaOverride {
  * Idempotencia: las creaciones de `WapiMessage` van bajo `metaMessageId @unique`,
  * así que duplicados de Meta tiran P2002 silenciosamente.
  */
+/** Orden de los estados de un saliente, para no retroceder (`failed` es aparte). */
+const MESSAGE_STATUS_RANK: Record<string, number> = { sent: 1, delivered: 2, read: 3, failed: 4 };
+
 @Injectable()
 export class WapiWebhookService {
   private readonly logger = new Logger(WapiWebhookService.name);
@@ -156,14 +159,14 @@ export class WapiWebhookService {
   }
 
   private async handleStatus(st: WapiWebhookStatus, tenant: ResolvedWebhookConfig): Promise<void> {
+    await this.updateMessageStatus(st, tenant);
+
     const report = await this.prisma.scoped.wapiReport.findFirst({
       where: { metaMessageId: st.id },
       select: { id: true, campaignId: true, status: true },
     });
-    if (!report) {
-      this.logger.warn(`status ${st.status} para metaMessageId=${st.id} sin WapiReport (team ${tenant.teamId})`);
-      return;
-    }
+    // Sin WapiReport = no es de una campaña (inbox/bot): ya se reflejó arriba.
+    if (!report) return;
 
     const data: Record<string, unknown> = {};
     const tsMs = Number(st.timestamp) * 1000;
@@ -211,6 +214,38 @@ export class WapiWebhookService {
       report.campaignId,
       { campaignId: report.campaignId },
     );
+  }
+
+  /**
+   * Refleja sent/delivered/read/failed en el `Message` del inbox (los tildes del
+   * hilo) y avisa por socket a la conversación abierta. Nunca retrocede: si ya
+   * está en `read` y llega un `delivered` atrasado, se ignora.
+   */
+  private async updateMessageStatus(
+    st: WapiWebhookStatus,
+    tenant: ResolvedWebhookConfig,
+  ): Promise<void> {
+    const next = String(st.status);
+    const rank = MESSAGE_STATUS_RANK[next];
+    if (rank === undefined) return;
+    const message = await this.prisma.scoped.message.findFirst({
+      where: { channelId: tenant.configId, externalId: st.id },
+      select: { id: true, conversationId: true, status: true },
+    });
+    if (!message) return;
+    const current = MESSAGE_STATUS_RANK[message.status] ?? 0;
+    if (next === 'failed' ? message.status === 'read' : rank <= current) return;
+
+    await this.prisma.scoped.message.update({
+      where: { id: message.id },
+      data: { status: next },
+    });
+    this.events.emitToTeam(tenant.teamId, 'conversation.message.status', {
+      conversationId: message.conversationId,
+      channelId: tenant.configId,
+      messageId: message.id,
+      status: next,
+    });
   }
 
   private async handleInboundMessage(

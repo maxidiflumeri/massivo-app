@@ -86,6 +86,14 @@ export interface ConversationMessageNewEvent {
   message: InboxMessage;
 }
 
+/** Cambio de estado de un saliente (tildes): sent → delivered → read, o failed. */
+export interface ConversationMessageStatusEvent {
+  conversationId: string;
+  channelId: string;
+  messageId: string;
+  status: string;
+}
+
 export interface ConversationUpdatedEvent {
   id: string;
   channelId?: string;

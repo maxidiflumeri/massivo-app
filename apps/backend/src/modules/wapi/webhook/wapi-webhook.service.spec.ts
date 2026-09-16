@@ -7,7 +7,7 @@
  *  - status read → READ + readAt + deliveredAt si no estaba seteado
  *  - status failed → FAILED + errors[0]
  *  - status delivered cuando ya está READ → no retrocede
- *  - status sin report → log y skip
+ *  - status sin report → skip (sólo actualiza el Message del inbox si existe)
  *  - mensaje inbound nuevo → upsert conversation + crea WapiMessage
  *  - mensaje duplicado (P2002) → swallow
  *  - emite wapi.report.updated y wapi.message.inbound
@@ -31,7 +31,7 @@ describe('WapiWebhookService', () => {
   let prismaScoped: {
     wapiReport: { findFirst: jest.Mock; update: jest.Mock };
     conversation: { create: jest.Mock; update: jest.Mock; findFirst: jest.Mock };
-    message: { create: jest.Mock };
+    message: { create: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
     channel: { findFirst: jest.Mock };
     wapiOptOut: { findFirst: jest.Mock; create: jest.Mock };
   };
@@ -53,7 +53,11 @@ describe('WapiWebhookService', () => {
         update: jest.fn().mockResolvedValue(convStub),
         findFirst: jest.fn().mockResolvedValue(null),
       },
-      message: { create: jest.fn().mockResolvedValue({ id: 'msg-1', content: {} }) },
+      message: {
+        create: jest.fn().mockResolvedValue({ id: 'msg-1', content: {} }),
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({}),
+      },
       channel: { findFirst: jest.fn().mockResolvedValue(null) },
       wapiOptOut: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn() },
     };
@@ -222,6 +226,67 @@ describe('WapiWebhookService', () => {
     prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(null);
     await svc.process(statusPayload('delivered'), mapA);
     expect(prismaScoped.wapiReport.update).not.toHaveBeenCalled();
+  });
+
+  describe('tildes del inbox (Message.status)', () => {
+    const msgRow = (status: string) => ({ id: 'm-1', conversationId: 'conv-1', status });
+
+    it('delivered sobre un saliente del inbox → actualiza y emite conversation.message.status', async () => {
+      prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(null);
+      prismaScoped.message.findFirst.mockResolvedValueOnce(msgRow('sent'));
+      await svc.process(statusPayload('delivered'), mapA);
+      expect(prismaScoped.message.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { channelId: 'cfg-1', externalId: 'wamid.A' } }),
+      );
+      expect(prismaScoped.message.update).toHaveBeenCalledWith({
+        where: { id: 'm-1' },
+        data: { status: 'delivered' },
+      });
+      expect(events.emitToTeam).toHaveBeenCalledWith('team-a', 'conversation.message.status', {
+        conversationId: 'conv-1',
+        channelId: 'cfg-1',
+        messageId: 'm-1',
+        status: 'delivered',
+      });
+    });
+
+    it('read después de sent → pasa directo a read', async () => {
+      prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(null);
+      prismaScoped.message.findFirst.mockResolvedValueOnce(msgRow('sent'));
+      await svc.process(statusPayload('read'), mapA);
+      expect(prismaScoped.message.update).toHaveBeenCalledWith({
+        where: { id: 'm-1' },
+        data: { status: 'read' },
+      });
+    });
+
+    it('delivered atrasado cuando ya está read → no retrocede', async () => {
+      prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(null);
+      prismaScoped.message.findFirst.mockResolvedValueOnce(msgRow('read'));
+      await svc.process(statusPayload('delivered'), mapA);
+      expect(prismaScoped.message.update).not.toHaveBeenCalled();
+      expect(events.emitToTeam).not.toHaveBeenCalledWith('team-a', 'conversation.message.status', expect.anything());
+    });
+
+    it('failed sobre delivered → failed', async () => {
+      prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(null);
+      prismaScoped.message.findFirst.mockResolvedValueOnce(msgRow('delivered'));
+      await svc.process(statusPayload('failed', 'wamid.A', '1714780000', [{ code: 131026, title: 'x' }]), mapA);
+      expect(prismaScoped.message.update).toHaveBeenCalledWith({
+        where: { id: 'm-1' },
+        data: { status: 'failed' },
+      });
+    });
+
+    it('sin Message (id de campaña) → no toca mensajes y sigue con el report', async () => {
+      prismaScoped.wapiReport.findFirst.mockResolvedValueOnce({
+        id: 'rep-1', campaignId: 'camp-1', status: 'SENT',
+      });
+      prismaScoped.message.findFirst.mockResolvedValueOnce(null);
+      await svc.process(statusPayload('delivered'), mapA);
+      expect(prismaScoped.message.update).not.toHaveBeenCalled();
+      expect(prismaScoped.wapiReport.update).toHaveBeenCalled();
+    });
   });
 
   it('mensaje inbound texto → crea conversation + crea message + evento', async () => {
