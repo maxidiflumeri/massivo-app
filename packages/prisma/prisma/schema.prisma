@@ -694,6 +694,12 @@ model Channel {
   // Vive en Channel (no en Bot): es comportamiento de la conversación/inbox, no
   // de la definición del bot.
   botWaitingTtlMin      Int       @default(120)
+  // Cierre por inactividad: una conversación del lado humano (botSuspended) que
+  // pasa estos minutos sin mensajes se resuelve sola y vuelve al bot. Sólo aplica
+  // si el canal tiene bot conectado. 0 = nunca.
+  autoCloseAfterMin     Int       @default(120)
+  // Despedida que se le envía al cliente en ese cierre. null = cierra sin avisar.
+  autoCloseMessage      String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 

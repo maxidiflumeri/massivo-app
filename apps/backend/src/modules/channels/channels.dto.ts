@@ -14,6 +14,8 @@ import {
 
 /** 4.Q — máximo razonable para el delay (1h). Evita typos catastróficos. */
 const MAX_DELAY_MS = 60 * 60 * 1000;
+/** Tope del cierre por inactividad: 7 días. */
+const MAX_AUTO_CLOSE_MIN = 7 * 24 * 60;
 
 /** Kinds que hoy se pueden dar de alta vía UI. */
 export const CREATABLE_CHANNEL_KINDS = ['WHATSAPP', 'MESSENGER', 'INSTAGRAM', 'WEBCHAT'] as const;
@@ -77,6 +79,17 @@ export class CreateChannelDto {
   @IsOptional()
   @IsString()
   welcomeMessage?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_AUTO_CLOSE_MIN)
+  autoCloseAfterMin?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  autoCloseMessage?: string;
 
   @IsOptional()
   @IsString()
@@ -152,6 +165,17 @@ export class UpdateChannelDto {
   @IsOptional()
   @IsString()
   welcomeMessage?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_AUTO_CLOSE_MIN)
+  autoCloseAfterMin?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  autoCloseMessage?: string | null;
 
   @IsOptional()
   @IsString()

@@ -42,6 +42,10 @@ export interface ChannelDetail extends ChannelListItem {
   dailyLimit: number;
   sendDelayMinMs: number;
   sendDelayMaxMs: number;
+  /** Minutos sin actividad para devolver una conversación del humano al bot (0 = nunca). */
+  autoCloseAfterMin: number;
+  /** Despedida enviada en ese cierre (null = sin mensaje). */
+  autoCloseMessage: string | null;
   updatedAt: string;
 }
 
@@ -63,4 +67,7 @@ export interface UpdateChannelPayload {
   dailyLimit?: number;
   sendDelayMinMs?: number;
   sendDelayMaxMs?: number;
+  // Cierre por inactividad (todos los canales con bot).
+  autoCloseAfterMin?: number;
+  autoCloseMessage?: string | null;
 }

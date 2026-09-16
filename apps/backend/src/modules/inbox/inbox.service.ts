@@ -825,6 +825,124 @@ export class InboxService {
     return { id: updated.id, resolvedAt: updated.resolvedAt! };
   }
 
+  /**
+   * Cierre por inactividad (lo dispara `InboxAutoCloseService`, dentro de un
+   * TenantContext del canal). Si la conversación sigue del lado humano y nadie
+   * escribió en `afterMin` minutos, se resuelve, se libera el bot y —si el canal
+   * tiene despedida y la ventana lo permite— se le avisa al cliente.
+   *
+   * El claim es el `updateMany` condicional: si otra instancia ya la cerró, o el
+   * cliente/operador escribió entre medio, no matchea y no se manda nada (sin
+   * despedidas duplicadas).
+   */
+  async autoCloseInactive(
+    conversationId: string,
+    opts: { afterMin: number; message: string | null },
+  ): Promise<boolean> {
+    const ctx = this.requireContext();
+    const cutoff = new Date(Date.now() - opts.afterMin * 60_000);
+    const resolvedAt = new Date();
+    const claim = await this.prisma.scoped.conversation.updateMany({
+      where: {
+        id: conversationId,
+        status: { not: 'RESOLVED' },
+        botSuspended: true,
+        lastMessageAt: { lt: cutoff },
+      },
+      data: { status: 'RESOLVED', resolvedAt, botSuspended: false, waitingUntil: null } as never,
+    });
+    if (claim.count === 0) return false;
+
+    const conv = await this.prisma.scoped.conversation.findFirst({
+      where: { id: conversationId },
+    });
+    if (!conv) return false;
+
+    await this.prisma.scoped.wapiResolutionNote.create({
+      data: {
+        conversationId: conv.id,
+        authorUserId: null,
+        note: `Cerrada automáticamente tras ${opts.afterMin} min sin actividad. El bot vuelve a atender.`,
+      } as never,
+    });
+
+    const farewell = opts.message?.trim();
+    if (farewell) await this.sendAutoCloseMessage(conv, farewell);
+
+    await this.endBotSessionsFor(conv.id, 'auto-close');
+    this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
+      id: conv.id,
+      channelId: conv.channelId,
+      channelKind: conv.channelKind,
+      externalUserId: conv.externalUserId,
+      status: 'RESOLVED',
+      assignedUserId: conv.assignedUserId,
+      resolvedAt: resolvedAt.toISOString(),
+    });
+    await this.notifications.clearAllForConversation(ctx.teamId, conv.id);
+    return true;
+  }
+
+  /** Best-effort: si falla el envío, la conversación igual queda cerrada. */
+  private async sendAutoCloseMessage(
+    conv: { id: string; channelId: string; channelKind: string | null; externalUserId: string; freeformWindowAt: Date | null },
+    body: string,
+  ): Promise<void> {
+    const ctx = this.requireContext();
+    try {
+      const kind = (conv.channelKind ?? 'WHATSAPP') as ChannelKind;
+      const adapter = this.registry.get(kind);
+      if (
+        adapter.capabilities.freeformWindow.enforced &&
+        (!conv.freeformWindowAt || conv.freeformWindowAt.getTime() < Date.now())
+      ) {
+        return; // Fuera de la ventana de 24h sólo se puede mandar plantilla.
+      }
+      const cfg = await this.prisma.scoped.channel.findFirst({ where: { id: conv.channelId } });
+      if (!cfg || !cfg.isActive) return;
+
+      const result = await adapter.send(this.buildConn(cfg, kind), {
+        kind: 'text',
+        to: conv.externalUserId,
+        text: body,
+        previewUrl: false,
+      });
+      const ts = new Date();
+      const content = { text: { body }, system: { kind: 'auto-close' } };
+      const message = await this.prisma.scoped.message.create({
+        data: {
+          conversationId: conv.id,
+          channelId: conv.channelId,
+          externalId: result.externalMessageId,
+          fromMe: true,
+          type: 'text',
+          content: content as Prisma.InputJsonValue,
+          status: 'sent',
+          timestamp: ts,
+          episodeId: await this.episodes.resolveFor(conv.id, ts),
+        } as never,
+      });
+      this.events.emitToTeam(ctx.teamId, 'conversation.message.new', {
+        conversationId: conv.id,
+        channelId: conv.channelId,
+        channelKind: conv.channelKind,
+        message: {
+          id: message.id,
+          fromMe: true,
+          type: 'text',
+          content,
+          status: 'sent',
+          timestamp: ts.toISOString(),
+          externalId: result.externalMessageId,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `despedida por inactividad falló conv=${conv.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   async reopen(conversationId: string): Promise<{ id: string }> {
     const ctx = this.requireContext();
     const conv = await this.prisma.scoped.conversation.findFirst({

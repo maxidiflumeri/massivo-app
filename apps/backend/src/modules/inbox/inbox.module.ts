@@ -4,6 +4,7 @@ import { WapiModule } from '../wapi/wapi.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { InboxController } from './inbox.controller';
 import { InboxService } from './inbox.service';
+import { InboxAutoCloseService } from './inbox-auto-close.service';
 
 /**
  * Fase 1e — Inbox omnicanal, sacado de `modules/wapi/`. Es channel-agnostic:
@@ -17,6 +18,6 @@ import { InboxService } from './inbox.service';
 @Module({
   imports: [WapiModule, EventsModule, NotificationsModule],
   controllers: [InboxController],
-  providers: [InboxService],
+  providers: [InboxService, InboxAutoCloseService],
 })
 export class InboxModule {}

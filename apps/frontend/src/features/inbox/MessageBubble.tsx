@@ -193,6 +193,7 @@ export function MessageBubble({
           {failed && <ErrorOutlineIcon sx={{ fontSize: 12, color: 'error.main' }} />}
           {showBotBadge && botSystemKind(message) && <BubbleChip label="BOT" />}
           {showBotBadge && isBotOptionReply(message) && <BubbleChip label="OPCIÓN" />}
+          {showBotBadge && systemKind(message) === 'auto-close' && <BubbleChip label="AUTO" />}
           <Typography variant="caption" sx={{ fontSize: 10.5, opacity: 0.7 }}>
             {formatTime(message.timestamp)}
           </Typography>
@@ -485,6 +486,12 @@ function MediaErrorBox({ icon, text }: { icon: React.ReactNode; text: string }) 
  * persistir sus salidas ('bot-menu', 'bot-message', 'bot-media', …), o null si
  * el mensaje no lo emitió el bot.
  */
+function systemKind(m: InboxMessage): string | null {
+  if (!m.content || typeof m.content !== 'object') return null;
+  const sys = (m.content as Record<string, unknown>).system as { kind?: unknown } | undefined;
+  return typeof sys?.kind === 'string' ? sys.kind : null;
+}
+
 export function botSystemKind(m: InboxMessage): string | null {
   if (!m.fromMe || !m.content || typeof m.content !== 'object') return null;
   const sys = (m.content as Record<string, unknown>).system as { kind?: string } | undefined;

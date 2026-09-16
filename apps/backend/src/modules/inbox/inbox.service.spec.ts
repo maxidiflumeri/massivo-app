@@ -33,6 +33,7 @@ describe('InboxService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       message: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -482,5 +483,104 @@ describe('InboxService', () => {
     await expect(
       TenantContext.run(ctx, () => service.putOnHold('c1')),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+  describe('autoCloseInactive (cierre por inactividad)', () => {
+    const conv = {
+      id: 'c1',
+      channelId: 'ch1',
+      channelKind: 'WHATSAPP',
+      externalUserId: '549111',
+      assignedUserId: 'u9',
+      status: 'RESOLVED',
+      freeformWindowAt: new Date(Date.now() + 60 * 60_000),
+    };
+
+    beforeEach(() => {
+      prismaMock.conversation.findFirst.mockResolvedValue(conv);
+      prismaMock.channel.findFirst.mockResolvedValue({ id: 'ch1', isActive: true, phoneNumberId: 'pn', accessTokenEnc: 'tok' });
+      prismaMock.message.create.mockResolvedValue({ id: 'm-bye' });
+      senderMock.sendText.mockResolvedValue({ metaMessageId: 'wamid.bye' });
+    });
+
+    it('claim condicional: resuelve, libera el bot y deja nota del sistema', async () => {
+      const ok = await TenantContext.run(ctx, () =>
+        service.autoCloseInactive('c1', { afterMin: 120, message: null }),
+      );
+      expect(ok).toBe(true);
+      const args = prismaMock.conversation.updateMany.mock.calls[0][0];
+      expect(args.where).toEqual(
+        expect.objectContaining({
+          id: 'c1',
+          status: { not: 'RESOLVED' },
+          botSuspended: true,
+          lastMessageAt: { lt: expect.any(Date) },
+        }),
+      );
+      expect(args.data).toEqual(
+        expect.objectContaining({ status: 'RESOLVED', botSuspended: false, waitingUntil: null }),
+      );
+      expect(prismaMock.wapiResolutionNote.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ conversationId: 'c1', authorUserId: null }),
+      });
+      expect(senderMock.sendText).not.toHaveBeenCalled();
+      expect(eventsMock.emitToTeam).toHaveBeenCalledWith(
+        'team1',
+        'conversation.updated',
+        expect.objectContaining({ id: 'c1', status: 'RESOLVED' }),
+      );
+    });
+
+    it('con despedida: la envía y la persiste marcada como auto-close', async () => {
+      await TenantContext.run(ctx, () =>
+        service.autoCloseInactive('c1', { afterMin: 120, message: '  ¡Gracias por escribirnos!  ' }),
+      );
+      expect(senderMock.sendText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ to: '549111', body: '¡Gracias por escribirnos!' }),
+      );
+      expect(prismaMock.message.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          externalId: 'wamid.bye',
+          fromMe: true,
+          content: { text: { body: '¡Gracias por escribirnos!' }, system: { kind: 'auto-close' } },
+        }),
+      });
+      expect(eventsMock.emitToTeam).toHaveBeenCalledWith(
+        'team1',
+        'conversation.message.new',
+        expect.objectContaining({ conversationId: 'c1' }),
+      );
+    });
+
+    it('si otra instancia ya la cerró (o hubo actividad), no hace nada', async () => {
+      prismaMock.conversation.updateMany.mockResolvedValueOnce({ count: 0 });
+      const ok = await TenantContext.run(ctx, () =>
+        service.autoCloseInactive('c1', { afterMin: 120, message: 'chau' }),
+      );
+      expect(ok).toBe(false);
+      expect(senderMock.sendText).not.toHaveBeenCalled();
+      expect(prismaMock.wapiResolutionNote.create).not.toHaveBeenCalled();
+    });
+
+    it('ventana de 24h cerrada: cierra igual pero no manda la despedida', async () => {
+      prismaMock.conversation.findFirst.mockResolvedValue({
+        ...conv,
+        freeformWindowAt: new Date(Date.now() - 60_000),
+      });
+      const ok = await TenantContext.run(ctx, () =>
+        service.autoCloseInactive('c1', { afterMin: 120, message: 'chau' }),
+      );
+      expect(ok).toBe(true);
+      expect(senderMock.sendText).not.toHaveBeenCalled();
+    });
+
+    it('si falla el envío de la despedida, la conversación queda cerrada igual', async () => {
+      senderMock.sendText.mockRejectedValueOnce(new Error('Meta caído'));
+      const ok = await TenantContext.run(ctx, () =>
+        service.autoCloseInactive('c1', { afterMin: 120, message: 'chau' }),
+      );
+      expect(ok).toBe(true);
+      expect(prismaMock.message.create).not.toHaveBeenCalled();
+    });
   });
 });

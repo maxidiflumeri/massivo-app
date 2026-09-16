@@ -31,6 +31,8 @@ interface Props {
   webhookSlug: string | null;
 }
 
+const EMPTY_AUTO_CLOSE = { afterMin: '', message: '' };
+
 const EMPTY_WA = {
   welcomeMessage: '',
   optOutConfirmMessage: '',
@@ -52,6 +54,7 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
   const [appSecret, setAppSecret] = useState('');
   const [isTestMode, setIsTestMode] = useState(false);
   const [wa, setWa] = useState(EMPTY_WA);
+  const [autoClose, setAutoClose] = useState(EMPTY_AUTO_CLOSE);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
@@ -74,13 +77,18 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
     setAppSecret('');
     setIsTestMode(channel.isTestMode);
     setWa(EMPTY_WA);
+    setAutoClose(EMPTY_AUTO_CLOSE);
     setError(null);
     setRevealedToken(null);
-    if (channel.kind === 'WHATSAPP') {
-      void channelsApi
-        .get(api, channel.id)
-        .then((d) => {
-          if (cancelled) return;
+    void channelsApi
+      .get(api, channel.id)
+      .then((d) => {
+        if (cancelled) return;
+        setAutoClose({
+          afterMin: String(d.autoCloseAfterMin ?? ''),
+          message: d.autoCloseMessage ?? '',
+        });
+        if (channel.kind === 'WHATSAPP') {
           setWa({
             welcomeMessage: d.welcomeMessage ?? '',
             optOutConfirmMessage: d.optOutConfirmMessage ?? '',
@@ -89,9 +97,9 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
             sendDelayMinMs: String(d.sendDelayMinMs ?? ''),
             sendDelayMaxMs: String(d.sendDelayMaxMs ?? ''),
           });
-        })
-        .catch(() => undefined);
-    }
+        }
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -160,6 +168,16 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
         if (wa.sendDelayMinMs.trim()) payload.sendDelayMinMs = Number(wa.sendDelayMinMs);
         if (wa.sendDelayMaxMs.trim()) payload.sendDelayMaxMs = Number(wa.sendDelayMaxMs);
       }
+
+      // Cierre por inactividad (cualquier canal).
+      if (autoClose.afterMin.trim()) {
+        const min = Number(autoClose.afterMin);
+        if (!Number.isInteger(min) || min < 0) {
+          throw new Error('Los minutos de inactividad deben ser un número entero (0 = nunca).');
+        }
+        payload.autoCloseAfterMin = min;
+      }
+      payload.autoCloseMessage = autoClose.message.trim() || null;
 
       await channelsApi.update(api, channel.id, payload);
       notify.success('Canal actualizado');
@@ -416,6 +434,35 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
               </Stack>
             </>
           )}
+
+          <Divider textAlign="left">
+            <Typography variant="caption" color="text.secondary">
+              Cierre por inactividad
+            </Typography>
+          </Divider>
+          <TextField
+            label="Devolver al bot tras (minutos sin mensajes)"
+            size="small"
+            type="number"
+            fullWidth
+            value={autoClose.afterMin}
+            onChange={(e) => setAutoClose((a) => ({ ...a, afterMin: e.target.value }))}
+            inputProps={{ min: 0, step: 1 }}
+            helperText="Si una conversación atendida por una persona pasa este tiempo sin mensajes, se resuelve sola y el bot vuelve a atender. 0 = nunca. Sólo aplica con un bot conectado."
+          />
+          <TextField
+            label="Mensaje de despedida"
+            size="small"
+            fullWidth
+            multiline
+            minRows={2}
+            maxRows={6}
+            value={autoClose.message}
+            onChange={(e) => setAutoClose((a) => ({ ...a, message: e.target.value }))}
+            inputProps={{ maxLength: 1000 }}
+            placeholder="Ej: Cerramos esta conversación por inactividad. Si necesitás algo más, escribinos cuando quieras 🙌"
+            helperText="Se le envía al cliente al cerrar por inactividad. Vacío = cierra sin avisar."
+          />
 
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>

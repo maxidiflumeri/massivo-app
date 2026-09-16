@@ -37,6 +37,10 @@ export interface ChannelDetail extends ChannelListItem {
   dailyLimit: number;
   sendDelayMinMs: number;
   sendDelayMaxMs: number;
+  /** Minutos sin actividad para devolver una conversación del humano al bot (0 = nunca). */
+  autoCloseAfterMin: number;
+  /** Despedida enviada en ese cierre (null = sin mensaje). */
+  autoCloseMessage: string | null;
   updatedAt: Date;
 }
 
@@ -133,6 +137,8 @@ export class ChannelsService {
       dailyLimit: row.dailyLimit,
       sendDelayMinMs: row.sendDelayMinMs,
       sendDelayMaxMs: row.sendDelayMaxMs,
+      autoCloseAfterMin: row.autoCloseAfterMin ?? 120,
+      autoCloseMessage: row.autoCloseMessage ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -184,6 +190,8 @@ export class ChannelsService {
         dailyLimit: dto.dailyLimit,
         sendDelayMinMs: dto.sendDelayMinMs,
         sendDelayMaxMs: dto.sendDelayMaxMs,
+        autoCloseAfterMin: dto.autoCloseAfterMin,
+        autoCloseMessage: dto.autoCloseMessage?.trim() || null,
         isTestMode: dto.isTestMode ?? false,
       } as Prisma.ChannelUncheckedCreateInput,
     });
@@ -215,9 +223,13 @@ export class ChannelsService {
       dailyLimit: dto.dailyLimit,
       sendDelayMinMs: dto.sendDelayMinMs,
       sendDelayMaxMs: dto.sendDelayMaxMs,
+      autoCloseAfterMin: dto.autoCloseAfterMin,
       isActive: dto.isActive,
       isTestMode: dto.isTestMode,
     };
+    if (dto.autoCloseMessage !== undefined) {
+      updateData.autoCloseMessage = dto.autoCloseMessage?.trim() || null;
+    }
     if (dto.optOutKeywords !== undefined) {
       updateData.optOutKeywords = normalizeKeywords(dto.optOutKeywords);
     }
