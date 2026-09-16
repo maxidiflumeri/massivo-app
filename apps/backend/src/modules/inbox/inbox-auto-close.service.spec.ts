@@ -3,8 +3,12 @@ import { TenantContext } from '../../common/auth/tenant-context';
 
 describe('InboxAutoCloseService', () => {
   const now = new Date('2026-09-16T15:00:00.000Z');
-  let prisma: { channel: { findMany: jest.Mock }; conversation: { findMany: jest.Mock } };
-  let inbox: { autoCloseInactive: jest.Mock };
+  let prisma: {
+    channel: { findMany: jest.Mock };
+    conversation: { findMany: jest.Mock };
+    botSession: { findMany: jest.Mock };
+  };
+  let inbox: { autoCloseInactive: jest.Mock; closeIdleBotSession: jest.Mock };
   let svc: InboxAutoCloseService;
 
   beforeEach(() => {
@@ -15,8 +19,12 @@ describe('InboxAutoCloseService', () => {
         ]),
       },
       conversation: { findMany: jest.fn().mockResolvedValue([{ id: 'c1' }, { id: 'c2' }]) },
+      botSession: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    inbox = { autoCloseInactive: jest.fn().mockResolvedValue(true) };
+    inbox = {
+      autoCloseInactive: jest.fn().mockResolvedValue(true),
+      closeIdleBotSession: jest.fn().mockResolvedValue(true),
+    };
     svc = new InboxAutoCloseService(prisma as never, inbox as never);
   });
 
@@ -66,5 +74,21 @@ describe('InboxAutoCloseService', () => {
     inbox.autoCloseInactive.mockResolvedValue(false);
     const res = await svc.tick(now);
     expect(res.closed).toBe(0);
+  });
+  it('también cierra sesiones del bot sin respuesta (vencidas o no)', async () => {
+    prisma.conversation.findMany.mockResolvedValue([]);
+    prisma.botSession.findMany.mockResolvedValue([{ id: 's1' }]);
+    const res = await svc.tick(now);
+    expect(prisma.botSession.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          channelId: 'ch1',
+          endedAt: null,
+          lastInboundAt: { lt: new Date('2026-09-16T13:00:00.000Z') },
+        },
+      }),
+    );
+    expect(inbox.closeIdleBotSession).toHaveBeenCalledWith('s1', { afterMin: 120, message: 'chau' });
+    expect(res.closed).toBe(1);
   });
 });

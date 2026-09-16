@@ -157,21 +157,24 @@ trabajo** — solo retoma cuando el ciclo se cierra.
 
 ### Cierre automático por inactividad
 
-Si el agente se olvida de resolver, el bot no queda apagado para siempre.
 Cada canal con bot conectado tiene un **tiempo de inactividad** (por defecto
-**120 minutos**):
+**120 minutos**) que aplica a cualquier conversación abierta:
 
-- Si la conversación está del lado humano y pasa ese tiempo **sin mensajes**
-  (ni del contacto ni del agente), se resuelve sola.
-- Queda una nota en la conversación: *"Cerrada automáticamente tras N min sin
-  actividad"*.
-- Si el canal tiene un **mensaje de despedida**, se le envía al contacto
-  (siempre que la ventana de 24 h de WhatsApp siga abierta).
-- La próxima vez que el contacto escriba, lo atiende el bot.
+- **Del lado del bot:** si el contacto deja de responder (en un menú, una
+  pregunta o después de la última respuesta), la sesión del bot se cierra. La
+  próxima vez que escriba, el bot arranca de cero.
+- **Del lado humano:** si nadie escribe (ni el contacto ni el agente), la
+  conversación se resuelve sola con la nota *"Cerrada automáticamente tras N min
+  sin actividad"* y el bot vuelve a atender. Así el bot no queda apagado para
+  siempre si el agente se olvida de resolver.
 
-Se configura en **Canales → Editar → Cierre por inactividad**. Con `0` el
-cierre automático queda desactivado y la conversación espera a que un agente
-la resuelva.
+En los dos casos, si el canal tiene un **mensaje de despedida**, se le envía al
+contacto (con la ventana de 24 h de WhatsApp abierta). Si la inactividad ya es
+muy vieja —por ejemplo, justo después de activar la opción— se cierra sin
+mandar la despedida, para no escribirle a alguien horas después.
+
+Se configura en **Canales → Editar → Cierre por inactividad**. Con `0` queda
+desactivado.
 
 ### Reactivación manual
 

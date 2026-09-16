@@ -441,14 +441,14 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
             </Typography>
           </Divider>
           <TextField
-            label="Devolver al bot tras (minutos sin mensajes)"
+            label="Minutos sin actividad"
             size="small"
             type="number"
             fullWidth
             value={autoClose.afterMin}
             onChange={(e) => setAutoClose((a) => ({ ...a, afterMin: e.target.value }))}
             inputProps={{ min: 0, step: 1 }}
-            helperText="Si una conversación atendida por una persona pasa este tiempo sin mensajes, se resuelve sola y el bot vuelve a atender. 0 = nunca. Sólo aplica con un bot conectado."
+            helperText="Si una conversación pasa este tiempo sin respuesta —esté con el bot o con una persona— se cierra: la sesión del bot termina, o la conversación se resuelve y vuelve al bot. 0 = nunca. Sólo aplica con un bot conectado."
           />
           <TextField
             label="Mensaje de despedida"
@@ -461,7 +461,7 @@ export function EditChannelDialog({ channel, onClose, onSaved, webhookSlug }: Pr
             onChange={(e) => setAutoClose((a) => ({ ...a, message: e.target.value }))}
             inputProps={{ maxLength: 1000 }}
             placeholder="Ej: Cerramos esta conversación por inactividad. Si necesitás algo más, escribinos cuando quieras 🙌"
-            helperText="Se le envía al cliente al cerrar por inactividad. Vacío = cierra sin avisar."
+            helperText="Se le envía al cliente al cerrar por inactividad (del lado del bot o de una persona). Vacío = cierra sin avisar."
           />
 
           {error && <Alert severity="error">{error}</Alert>}

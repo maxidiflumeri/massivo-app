@@ -8,10 +8,12 @@ const TICK_MS = 60_000;
 const MAX_PER_CHANNEL = 100;
 
 /**
- * Cierre por inactividad. Una conversación que quedó del lado humano
- * (`botSuspended`) y pasa `Channel.autoCloseAfterMin` minutos sin mensajes se
- * resuelve sola: el bot vuelve a atender al cliente la próxima vez que escriba,
- * y si el canal tiene `autoCloseMessage` se le manda esa despedida.
+ * TTL de inactividad por canal (`Channel.autoCloseAfterMin`), para cualquier
+ * conversación abierta:
+ *  - del lado humano (`botSuspended`) sin mensajes → se resuelve y vuelve al bot;
+ *  - del lado del bot (sesión abierta) sin respuesta del cliente → se cierra la
+ *    sesión.
+ * En ambos casos se dispara la acción de inactividad (hoy: `autoCloseMessage`).
  *
  * Sólo en canales con bot conectado — sin bot no hay a quién devolverla, y un
  * inbox 100% humano no debería cerrarse solo.
@@ -66,6 +68,16 @@ export class InboxAutoCloseService implements OnModuleInit, OnModuleDestroy {
       let closed = 0;
       for (const ch of channels) {
         const cutoff = new Date(now.getTime() - ch.autoCloseAfterMin * 60_000);
+        const ctx: RequestContext = {
+          userId: 'system:auto-close',
+          organizationId: ch.organizationId,
+          teamId: ch.teamId,
+          orgRole: 'OWNER',
+          teamRole: 'ADMIN',
+        };
+        const opts = { afterMin: ch.autoCloseAfterMin, message: ch.autoCloseMessage };
+
+        // Lado humano: conversación con un operador a cargo.
         const stale = await this.prisma.conversation.findMany({
           where: {
             channelId: ch.id,
@@ -76,35 +88,38 @@ export class InboxAutoCloseService implements OnModuleInit, OnModuleDestroy {
           select: { id: true },
           take: MAX_PER_CHANNEL,
         });
-        if (stale.length === 0) continue;
-
-        const ctx: RequestContext = {
-          userId: 'system:auto-close',
-          organizationId: ch.organizationId,
-          teamId: ch.teamId,
-          orgRole: 'OWNER',
-          teamRole: 'ADMIN',
-        };
         for (const conv of stale) {
-          try {
-            const ok = await TenantContext.run(ctx, () =>
-              this.inbox.autoCloseInactive(conv.id, {
-                afterMin: ch.autoCloseAfterMin,
-                message: ch.autoCloseMessage,
-              }),
-            );
-            if (ok) closed++;
-          } catch (err) {
-            this.logger.warn(
-              `auto-close falló conv=${conv.id}: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
+          closed += await this.safely(`conv=${conv.id}`, () =>
+            TenantContext.run(ctx, () => this.inbox.autoCloseInactive(conv.id, opts)),
+          );
+        }
+
+        // Lado bot: sesión abierta sin respuesta del cliente (vencida o no).
+        const idleSessions = await this.prisma.botSession.findMany({
+          where: { channelId: ch.id, endedAt: null, lastInboundAt: { lt: cutoff } },
+          select: { id: true },
+          take: MAX_PER_CHANNEL,
+        });
+        for (const sess of idleSessions) {
+          closed += await this.safely(`session=${sess.id}`, () =>
+            TenantContext.run(ctx, () => this.inbox.closeIdleBotSession(sess.id, opts)),
+          );
         }
       }
-      if (closed > 0) this.logger.log(`Conversaciones cerradas por inactividad: ${closed}`);
+      if (closed > 0) this.logger.log(`Cerradas por inactividad: ${closed}`);
       return { closed };
     } finally {
       this.running = false;
+    }
+  }
+
+  /** Un error en una conversación no corta las demás. Devuelve 1 si cerró. */
+  private async safely(label: string, fn: () => Promise<boolean>): Promise<number> {
+    try {
+      return (await fn()) ? 1 : 0;
+    } catch (err) {
+      this.logger.warn(`auto-close falló ${label}: ${err instanceof Error ? err.message : String(err)}`);
+      return 0;
     }
   }
 }

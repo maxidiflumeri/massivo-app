@@ -40,6 +40,7 @@ describe('InboxService', () => {
         create: jest.fn(),
       },
       channel: { findFirst: jest.fn() },
+      botSession: { findFirst: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       wapiResolutionNote: {
         create: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
@@ -484,6 +485,79 @@ describe('InboxService', () => {
       TenantContext.run(ctx, () => service.putOnHold('c1')),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+  describe('closeIdleBotSession (inactividad del lado del bot)', () => {
+    const conv = {
+      id: 'c1',
+      channelId: 'ch1',
+      channelKind: 'WHATSAPP',
+      externalUserId: '549111',
+      botSuspended: false,
+      lastMessageAt: new Date(Date.now() - 125 * 60_000),
+      freeformWindowAt: new Date(Date.now() + 60 * 60_000),
+    };
+
+    beforeEach(() => {
+      prismaMock.botSession.findFirst.mockResolvedValue({ channelId: 'ch1', externalUserId: '549111' });
+      prismaMock.conversation.findFirst.mockResolvedValue(conv);
+      prismaMock.channel.findFirst.mockResolvedValue({ id: 'ch1', isActive: true, phoneNumberId: 'pn', accessTokenEnc: 'tok' });
+      prismaMock.message.create.mockResolvedValue({ id: 'm-bye' });
+      senderMock.sendText.mockResolvedValue({ metaMessageId: 'wamid.bye' });
+    });
+
+    it('cierra la sesión por inactividad y manda la despedida sin tocar la conversación', async () => {
+      const ok = await TenantContext.run(ctx, () =>
+        service.closeIdleBotSession('s1', { afterMin: 120, message: 'chau' }),
+      );
+      expect(ok).toBe(true);
+      expect(prismaMock.botSession.updateMany).toHaveBeenCalledWith({
+        where: { id: 's1', endedAt: null, lastInboundAt: { lt: expect.any(Date) } },
+        data: { endedAt: expect.any(Date), endedReason: 'inactivity' },
+      });
+      expect(senderMock.sendText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ to: '549111', body: 'chau' }),
+      );
+      expect(prismaMock.conversation.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.wapiResolutionNote.create).not.toHaveBeenCalled();
+    });
+
+    it('si el cliente escribió hace poco (texto libre en un menú), no cierra', async () => {
+      prismaMock.conversation.findFirst.mockResolvedValue({ ...conv, lastMessageAt: new Date() });
+      const ok = await TenantContext.run(ctx, () =>
+        service.closeIdleBotSession('s1', { afterMin: 120, message: 'chau' }),
+      );
+      expect(ok).toBe(false);
+      expect(prismaMock.botSession.updateMany).not.toHaveBeenCalled();
+      expect(senderMock.sendText).not.toHaveBeenCalled();
+    });
+
+    it('con un humano a cargo no hace nada (lo cubre el cierre del lado humano)', async () => {
+      prismaMock.conversation.findFirst.mockResolvedValue({ ...conv, botSuspended: true });
+      const ok = await TenantContext.run(ctx, () =>
+        service.closeIdleBotSession('s1', { afterMin: 120, message: 'chau' }),
+      );
+      expect(ok).toBe(false);
+      expect(prismaMock.botSession.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('si otra instancia ya la cerró, no manda nada', async () => {
+      prismaMock.botSession.updateMany.mockResolvedValueOnce({ count: 0 });
+      const ok = await TenantContext.run(ctx, () =>
+        service.closeIdleBotSession('s1', { afterMin: 120, message: 'chau' }),
+      );
+      expect(ok).toBe(false);
+      expect(senderMock.sendText).not.toHaveBeenCalled();
+    });
+
+    it('sin despedida configurada: sólo cierra la sesión', async () => {
+      const ok = await TenantContext.run(ctx, () =>
+        service.closeIdleBotSession('s1', { afterMin: 120, message: null }),
+      );
+      expect(ok).toBe(true);
+      expect(senderMock.sendText).not.toHaveBeenCalled();
+    });
+  });
+
   describe('autoCloseInactive (cierre por inactividad)', () => {
     const conv = {
       id: 'c1',
@@ -492,6 +566,9 @@ describe('InboxService', () => {
       externalUserId: '549111',
       assignedUserId: 'u9',
       status: 'RESOLVED',
+      botSuspended: false,
+      // 125 min atrás: pasó el TTL de 120 pero dentro del margen para despedirse.
+      lastMessageAt: new Date(Date.now() - 125 * 60_000),
       freeformWindowAt: new Date(Date.now() + 60 * 60_000),
     };
 
@@ -566,6 +643,18 @@ describe('InboxService', () => {
       prismaMock.conversation.findFirst.mockResolvedValue({
         ...conv,
         freeformWindowAt: new Date(Date.now() - 60_000),
+      });
+      const ok = await TenantContext.run(ctx, () =>
+        service.autoCloseInactive('c1', { afterMin: 120, message: 'chau' }),
+      );
+      expect(ok).toBe(true);
+      expect(senderMock.sendText).not.toHaveBeenCalled();
+    });
+
+    it('inactividad muy vieja (pasado el margen): cierra sin despedida', async () => {
+      prismaMock.conversation.findFirst.mockResolvedValue({
+        ...conv,
+        lastMessageAt: new Date(Date.now() - 10 * 60 * 60_000),
       });
       const ok = await TenantContext.run(ctx, () =>
         service.autoCloseInactive('c1', { afterMin: 120, message: 'chau' }),

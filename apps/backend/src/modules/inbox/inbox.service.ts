@@ -76,6 +76,12 @@ export interface MessagePayload {
   mediaCaption?: string | null;
 }
 
+/**
+ * Margen pasado el TTL de inactividad dentro del cual todavía se manda la
+ * despedida. Más atrás = pendiente viejo → se cierra sin avisar.
+ */
+const INACTIVITY_GRACE_MS = 30 * 60_000;
+
 @Injectable()
 export class InboxService {
   private readonly logger = new Logger(InboxService.name);
@@ -826,10 +832,10 @@ export class InboxService {
   }
 
   /**
-   * Cierre por inactividad (lo dispara `InboxAutoCloseService`, dentro de un
+   * Inactividad del lado humano (lo dispara `InboxAutoCloseService`, dentro de un
    * TenantContext del canal). Si la conversación sigue del lado humano y nadie
-   * escribió en `afterMin` minutos, se resuelve, se libera el bot y —si el canal
-   * tiene despedida y la ventana lo permite— se le avisa al cliente.
+   * escribió en `afterMin` minutos, se resuelve, se libera el bot y se dispara
+   * `onInactivity` (hoy: la despedida del canal).
    *
    * El claim es el `updateMany` condicional: si otra instancia ya la cerró, o el
    * cliente/operador escribió entre medio, no matchea y no se manda nada (sin
@@ -866,8 +872,7 @@ export class InboxService {
       } as never,
     });
 
-    const farewell = opts.message?.trim();
-    if (farewell) await this.sendAutoCloseMessage(conv, farewell);
+    await this.onInactivity(conv, opts);
 
     await this.endBotSessionsFor(conv.id, 'auto-close');
     this.events.emitToTeam(ctx.teamId, 'conversation.updated', {
@@ -881,6 +886,80 @@ export class InboxService {
     });
     await this.notifications.clearAllForConversation(ctx.teamId, conv.id);
     return true;
+  }
+
+  /**
+   * Inactividad del lado del bot: el cliente dejó una sesión del bot sin
+   * responder `afterMin` minutos (en un menú, una pregunta, o tras la última
+   * respuesta). Se cierra la sesión —la próxima vez arranca de cero— y se dispara
+   * `onInactivity`. La conversación no cambia de estado: nunca pasó por el inbox.
+   *
+   * Considera también sesiones ya vencidas por `sessionTtlMin` que el motor no
+   * llegó a cerrar (lo hace recién al próximo inbound), para que un TTL de canal
+   * mayor al de la sesión siga funcionando. Claim condicional igual que el humano.
+   */
+  async closeIdleBotSession(
+    sessionId: string,
+    opts: { afterMin: number; message: string | null },
+  ): Promise<boolean> {
+    this.requireContext();
+    const cutoff = new Date(Date.now() - opts.afterMin * 60_000);
+    const sessions = (this.prisma.scoped as unknown as {
+      botSession: {
+        updateMany: (args: unknown) => Promise<{ count: number }>;
+        findFirst: (args: unknown) => Promise<{ channelId: string; externalUserId: string } | null>;
+      };
+    }).botSession;
+    const session = await sessions.findFirst({
+      where: { id: sessionId, endedAt: null },
+      select: { channelId: true, externalUserId: true },
+    });
+    if (!session) return false;
+    const conv = await this.prisma.scoped.conversation.findFirst({
+      where: { channelId: session.channelId, externalUserId: session.externalUserId },
+    });
+    if (!conv) return false;
+    // Con un humano a cargo manda el cierre del lado humano, no éste.
+    if (conv.botSuspended) return false;
+    // El texto libre frente a un menú no mueve `lastInboundAt` (el motor sólo
+    // reenvía el menú), pero sí `lastMessageAt`: el cliente sigue ahí.
+    if (conv.lastMessageAt && conv.lastMessageAt.getTime() >= cutoff.getTime()) return false;
+
+    const claim = await sessions.updateMany({
+      where: { id: sessionId, endedAt: null, lastInboundAt: { lt: cutoff } },
+      data: { endedAt: new Date(), endedReason: 'inactivity' },
+    });
+    if (claim.count === 0) return false;
+
+    await this.onInactivity(conv, opts);
+    return true;
+  }
+
+  /**
+   * Qué pasa cuando una conversación cumple el TTL de inactividad del canal,
+   * venga del lado del bot o del humano. Hoy: la despedida del canal. Punto de
+   * extensión para que el bot defina la acción (ej. arrancar un tema de encuesta).
+   *
+   * No se avisa si la inactividad es muy vieja (`INACTIVITY_GRACE_MS` pasado el
+   * corte): son pendientes acumulados —worker caído, TTL recién activado— y un
+   * "cerramos por inactividad" horas después confunde más de lo que ayuda.
+   */
+  private async onInactivity(
+    conv: {
+      id: string;
+      channelId: string;
+      channelKind: string | null;
+      externalUserId: string;
+      freeformWindowAt: Date | null;
+      lastMessageAt: Date | null;
+    },
+    opts: { afterMin: number; message: string | null },
+  ): Promise<void> {
+    const farewell = opts.message?.trim();
+    if (!farewell) return;
+    const staleBefore = Date.now() - opts.afterMin * 60_000 - INACTIVITY_GRACE_MS;
+    if (!conv.lastMessageAt || conv.lastMessageAt.getTime() < staleBefore) return;
+    await this.sendAutoCloseMessage(conv, farewell);
   }
 
   /** Best-effort: si falla el envío, la conversación igual queda cerrada. */
