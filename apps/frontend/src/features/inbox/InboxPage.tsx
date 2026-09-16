@@ -613,13 +613,35 @@ function EmptyState() {
 function previewFromMessage(m: InboxMessage): string {
   if (!m.content || typeof m.content !== 'object') return '';
   const c = m.content as Record<string, unknown>;
+  const clip = (v: unknown) => (typeof v === 'string' ? v.slice(0, 120) : '');
   if (m.type === 'text') {
-    return ((c.text as { body?: string } | undefined)?.body ?? '').slice(0, 120);
+    return clip((c.text as { body?: unknown } | undefined)?.body);
+  }
+  // Interactivos (menús del bot): `body` es `{ text }`, no un string, y en los
+  // replies el texto vive en `button_reply`/`list_reply`. Mismo criterio que
+  // `extractPreview` del backend. Sin esto, el `.slice` sobre el objeto tiraba
+  // la pantalla abajo cuando el bot contestaba con un menú en tiempo real.
+  if (m.type === 'interactive') {
+    const inter = c.interactive as
+      | {
+          body?: { text?: unknown };
+          header?: { text?: unknown };
+          button_reply?: { title?: unknown };
+          list_reply?: { title?: unknown };
+        }
+      | undefined;
+    return (
+      clip(inter?.body?.text) ||
+      clip(inter?.button_reply?.title) ||
+      clip(inter?.list_reply?.title) ||
+      clip(inter?.header?.text)
+    );
   }
   const sub = c[m.type] as Record<string, unknown> | undefined;
   if (sub) {
-    const caption = (sub.caption as string | undefined) ?? (sub.body as string | undefined);
-    if (caption) return caption.slice(0, 120);
+    // Sólo strings: cualquier otra forma cae al label del tipo.
+    const caption = clip(sub.caption) || clip(sub.body);
+    if (caption) return caption;
   }
   switch (m.type) {
     case 'image':
