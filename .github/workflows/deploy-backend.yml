@@ -17,8 +17,8 @@ on:
       target:
         description: 'Target a desplegar'
         type: choice
-        options: [massivo, rgbot]
-        default: massivo
+        options: [rgbot, massivo]
+        default: rgbot
 
 permissions:
   id-token: write   # OIDC trust con AWS
@@ -29,10 +29,11 @@ jobs:
     name: Build (linux/arm64) → push → SSM deploy
     runs-on: ubuntu-24.04-arm
     # El environment (massivo-prod / rgbot-prod) provee las coordenadas AWS (vars).
-    # Push a main → massivo; "Run workflow" → el target elegido.
-    environment: ${{ github.event.inputs.target || 'massivo' }}-prod
+    # Push a main → rgbot (o vars.DEFAULT_DEPLOY_TARGET a nivel repo; massivo está
+    # apagado en AWS); "Run workflow" → el target elegido.
+    environment: ${{ inputs.target || vars.DEFAULT_DEPLOY_TARGET || 'rgbot' }}-prod
     env:
-      TARGET: ${{ github.event.inputs.target || 'massivo' }}
+      TARGET: ${{ inputs.target || vars.DEFAULT_DEPLOY_TARGET || 'rgbot' }}
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
       ECR_REPOSITORY: ${{ vars.BACKEND_ECR_REPOSITORY }}

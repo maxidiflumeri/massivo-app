@@ -2,7 +2,9 @@
 
 Los 4 workflows (frontend, landing, docs, backend) son **environment-driven**:
 
-- **Push a `main`** → despliega a **massivo** (environment `massivo-prod`).
+- **Push a `main`** → despliega a **rgbot** (environment `rgbot-prod`). La infra de massivo
+  en AWS está apagada. Para cambiar el target por defecto sin tocar el YAML, definí la
+  variable de repo `DEFAULT_DEPLOY_TARGET` (ej. `massivo`).
 - **Actions → Run workflow → elegís el target** → despliega a `<target>-prod`.
 
 Las coordenadas AWS y los secrets **no están en el YAML**: viven en **GitHub Environments**

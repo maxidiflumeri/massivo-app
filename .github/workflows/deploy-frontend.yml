@@ -19,8 +19,8 @@ on:
       target:
         description: 'Target a desplegar'
         type: choice
-        options: [massivo, rgbot]
-        default: massivo
+        options: [rgbot, massivo]
+        default: rgbot
 
 permissions:
   id-token: write
@@ -32,9 +32,9 @@ jobs:
     runs-on: ubuntu-24.04
     # El environment (massivo-prod / rgbot-prod) provee las coordenadas AWS (vars) y
     # los secrets. Push a main → massivo; "Run workflow" → el target elegido.
-    environment: ${{ github.event.inputs.target || 'massivo' }}-prod
+    environment: ${{ inputs.target || vars.DEFAULT_DEPLOY_TARGET || 'rgbot' }}-prod
     env:
-      TARGET: ${{ github.event.inputs.target || 'massivo' }}
+      TARGET: ${{ inputs.target || vars.DEFAULT_DEPLOY_TARGET || 'rgbot' }}
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
       S3_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
