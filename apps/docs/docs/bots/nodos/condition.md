@@ -203,17 +203,12 @@ nodes:
 
 ## Importante: timezone
 
-El `kind: time` y `kind: weekday` usan **hora local del servidor**, no
-la del contacto.
+El `kind: time` y `kind: weekday` se evalúan en **hora de Argentina**
+(`America/Argentina/Buenos_Aires`), sin importar dónde corra el servidor.
+Cargá los horarios tal cual los ves en tu reloj: "de 9 a 21" es de 9 a 21
+hora Argentina, y el cambio de día ocurre a la medianoche de Argentina.
 
-Esto significa:
-
-- Si tu server está en UTC y tu contacto en Argentina (UTC-3), un
-  CONDITION de "entre 9 y 18" matchea de **12 a 21 hora Argentina**.
-- Tenelo presente al configurar horarios.
-
-Si necesitás respetar la timezone del contacto, hoy hay que hacerlo con
-HTTP a un servicio externo. Está en roadmap soportar timezone configurable.
+Los rangos que cruzan la medianoche (ej. `22:00` a `06:00`) también funcionan.
 
 ## Buenas prácticas
 

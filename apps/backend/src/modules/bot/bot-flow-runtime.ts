@@ -520,7 +520,8 @@ function matchesBranch(branch: BotConditionBranch, data: BotData, now: Date): bo
   }
   if (w.kind === 'time') {
     const [from, to] = w.between;
-    const cur = now.getHours() * 60 + now.getMinutes();
+    const { hour, minute } = clockInBotTimezone(now);
+    const cur = hour * 60 + minute;
     const fromMin = parseHHMM(from);
     const toMin = parseHHMM(to);
     if (fromMin === null || toMin === null) return false;
@@ -528,9 +529,56 @@ function matchesBranch(branch: BotConditionBranch, data: BotData, now: Date): bo
     return cur >= fromMin || cur <= toMin;
   }
   if (w.kind === 'weekday') {
-    return w.days.includes(now.getDay());
+    return w.days.includes(clockInBotTimezone(now).weekday);
   }
   return false;
+}
+
+/**
+ * Zona horaria en la que se evalúan las condiciones `time` y `weekday`. El
+ * server corre en UTC, pero los horarios que carga el cliente en el editor
+ * ("de 9 a 21", "lunes a sábado") son de su reloj, no del server. Env
+ * `BOT_TIMEZONE` (IANA); default Buenos Aires, mismo criterio que Monitoreo.
+ */
+export const DEFAULT_BOT_TIMEZONE = 'America/Argentina/Buenos_Aires';
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const clockFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function buildClockFormatter(timeZone: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'short',
+  });
+}
+
+function clockFormatter(): Intl.DateTimeFormat {
+  const tz = process.env.BOT_TIMEZONE?.trim() || DEFAULT_BOT_TIMEZONE;
+  let fmt = clockFormatters.get(tz);
+  if (!fmt) {
+    try {
+      fmt = buildClockFormatter(tz);
+    } catch {
+      // IANA inválida → default antes que tirar abajo el flow.
+      fmt = buildClockFormatter(DEFAULT_BOT_TIMEZONE);
+    }
+    clockFormatters.set(tz, fmt);
+  }
+  return fmt;
+}
+
+/** Hora, minuto y día de la semana (0=domingo) de `now` en `BOT_TIMEZONE`. */
+export function clockInBotTimezone(now: Date): { hour: number; minute: number; weekday: number } {
+  const parts = clockFormatter().formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return {
+    hour: Number(get('hour')),
+    minute: Number(get('minute')),
+    weekday: WEEKDAYS.indexOf(get('weekday')),
+  };
 }
 
 function parseHHMM(s: string): number | null {

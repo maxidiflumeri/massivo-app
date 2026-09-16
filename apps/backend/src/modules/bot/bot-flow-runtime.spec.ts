@@ -1,13 +1,15 @@
 import {
   applyForeach,
   applyHttpResult,
+  clockInBotTimezone,
   getLoopStack,
   LOOPS_KEY,
   nextLoopReturnNode,
+  pickConditionBranch,
   type BotData,
   type HttpExecResult,
 } from './bot-flow-runtime';
-import type { BotForeachNode, BotHttpNode } from './bot.types';
+import type { BotConditionNode, BotForeachNode, BotHttpNode } from './bot.types';
 
 const ORIG_ENV = { ...process.env };
 
@@ -246,5 +248,57 @@ describe('nextLoopReturnNode', () => {
       ],
     };
     expect(nextLoopReturnNode(data)).toBe('inner');
+  });
+});
+
+describe('condiciones time/weekday en BOT_TIMEZONE', () => {
+  afterEach(() => {
+    process.env = { ...ORIG_ENV };
+  });
+
+  const horario: BotConditionNode = {
+    kind: 'CONDITION',
+    branches: [
+      { id: 'dia', when: { kind: 'weekday', days: [1, 2, 3, 4, 5, 6] }, nextNodeId: 'hora' },
+    ],
+    elseNextNodeId: 'cerrado',
+  };
+  const franja: BotConditionNode = {
+    kind: 'CONDITION',
+    branches: [{ id: 'h', when: { kind: 'time', between: ['09:00', '21:00'] }, nextNodeId: 'abierto' }],
+    elseNextNodeId: 'cerrado',
+  };
+
+  it('por default evalúa en hora de Buenos Aires, no la del server', () => {
+    delete process.env.BOT_TIMEZONE;
+    // 2026-09-19 (sábado) 23:30 UTC = sábado 20:30 en Argentina.
+    const now = new Date('2026-09-19T23:30:00Z');
+    expect(clockInBotTimezone(now)).toEqual({ hour: 20, minute: 30, weekday: 6 });
+    expect(pickConditionBranch(franja, {}, now)).toEqual({ nextNodeId: 'abierto', gotoTopic: undefined });
+    expect(pickConditionBranch(horario, {}, now)?.nextNodeId).toBe('hora');
+  });
+
+  it('el cambio de día sigue al reloj local (sábado 22hs AR ya es domingo en UTC)', () => {
+    delete process.env.BOT_TIMEZONE;
+    const now = new Date('2026-09-20T01:00:00Z'); // sábado 22:00 AR
+    expect(pickConditionBranch(horario, {}, now)?.nextNodeId).toBe('hora');
+    expect(pickConditionBranch(franja, {}, now)?.nextNodeId).toBe('cerrado');
+  });
+
+  it('respeta BOT_TIMEZONE', () => {
+    process.env.BOT_TIMEZONE = 'UTC';
+    const now = new Date('2026-09-20T01:00:00Z');
+    expect(clockInBotTimezone(now)).toEqual({ hour: 1, minute: 0, weekday: 0 });
+    expect(pickConditionBranch(horario, {}, now)?.nextNodeId).toBe('cerrado');
+  });
+
+  it('medianoche es 00, no 24', () => {
+    process.env.BOT_TIMEZONE = 'UTC';
+    expect(clockInBotTimezone(new Date('2026-09-20T00:05:00Z')).hour).toBe(0);
+  });
+
+  it('BOT_TIMEZONE inválida cae al default', () => {
+    process.env.BOT_TIMEZONE = 'Marte/Olympus';
+    expect(clockInBotTimezone(new Date('2026-09-19T23:30:00Z')).hour).toBe(20);
   });
 });
