@@ -4,6 +4,7 @@
  * timestamps WapiReport (no EmailEvent), CANCELED via enum dedicado.
  */
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@massivo/prisma';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { WapiCampaignsService } from './wapi-campaigns.service';
 
@@ -101,6 +102,16 @@ describe('WapiCampaignsService', () => {
       prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
       await svc.update('c1', { name: 'New' });
       expect(prisma.scoped.wapiCampaign.update).toHaveBeenCalled();
+    });
+
+    it('configId del contrato → channelId en la DB; config null → DbNull', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ id: 'c1', status: 'DRAFT' });
+      await svc.update('c1', { templateId: 't1', configId: 'ch1', config: null } as never);
+      const call = prisma.scoped.wapiCampaign.update.mock.calls[0][0];
+      expect(call.data).toEqual(
+        expect.objectContaining({ templateId: 't1', channelId: 'ch1', config: Prisma.DbNull }),
+      );
+      expect(call.data).not.toHaveProperty('configId');
     });
 
     it('PROCESSING NO permite update → Conflict', async () => {

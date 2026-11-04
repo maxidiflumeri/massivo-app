@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { WapiCampaign } from '@massivo/prisma';
+import { Prisma, type WapiCampaign } from '@massivo/prisma';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { ContactUpsertService } from '../../contacts/contact-upsert.service';
@@ -119,7 +119,12 @@ export class WapiCampaignsService {
     if (dto.config !== undefined) {
       assertCampaignConfig(dto.config);
     }
-    const data: Record<string, unknown> = { ...dto };
+    const { configId, config, ...rest } = dto;
+    const data: Record<string, unknown> = { ...rest };
+    // 1d: el contrato HTTP sigue hablando de `configId`; la columna es `channelId`.
+    if (configId !== undefined) data.channelId = configId;
+    // Json? no acepta `null` literal en Prisma: hay que mandar DbNull.
+    if (config !== undefined) data.config = config === null ? Prisma.DbNull : config;
     if (dto.scheduledAt !== undefined) {
       if (current.status === 'DRAFT' && dto.scheduledAt) {
         data.status = 'SCHEDULED';
@@ -127,10 +132,11 @@ export class WapiCampaignsService {
         data.status = 'DRAFT';
       }
     }
-    return this.prisma.scoped.wapiCampaign.update({
+    const updated = await this.prisma.scoped.wapiCampaign.update({
       where: { id },
       data: data as never,
     });
+    return toCampaignApiShape(updated);
   }
 
   async remove(id: string): Promise<void> {
