@@ -81,8 +81,14 @@ export function validateClient(
       if (node.options.length === 0) {
         errors.push({ path: `nodes.${id}.options`, message: 'MENU sin opciones' });
       }
-      if (node.options.length > 3) {
-        errors.push({ path: `nodes.${id}.options`, message: 'máximo 3 opciones' });
+      // Mismo tope que el back (bot.types.ts): 3 botones o 10 filas en modo lista.
+      const modoLista = node.display === 'list';
+      const maxOpciones = modoLista ? 10 : 3;
+      if (node.options.length > maxOpciones) {
+        errors.push({
+          path: `nodes.${id}.options`,
+          message: modoLista ? 'máximo 10 opciones (lista)' : 'máximo 3 opciones (botones)',
+        });
       }
       const ids = new Set<string>();
       for (const opt of node.options) {
