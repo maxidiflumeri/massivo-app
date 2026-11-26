@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Worker, type Job } from 'bullmq';
+import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import type { RequestContext } from '@massivo/shared-types';
 import { TenantContext } from '../../../common/auth/tenant-context';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -14,6 +14,7 @@ import {
 } from '../sender/wapi-sender.types';
 import { WapiOptOutService } from '../opt-out/wapi-opt-out.service';
 import { QuotaService } from '../../../common/quota/quota.service';
+import { readBodyVars, resolveBodyVar } from '../campaigns/body-vars';
 import { WAPI_QUEUE_NAME, type WapiSendJob } from './wapi-queue.types';
 
 const DEFAULT_DELAY_MIN_MS = 30_000;
@@ -231,10 +232,20 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
         return { canceled: true };
       }
 
+      // Errores de configuración (template/canal borrado, variable sin
+      // columna): son determinísticos, reintentar no cambia nada. Se marca
+      // el report FAILED (para que la campaña pueda cerrar) y se tira
+      // UnrecoverableError para que BullMQ no reintente.
       const template = report.campaign.template;
       const cfg = report.campaign.channel;
-      if (!template) throw new Error(`Campaign ${report.campaignId} has no template`);
-      if (!cfg) throw new Error(`Campaign ${report.campaignId} has no config`);
+      if (!template) {
+        await this.failReport(report, teamId, 'La campaña no tiene template');
+        throw new UnrecoverableError(`Campaign ${report.campaignId} has no template`);
+      }
+      if (!cfg) {
+        await this.failReport(report, teamId, 'La campaña no tiene número origen');
+        throw new UnrecoverableError(`Campaign ${report.campaignId} has no config`);
+      }
 
       // 4.H: chequeo opt-out (GLOBAL o por esta campaña). Skip definitivo —
       // marca CANCELED con error `opted-out` para que el reporte muestre el
@@ -295,11 +306,18 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
         return { dailyLimitReached: true };
       }
 
-      const components = this.buildTemplateComponents(
-        report.campaign.config,
-        report.contact.data,
-        report.contact.name,
-      );
+      let components: TemplateComponent[];
+      try {
+        components = this.buildTemplateComponents(
+          report.campaign.config,
+          report.contact.data,
+          report.contact.name,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Variables del template inválidas';
+        await this.failReport(report, teamId, msg);
+        throw new UnrecoverableError(msg);
+      }
       const sendInput: SendTemplateInput = {
         to: report.phone,
         templateName: template.metaName,
@@ -359,54 +377,54 @@ export class WapiWorkerService implements OnModuleInit, OnModuleDestroy {
         }
 
         const msg = err instanceof Error ? err.message : 'unknown error';
-        await this.prisma.scoped.wapiReport.update({
-          where: { id: reportId },
-          data: {
-            status: 'FAILED',
-            error: msg.slice(0, 500),
-            failedAt: new Date(),
-          },
-        });
-        this.notifyReportUpdate(teamId, report.campaignId);
-        this.notifyReportLog(teamId, {
-          campaignId: report.campaignId,
-          reportId,
-          phone: report.phone,
-          status: 'FAILED',
-          error: msg.slice(0, 500),
-        });
-        await this.maybeCompleteCampaign(report.campaignId, teamId);
+        await this.failReport(report, teamId, msg);
         throw err;
       }
     });
   }
 
   /**
+   * Marca el report FAILED, notifica al panel y cierra la campaña si era el
+   * último PENDING. Todo error terminal de un report tiene que pasar por acá:
+   * un report que queda PENDING deja la campaña colgada en PROCESSING.
+   */
+  private async failReport(
+    report: { id: string; campaignId: string; phone: string },
+    teamId: string,
+    error: string,
+  ): Promise<void> {
+    const msg = error.slice(0, 500);
+    await this.prisma.scoped.wapiReport.update({
+      where: { id: report.id },
+      data: { status: 'FAILED', error: msg, failedAt: new Date() },
+    });
+    this.notifyReportUpdate(teamId, report.campaignId);
+    this.notifyReportLog(teamId, {
+      campaignId: report.campaignId,
+      reportId: report.id,
+      phone: report.phone,
+      status: 'FAILED',
+      error: msg,
+    });
+    await this.maybeCompleteCampaign(report.campaignId, teamId);
+  }
+
+  /**
    * Mapea variables de `WapiContact.data` a `TemplateComponent.parameters`
-   * según el `campaign.config.bodyVars` (array ordenado de keys o textos
-   * literales). Si no hay vars en la config → componentes vacíos (template
-   * parameterless).
+   * según el `campaign.config.bodyVars` (array ordenado de nombres de
+   * columna, ver `body-vars.ts`). Si no hay vars en la config → componentes
+   * vacíos (template parameterless). Tira si una variable no resuelve.
    */
   private buildTemplateComponents(
     campaignConfig: unknown,
     contactData: unknown,
     contactName: string | null = null,
   ): TemplateComponent[] {
-    const cfg = (campaignConfig ?? {}) as { bodyVars?: string[] };
-    const vars = cfg.bodyVars;
-    if (!Array.isArray(vars) || vars.length === 0) return [];
+    const vars = readBodyVars(campaignConfig);
+    if (vars.length === 0) return [];
 
-    const data = (contactData ?? {}) as Record<string, unknown>;
     const parameters = vars.map((spec, idx) => {
-      let value = data[spec];
-      // Fallback: si la spec es "name"/"nombre" y data no la tiene, usar el
-      // escalar contact.name. Esto rescata contactos cargados antes del fix
-      // del parser que hoisteaba name/nombre fuera de data.
-      if ((value === undefined || value === null || value === '') && contactName) {
-        const k = spec.toLowerCase();
-        if (k === 'name' || k === 'nombre') value = contactName;
-      }
-      const text = value === undefined || value === null ? '' : String(value).trim();
+      const text = resolveBodyVar(spec, contactData, contactName);
       if (!text) {
         throw new Error(
           `Variable {{${idx + 1}}} (columna "${spec}") está vacía o no existe en este contacto`,

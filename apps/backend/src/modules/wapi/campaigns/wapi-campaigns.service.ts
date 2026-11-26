@@ -12,6 +12,7 @@ import { ContactUpsertService } from '../../contacts/contact-upsert.service';
 import { EventsService } from '../../events/events.service';
 import { WapiQueueService } from '../queue/wapi-queue.service';
 import { QuotaService } from '../../../common/quota/quota.service';
+import { readBodyVars, resolveBodyVar } from './body-vars';
 import {
   AddWapiCampaignContactsDto,
   CreateWapiCampaignDto,
@@ -21,6 +22,36 @@ import {
 
 const EDITABLE_STATUSES = new Set(['DRAFT', 'SCHEDULED', 'PAUSED']);
 const SENDABLE_STATUSES = new Set(['DRAFT', 'SCHEDULED', 'PAUSED']);
+
+/**
+ * Rechaza el envío si alguna variable del template apunta a una columna que
+ * no resuelve en NINGÚN contacto: eso es un error de mapeo (típico: escribir
+ * el valor de ejemplo "Carina" en vez de la columna "nombre"), y si se deja
+ * pasar fallan todos los envíos. Si falta sólo en algunos contactos se deja
+ * pasar: esos reports fallan individualmente con el motivo en el reporte.
+ */
+function assertBodyVarsMapped(
+  vars: string[],
+  contacts: Array<{ name: string | null; data: Prisma.JsonValue | null }>,
+): void {
+  const unmapped = vars
+    .map((spec, idx) => ({ spec, idx }))
+    .filter(({ spec }) => !contacts.some((c) => resolveBodyVar(spec, c.data, c.name) !== ''));
+  if (unmapped.length === 0) return;
+
+  const columns = new Set<string>();
+  for (const c of contacts) {
+    if (c.data && typeof c.data === 'object' && !Array.isArray(c.data)) {
+      for (const k of Object.keys(c.data)) columns.add(k);
+    }
+  }
+  const detail = unmapped.map(({ spec, idx }) => `{{${idx + 1}}} → "${spec}"`).join(', ');
+  throw new BadRequestException(
+    `Hay variables del template que no corresponden a ninguna columna de los contactos: ${detail}. ` +
+      `Cada variable tiene que ser el nombre de una columna del CSV, no el valor. ` +
+      `Columnas disponibles: ${[...columns].sort().join(', ') || '(ninguna)'}.`,
+  );
+}
 
 const MIN_DELAY_MS = 1000;
 const MAX_DELAY_MS = 60 * 60 * 1000;
@@ -262,7 +293,7 @@ export class WapiCampaignsService {
 
     const campaign = await this.prisma.scoped.wapiCampaign.findFirst({
       where: { id },
-      include: { contacts: { select: { id: true, phone: true } } },
+      include: { contacts: { select: { id: true, phone: true, name: true, data: true } } },
     });
     if (!campaign) throw new NotFoundException(`WapiCampaign ${id} no encontrada`);
     if (!SENDABLE_STATUSES.has(campaign.status)) {
@@ -271,6 +302,7 @@ export class WapiCampaignsService {
     if (!campaign.templateId) throw new BadRequestException('Falta templateId');
     if (!campaign.channelId) throw new BadRequestException('Falta configId');
     if (campaign.contacts.length === 0) throw new BadRequestException('Campaign sin contactos');
+    assertBodyVarsMapped(readBodyVars(campaign.config), campaign.contacts);
 
     const quota = await this.quota.getSnapshot(ctx.organizationId, 'WAPI');
     const total = campaign.contacts.length;

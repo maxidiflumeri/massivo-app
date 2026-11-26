@@ -271,6 +271,40 @@ describe('WapiCampaignsService', () => {
       );
     });
 
+    it('bodyVars con valor en vez de columna → BadRequest sin pasar a PROCESSING', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({
+        ...readyCampaign(),
+        config: { bodyVars: ['nombre', 'Mini adulto de 15kg'] },
+        contacts: [
+          { id: 'k1', phone: '5491100', name: null, data: { phone: '5491100', nombre: 'Carina' } },
+          { id: 'k2', phone: '5492200', name: null, data: { phone: '5492200', nombre: 'Kevin' } },
+        ],
+      });
+
+      const p = withCtx(() => svc.send('c1'));
+      await expect(p).rejects.toBeInstanceOf(BadRequestException);
+      await expect(p).rejects.toThrow(/\{\{2\}\} → "Mini adulto de 15kg".*Columnas disponibles: nombre, phone/);
+      expect(prisma.scoped.wapiCampaign.update).not.toHaveBeenCalled();
+      expect(queue.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('bodyVars con columna presente sólo en algunos contactos → deja enviar', async () => {
+      prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({
+        ...readyCampaign(),
+        config: { bodyVars: ['apellido'] },
+        contacts: [
+          { id: 'k1', phone: '5491100', name: null, data: { apellido: 'Alonso' } },
+          { id: 'k2', phone: '5492200', name: null, data: {} },
+        ],
+      });
+      prisma.wapiReport.create
+        .mockReturnValueOnce(Promise.resolve({ id: 'r1' }))
+        .mockReturnValueOnce(Promise.resolve({ id: 'r2' }));
+
+      const r = await withCtx(() => svc.send('c1'));
+      expect(r).toMatchObject({ enqueued: 2 });
+    });
+
     it('sin contactos → BadRequest', async () => {
       prisma.scoped.wapiCampaign.findFirst.mockResolvedValueOnce({ ...readyCampaign(), contacts: [] });
       await expect(withCtx(() => svc.send('c1'))).rejects.toBeInstanceOf(BadRequestException);

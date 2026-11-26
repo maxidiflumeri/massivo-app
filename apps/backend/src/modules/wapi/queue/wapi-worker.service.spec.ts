@@ -13,7 +13,7 @@
  *  - vars del template: si campaign.config.bodyVars=['firstName'], envía components
  *  - último report SENT → transiciona campaign PROCESSING → COMPLETED
  */
-import type { Job } from 'bullmq';
+import { UnrecoverableError, type Job } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 import { WapiWorkerService } from './wapi-worker.service';
 import { WapiSendException } from '../sender/wapi-sender.types';
@@ -282,6 +282,48 @@ describe('WapiWorkerService.process', () => {
     expect(inputArg.components).toEqual([
       { type: 'body', parameters: [{ type: 'text', text: 'Ana' }] },
     ]);
+  });
+
+  it('bodyVars con columna inexistente → FAILED sin reintento + cierra la campaña', async () => {
+    // Caso real rgbot: se cargó el valor de ejemplo ("Carina") en vez de la
+    // columna ("nombre"). Antes el throw quedaba fuera del try → report
+    // PENDING para siempre y campaña colgada en PROCESSING.
+    const fix = reportFixture();
+    (fix.campaign as { config: unknown }).config = { bodyVars: ['Carina'] };
+    prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(fix);
+    // 1er count: dailyLimit (0). 2do count: maybeCompleteCampaign (PENDING=0).
+    prismaScoped.wapiReport.count.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+    prismaRoot.wapiCampaign.updateMany.mockResolvedValueOnce({ count: 1 });
+
+    const p = worker.process(jobOf({ reportId: 'rep-1', organizationId: 'org-a', teamId: 'team-a' }));
+    await expect(p).rejects.toBeInstanceOf(UnrecoverableError);
+    await expect(p).rejects.toThrow(/columna "Carina"/);
+
+    expect(sender.sendTemplate).not.toHaveBeenCalled();
+    expect(prismaScoped.wapiReport.update).toHaveBeenCalledWith({
+      where: { id: 'rep-1' },
+      data: expect.objectContaining({ status: 'FAILED', error: expect.stringContaining('"Carina"') }),
+    });
+    expect(prismaRoot.wapiCampaign.updateMany).toHaveBeenCalledWith({
+      where: { id: 'camp-1', status: 'PROCESSING' },
+      data: { status: 'COMPLETED' },
+    });
+  });
+
+  it('campaign sin template (borrado) → FAILED sin reintento', async () => {
+    const fix = reportFixture();
+    (fix.campaign as { template: unknown }).template = null;
+    prismaScoped.wapiReport.findFirst.mockResolvedValueOnce(fix);
+
+    await expect(
+      worker.process(jobOf({ reportId: 'rep-1', organizationId: 'org-a', teamId: 'team-a' })),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(sender.sendTemplate).not.toHaveBeenCalled();
+    expect(prismaScoped.wapiReport.update).toHaveBeenCalledWith({
+      where: { id: 'rep-1' },
+      data: expect.objectContaining({ status: 'FAILED' }),
+    });
   });
 
   it('último report SENT → transiciona campaign PROCESSING → COMPLETED', async () => {
